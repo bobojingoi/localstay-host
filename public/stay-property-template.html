@@ -57,6 +57,7 @@ header.nav.solid{position:fixed;background:rgba(27,39,66,.96);backdrop-filter:bl
 /* HERO */
 .hero{position:relative;padding:0 16px 16px}
 .hero-img{position:relative;height:70vh;min-height:460px;max-height:760px;border-radius:34px;overflow:hidden;background-position:center;background-size:cover;background-color:var(--navy)}
+.hero-img.no-img{background:radial-gradient(120% 120% at 80% 10%,#2c3c6b 0%,#1c2746 45%,#161f3a 100%)}
 .hero-img::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(20,28,52,.45),rgba(20,28,52,.12) 35%,rgba(18,25,44,.85))}
 .hero-content{position:absolute;left:0;right:0;bottom:0;padding:44px clamp(28px,5vw,60px);z-index:2}
 .hero-loc{display:inline-flex;align-items:center;gap:8px;color:#fff;font-weight:600;font-size:15px;background:rgba(255,255,255,.14);backdrop-filter:blur(6px);padding:8px 15px;border-radius:100px;margin-bottom:18px}
@@ -297,6 +298,9 @@ footer a:hover{color:#fff}
 .cal-foot{display:flex;align-items:center;gap:10px;padding:12px 18px;border-top:1px solid var(--line)}
 .cal-foot #calInfo{font-size:13px;color:var(--muted)}
 @media(max-width:860px){.bk-grid{grid-template-columns:1fr}.bk-summary{position:static}}
+
+.split.no-img{grid-template-columns:1fr;max-width:760px}
+.fcard.no-img{grid-template-columns:1fr}
 </style>
 </head>
 <body id="top">
@@ -592,29 +596,12 @@ function bookHref(){
 function waHref(){ return THEME.booking.whatsapp ? 'https://wa.me/'+THEME.booking.whatsapp : 'tel:'+THEME.booking.phone; }
 
 /* ---------- highlight auto-pick ---------- */
-function pickHighlight(){
-  const f = PROPERTY.flags||{}, p = PROPERTY.photos;
-  const img = (PROPERTY.galleries&&PROPERTY.galleries[1]&&PROPERTY.galleries[1].slides[2]&&PROPERTY.galleries[1].slides[2].img) || (p&&p.strip&&p.strip[2]) || (p&&p.hero);
-  if(f.pool || f.spa) return { eyebrow:"Pentru relaxare", heading:"Piscină interioară, spa și saună",
-    text:"Piscina interioară încălzită te așteaptă în fiecare zi, iar centrul de wellness completează experiența cu saună, lounge spa și o gamă largă de masaje — relaxare totală, indiferent de vremea de afară.",
-    image:img, features:[
-      {icon:"pool",label:"Piscină interioară încălzită · 08:00–22:00"},
-      {icon:"sauna",label:"Saună privată & lounge spa"},
-      {icon:"massage",label:"Masaj & pachete spa la cerere"},
-      {icon:"kids",label:"Piscină pentru copii"} ]};
-  if(f.ski) return { eyebrow:"La munte, la ski", heading:"Acces rapid la pârtii",
-    text:"Vila se află la câțiva kilometri de pârtii, cu acces direct și facilități pentru schiori — alegerea ideală pentru o escapadă la munte.",
-    image:img, features:[{icon:"slope",label:"Acces direct la pârtii"},{icon:"view",label:"Priveliște spre munte"}] };
-  if(f.forest) return { eyebrow:"În natură", heading:"La marginea pădurii",
-    text:"O locație liniștită, înconjurată de natură, perfectă pentru deconectare.",
-    image:img, features:[{icon:"garden",label:"Grădină & spațiu exterior privat"},{icon:"view",label:"Priveliște deschisă"}] };
-  return null;
-}
+function pickHighlight(){ return null; /* highlight comes only from real data (PROPERTY.highlight); no fabricated content */ }
 
 /* ---------- section renderers (return '' when no data) ---------- */
 function rNav(){
   const gridOn = (THEME.facilitiesStyle||'rows')==='grid' && PROPERTY.amenities && has(PROPERTY.amenities.categories);
-  const facHref = gridOn ? '#facilitati' : (has(PROPERTY.spaces) ? '#camere' : (pickHighlight() ? '#highlight' : ''));
+  const facHref = gridOn ? '#facilitati' : (has(PROPERTY.spaces) ? '#camere' : (PROPERTY.highlight ? '#highlight' : ''));
   return `<header class="nav" id="nav"><div class="nav-bar">
     <a href="#top" class="brand">
       <svg class="mk" viewBox="0 0 40 40" fill="none"><path d="M20 4L5 31h30L20 4z" stroke="#fff" stroke-width="1.6"/><path d="M20 15l-9 16h18l-9-16z" fill="${THEME.colors.accent}"/><path d="M20 31v6" stroke="#fff" stroke-width="1.6"/></svg>
@@ -640,7 +627,8 @@ function rNav(){
 function rHero(){
   const L=PROPERTY.location||{}, locline=[L.area,L.county,L.note].filter(Boolean).join(' · ');
   const pr=PROPERTY.priceFrom;
-  return `<section class="hero"><div class="hero-img" style="background-image:url('${esc(PROPERTY.photos&&PROPERTY.photos.hero||'')}')">
+  const heroImg=(PROPERTY.photos&&PROPERTY.photos.hero)||'';
+  return `<section class="hero"><div class="hero-img${heroImg?'':' no-img'}" style="background-image:url('${esc(heroImg)}')">
     <div class="hero-content">
       ${locline?`<span class="hero-loc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>${esc(locline)}</span>`:''}
       <h1>${esc(PROPERTY.tagline||PROPERTY.name)}</h1>
@@ -662,8 +650,9 @@ function rStrip(){
 
 function rOverview(){
   const o=PROPERTY.overview; if(!o) return '';
-  return `<section class="sec" id="vila"><div class="wrap"><div class="split">
-    <div class="media rv" style="background-image:url('${esc(o.image||'')}')"></div>
+  const hasImg=!!(o.image&&String(o.image).trim());
+  return `<section class="sec" id="vila"><div class="wrap"><div class="split${hasImg?'':' no-img'}">
+    ${hasImg?`<div class="media rv" style="background-image:url('${esc(o.image)}')"></div>`:''}
     <div class="rv">
       ${o.heading?`<h2>${esc(o.heading)}</h2>`:''}
       ${o.description?`<p class="desc">${esc(o.description)}</p>`:''}
@@ -676,9 +665,10 @@ function rOverview(){
 }
 
 function rHighlight(){
-  const h=pickHighlight(); if(!h) return '';
-  return `<section class="sec tight" id="highlight"><div class="wrap"><div class="fcard rv">
-    <div class="media" style="background-image:url('${esc(h.image||'')}')"></div>
+  const h=PROPERTY.highlight; if(!h) return '';
+  const hasImg=!!(h.image&&String(h.image).trim());
+  return `<section class="sec tight" id="highlight"><div class="wrap"><div class="fcard rv${hasImg?'':' no-img'}">
+    ${hasImg?`<div class="media" style="background-image:url('${esc(h.image)}')"></div>`:''}
     <div class="body">
       ${h.eyebrow?`<span class="eyebrow">${esc(h.eyebrow)}</span>`:''}
       <h2>${esc(h.heading)}</h2>
