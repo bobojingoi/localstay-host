@@ -60,6 +60,62 @@ function buildICS(dates, label) {
   return out.join("\r\n");
 }
 
+/* ---------- iCal fetch + parse (server side — no CORS here) ---------- */
+function fromIso(s){ const [y,m,d]=s.split("-").map(Number); return new Date(Date.UTC(y,m-1,d)); }
+function iso(x){ return x.getUTCFullYear()+"-"+pad(x.getUTCMonth()+1)+"-"+pad(x.getUTCDate()); }
+function icd(v){ const m=v.match(/(\d{4})(\d{2})(\d{2})/); return m?(m[1]+"-"+m[2]+"-"+m[3]):null; }
+function parseICS(t){
+  const lines=String(t).replace(/\r\n[ \t]/g,"").replace(/\n[ \t]/g,"").split(/\r?\n/);
+  const ev=[]; let c=null;
+  for(const l of lines){
+    if(l==="BEGIN:VEVENT")c={};
+    else if(l==="END:VEVENT"){ if(c&&c.start)ev.push(c); c=null; }
+    else if(c){ const i=l.indexOf(":"); if(i<0)continue;
+      const n=l.slice(0,i).split(";")[0].toUpperCase(), v=l.slice(i+1).trim();
+      if(n==="DTSTART")c.start=icd(v); else if(n==="DTEND")c.end=icd(v); }
+  }
+  return ev;
+}
+function eventsToDates(ev){
+  const s=new Set();
+  for(const e of ev){ if(!e.start)continue;
+    const a=fromIso(e.start), b=e.end?fromIso(e.end):new Date(a.getTime()+864e5);
+    for(let d=new Date(a); d<b; d.setUTCDate(d.getUTCDate()+1)) s.add(iso(d)); }
+  return [...s];
+}
+async function fetchText(url){
+  const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),15000);
+  try{
+    const r=await fetch(url,{signal:ctrl.signal,headers:{"User-Agent":"StayPredeal/1.0 (+ical-sync)"}});
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    return await r.text();
+  } finally { clearTimeout(t); }
+}
+// Fetch every URL feed for a property, fill its blocked dates, save.
+async function syncProperty(slug){
+  const p=await getProp(slug); if(!p) return {error:"not found"};
+  const admin=p.admin_state; let changed=false, total=0;
+  for(const u of (admin.units||[])){
+    for(const f of (u.feeds||[])){
+      if(!f.url) continue;
+      try{
+        const dates=eventsToDates(parseICS(await fetchText(f.url)));
+        f.blocks=dates; f.count=dates.length; f.lastSync=Date.now(); f.lastStatus="ok";
+        total+=dates.length; changed=true;
+      }catch(e){ f.lastStatus="error: "+e.message; f.lastSync=Date.now(); changed=true; }
+    }
+  }
+  if(changed) await pool.query("update properties set admin_state=$2, updated_at=now() where slug=$1",[slug,admin]);
+  return { ok:true, total, admin_state:admin };
+}
+async function syncAll(){
+  try{
+    const r=await pool.query("select slug from properties");
+    for(const row of r.rows){ await syncProperty(row.slug).catch(e=>console.error("sync",row.slug,e.message)); }
+    console.log("iCal sync run: "+r.rows.length+" properties");
+  }catch(e){ console.error("syncAll failed:",e.message); }
+}
+
 /* ---------- subdomain routing: {slug}.BASE_DOMAIN -> public site ---------- */
 app.use(async (req, res, next) => {
   try {
@@ -126,6 +182,14 @@ app.put("/api/host/:slug/state", async (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
+app.post("/api/host/:slug/sync", async (req, res) => {
+  try {
+    const r = await syncProperty(req.params.slug);
+    if (r.error) return res.status(404).json(r);
+    res.json(r);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get("/api/site/:slug", async (req, res) => {
   const p = await getProp(req.params.slug);
   if (!p) return res.status(404).json({ error: "not found" });
@@ -165,5 +229,10 @@ app.get("/", (req, res) => res.redirect("/importer.html"));
 
 /* ---------- start ---------- */
 init()
-  .then(() => app.listen(process.env.PORT || 3000, () => console.log("StayPredeal running on port " + (process.env.PORT || 3000))))
+  .then(() => {
+    app.listen(process.env.PORT || 3000, () => console.log("StayPredeal running on port " + (process.env.PORT || 3000)));
+    // Background iCal sync: once shortly after boot, then every 15 minutes.
+    setTimeout(syncAll, 30000);
+    setInterval(syncAll, 15 * 60 * 1000);
+  })
   .catch(e => { console.error("Startup failed:", e); process.exit(1); });
