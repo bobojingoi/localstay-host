@@ -821,8 +821,20 @@ function renderIcal(){
 let feedUnit=null;
 function openFeed(unitId){feedUnit=unitId;$("#feedModalTitle").textContent="Conectează calendar · "+unitName(unitId);$("#fUrl").value="";$("#fPaste").value="";$("#feedOverlay").classList.add("on");}
 function syncFeed(unitId,idx){const u=state.units.find(x=>x.id===unitId),f=u.feeds[idx];
-  if(f.raw){const ev=parseICS(f.raw);f.blocks=eventsToDates(ev);f.count=f.blocks.length;f.lastSync=Date.now();persist();renderIcal();renderCalendar();toast(f.source+": "+f.count+" nopți");}
-  else toast("Sincronizarea linkului se face pe server (CORS).");}
+  if(f.raw){const ev=parseICS(f.raw);f.blocks=eventsToDates(ev);f.count=f.blocks.length;f.lastSync=Date.now();persist();renderIcal();renderCalendar();toast(f.source+": "+f.count+" nopți");return;}
+  if(f.url){
+    toast("Se sincronizează pe server...");
+    fetch("/api/host/"+SLUG+"/sync",{method:"POST"}).then(r=>r.json()).then(d=>{
+      if(d&&d.admin_state&&Array.isArray(d.admin_state.units)){
+        state.units=d.admin_state.units; renderIcal(); renderCalendar();
+        const nu=state.units.find(x=>x.id===unitId), nf=nu&&nu.feeds[idx];
+        if(nf&&String(nf.lastStatus||"").indexOf("error")===0) toast("Eroare la sincronizare: "+nf.lastStatus.replace("error: ",""));
+        else toast(f.source+": "+((nf&&nf.count)||0)+" nopți importate");
+      } else toast("Sincronizare eșuată");
+    }).catch(()=>toast("Sincronizare eșuată (server indisponibil)"));
+    return;
+  }
+  toast("Adaugă un link sau lipește un .ics");}
 function dlIcs(unitId){const dates=effectiveBlocked(unitId);const blob=new Blob([buildICS(dates,"Indisponibil · "+unitName(unitId))],{type:"text/calendar"});const a=h("a",{href:URL.createObjectURL(blob),download:SLUG+"-"+unitId+".ics"});a.click();URL.revokeObjectURL(a.href);toast(".ics generat ("+dates.size+" nopți)");}
 $("#feedClose").onclick=$("#feedCancel").onclick=()=>$("#feedOverlay").classList.remove("on");
 $("#feedOverlay").onclick=e=>{if(e.target===$("#feedOverlay"))$("#feedOverlay").classList.remove("on");};
