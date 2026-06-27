@@ -143,7 +143,14 @@
     // galleries from photos
     const galleries=photos.length>=2?[{heading:"Galerie foto",slides:photos.map((u,i)=>({img:u,cap:""}))}]:[];
 
+    // dedicated Activities + Services sections (grouped, real data only)
+    const mkItem=x=>({name:nm(x),extra:!!(x&&x.priceRule),offsite:!!(x&&x.locationRule)});
+    const mkGroups=(src,defs)=>defs.map(d=>{const items=(src[d[0]]||[]).map(mkItem).filter(i=>i.name);return items.length?{title:d[1],items}:null;}).filter(Boolean);
+    const activitiesView=mkGroups(P.activities||{},[["skiing","Schi"],["sportsAndRecreation","Sport & recreere"],["entertainmentAndFamilyServices","Divertisment & familie"]]);
+    const servicesView=mkGroups(P.services||{},[["receptionServices","Recepție"],["generalServices","Servicii generale"],["servicesExtra","Servicii extra"],["safety","Siguranță"]]);
+
     return {
+      activities:activitiesView, services:servicesView,
       name:bi.name||"",
       tagline:(firstSentence&&firstSentence.length<=70)?firstSentence:((bi.unitType||"Cazare")+(flags.pool?" cu piscină și spa":(flags.ski?" la munte":""))+(city?" în "+city:"")),
       intro:desc.slice(0,240),
