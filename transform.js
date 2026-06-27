@@ -37,9 +37,9 @@
     const rooms=[],units=[],mr=m.rooms||[];
     if(mr.length){
       mr.forEach((r,i)=>{const id=slugify(r.roomName||("camera-"+(i+1)));const per=(r.periods&&r.periods[0])||{};
-        rooms.push({id,name:r.roomName||("Cameră "+(i+1)),sub:"",weekday:+per.adult_week_price||496,weekend:+per.adult_weekend_price||+per.adult_week_price||496,currency:per.currency||"RON",minNights:+per.min_nights||1,isEntire:!!bi.entireUnitRental&&i===0});
+        rooms.push({id,name:r.roomName||("Cameră "+(i+1)),sub:"",weekday:+per.adult_week_price||496,weekend:+per.adult_weekend_price||+per.adult_week_price||496,currency:per.currency||"RON",minNights:+per.min_nights||1,isEntire:!!bi.entireUnitRental&&i===0,details:r.details||{}});
         units.push({id,feeds:[],blocks:[]});});
-    }else{const id=slugify(bi.name||"unitate");rooms.push({id,name:bi.name||"Unitate",sub:bi.unitType||"",weekday:496,weekend:496,currency:"RON",minNights:1,isEntire:!!bi.entireUnitRental});units.push({id,feeds:[],blocks:[]});}
+    }else{const id=slugify(bi.name||"unitate");rooms.push({id,name:bi.name||"Unitate",sub:bi.unitType||"",weekday:496,weekend:496,currency:"RON",minNights:1,isEntire:!!bi.entireUnitRental,details:{}});units.push({id,feeds:[],blocks:[]});}
     const property={
       basicInfo:{name:bi.name||"",unitType:bi.unitType||"",starRating:bi.starRating??null,entireUnitRental:!!bi.entireUnitRental,unitCapacity:bi.unitCapacity??null,roomsNumber:bi.roomsNumber??null,unitBathroomsNumber:bi.unitBathroomsNumber??null,unitSurface:bi.unitSurface||"",address:bi.address||"",county:bi.county||"",city:bi.city||"",locality:bi.locality||"",latitude:bi.latitude??null,longitude:bi.longitude??null},
       host:g.host||{hostName:"",hostImage:"",hostUnitDescription:"",spokenLanguages:[]},
@@ -139,7 +139,16 @@
       overview:{image:photos[1]||photos[0]||"",heading:((bi.unitType||"Cazare")+(flags.pool?" cu piscină și spa":"")+(city?" în "+city:"")),description:desc,features},
       flags, galleries, spaces, amenities, rules,
       entireUnitRental:!!bi.entireUnitRental,
-      rentals:((pricing&&pricing.rooms)||[]).map(r=>({id:r.id,name:r.name,sub:r.sub||"",weekday:+r.weekday||0,weekend:+r.weekend||+r.weekday||0,currency:r.currency||"RON",minNights:+r.minNights||1,isEntire:!!r.isEntire})),
+      rentals:((pricing&&pricing.rooms)||[]).map(r=>{
+        const d=r.details||{};
+        const beds=(d.spaces||[]).flatMap(sp=>((sp.spaceType&&sp.spaceType.beds)||[]));
+        const bm={}; beds.forEach(b=>{const t=b.type||"pat";bm[t]=(bm[t]||0)+(+b.count||1);});
+        const bedsTxt=Object.keys(bm).map(t=>bm[t]+" "+t).join(", ");
+        return {id:r.id,name:r.name,sub:r.sub||"",weekday:+r.weekday||0,weekend:+r.weekend||+r.weekday||0,currency:r.currency||"RON",minNights:+r.minNights||1,isEntire:!!r.isEntire,
+          capacity:d.adultsRoomCapacity||null,children:+d.childrenRoomCapacity||0,surface:d.surface||"",bathrooms:d.bathroomsNumber||null,
+          bedrooms:((d.spaces||[]).length||d.spacesNumber||null),beds:bedsTxt,view:d.view||[],description:d.roomDescription||"",
+          facilities:[].concat(d.keyFacilities||[],d.unitFacilities||[],d.bathroomFacilities||[],d.kitchenFacilities||[])};
+      }),
       capacity:bi.unitCapacity||null, roomsNumber:bi.roomsNumber||null, surface:bi.unitSurface||"",
       reviews:reviews||{items:[]}, faq, about,
       _contact:P.contact||{}
