@@ -233,7 +233,20 @@ footer a:hover{color:#fff}
 .bk-intro{color:var(--muted);max-width:52ch;margin:-6px 0 26px}
 .bk-grid{display:grid;grid-template-columns:1fr 360px;gap:28px;align-items:start}
 .bk-options{display:flex;flex-direction:column;gap:12px}
-.bk-card{display:flex;align-items:center;justify-content:space-between;gap:16px;border:1px solid var(--line);border-radius:18px;padding:18px 20px;background:#fff;transition:border-color .15s,box-shadow .15s}
+.bk-card{display:flex;flex-direction:column;gap:0;border:1px solid var(--line);border-radius:18px;padding:18px 20px;background:#fff;transition:border-color .15s,box-shadow .15s}
+
+.bk-card-head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.bk-card-name{flex:1;min-width:160px}
+.bk-meta{display:block;color:var(--muted);font-size:13px;margin-top:3px}
+.bk-more{display:inline-flex;align-items:center;gap:5px;margin-top:12px;align-self:flex-start;background:none;border:0;color:var(--accent);font-weight:600;font-size:13.5px;cursor:pointer;padding:4px 0}
+.bk-more svg{transition:transform .2s}
+.bk-more.open svg{transform:rotate(180deg)}
+.bk-details{margin-top:10px;padding-top:14px;border-top:1px solid var(--line)}
+.bk-d-desc{color:var(--text);font-size:14px;margin:0 0 12px;line-height:1.55}
+.bk-d-row{margin-bottom:12px}
+.bk-d-row b{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:7px}
+.bk-chips{display:flex;flex-wrap:wrap;gap:6px}
+.bk-chips span{background:#f3f5fa;border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:12.5px;color:var(--navy)}
 .bk-card.on{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
 .bk-entire{background:color-mix(in srgb,var(--accent) 7%,#fff);border-style:solid}
 .bk-card-main{display:flex;align-items:center;gap:22px;flex:1;flex-wrap:wrap}
@@ -834,22 +847,34 @@ function rBooking(){
   const rooms = entire ? R.filter(r=>!r.isEntire) : R;
   const entW = entR ? entR.weekday : Math.min.apply(null, R.map(r=>r.weekday||Infinity));
   const priceTag = (amt,c)=>`<div class="bk-price"><span>de la</span><b>${esc(String(amt))} ${esc(c||cur)}</b><small>/noapte</small></div>`;
-  const card = (opt)=>`
-    <div class="bk-card" data-rid="${esc(opt.id)}">
-      <div class="bk-card-main">
-        <div class="bk-card-name"><b>${esc(opt.name)}</b>${opt.sub?`<small>${esc(opt.sub)}</small>`:''}</div>
+  const metaLine = (opt)=>{ const p=[];
+    if(opt.capacity) p.push(opt.capacity+(opt.children?('+'+opt.children):'')+' oaspeți');
+    if(opt.beds) p.push(opt.beds);
+    if(opt.surface) p.push(esc(opt.surface));
+    if(opt.bathrooms) p.push(opt.bathrooms+(opt.bathrooms===1?' baie':' băi'));
+    return p.join(' · '); };
+  const detailsPanel = (opt)=>{
+    const has=(opt.view&&opt.view.length)||(opt.facilities&&opt.facilities.length)||opt.description;
+    if(!has) return '';
+    return `<button type="button" class="bk-more">Vezi detalii camere<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+      <div class="bk-details" hidden>
+        ${opt.description?`<p class="bk-d-desc">${esc(opt.description)}</p>`:''}
+        ${opt.view&&opt.view.length?`<div class="bk-d-row"><b>Priveliște</b><div class="bk-chips">${opt.view.map(v=>`<span>${esc(v)}</span>`).join('')}</div></div>`:''}
+        ${opt.facilities&&opt.facilities.length?`<div class="bk-d-row"><b>Facilități</b><div class="bk-chips">${opt.facilities.slice(0,30).map(v=>`<span>${esc(v)}</span>`).join('')}</div></div>`:''}
+      </div>`;
+  };
+  const card = (opt,rid,nameOv,subOv)=>{
+    const m=metaLine(opt);
+    return `<div class="bk-card${rid==='__entire'?' bk-entire':''}" data-rid="${esc(rid||opt.id)}">
+      <div class="bk-card-head">
+        <div class="bk-card-name"><b>${esc(nameOv||opt.name)}</b>${(subOv||opt.sub)?`<small>${esc(subOv||opt.sub)}</small>`:''}${m?`<small class="bk-meta">${m}</small>`:''}</div>
         ${priceTag(opt.weekday, opt.currency)}
+        <button type="button" class="bk-sel" data-rid="${esc(rid||opt.id)}">Selectează</button>
       </div>
-      <button type="button" class="bk-sel" data-rid="${esc(opt.id)}">Selectează</button>
+      ${detailsPanel(opt)}
     </div>`;
-  const entireCard = entire ? `
-    <div class="bk-card bk-entire" data-rid="__entire">
-      <div class="bk-card-main">
-        <div class="bk-card-name"><b>Toată proprietatea</b><small>Închiriere integrală${PROPERTY.capacity?` · până la ${esc(String(PROPERTY.capacity))} oaspeți`:''}</small></div>
-        ${priceTag(isFinite(entW)?entW:'',cur)}
-      </div>
-      <button type="button" class="bk-sel" data-rid="__entire">Selectează</button>
-    </div>` : '';
+  };
+  const entireCard = entire ? card(entR||{weekday:isFinite(entW)?entW:'',currency:cur,capacity:PROPERTY.capacity},'__entire','Toată proprietatea','Închiriere integrală') : '';
   return `<section class="sec" id="rezervare"><div class="wrap">
     <h2 class="rv">Camere și prețuri</h2>
     <p class="bk-intro rv">${entire?'Închiriază toată proprietatea sau alege camere individuale. Verifică disponibilitatea pe calendar.':'Alege o variantă și verifică disponibilitatea pe calendar.'}</p>
@@ -939,6 +964,7 @@ function initBooking(){
     tot.innerHTML = ds.length? ('<div class="bk-trow"><span>'+ds.length+' nopți</span><b>'+total+' '+cur+'</b></div>') : '<small>Alege datele pentru a vedea totalul</small>';
   }
 
+  sec.querySelectorAll('.bk-more').forEach(btn=>btn.onclick=()=>{ const d=btn.nextElementSibling; if(d){ const open=!d.hidden; d.hidden=open; btn.classList.toggle('open',!open); } });
   const ov=$('#calOv');
   $('#bkDates').onclick=()=>{ if(!selectedIds().length){ flash('Alege întâi o variantă'); return; } st.month=_som(st.ci?_piso(st.ci):new Date()); ov.classList.add('on'); drawCal(); };
   $('#calX').onclick=()=>ov.classList.remove('on');
