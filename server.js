@@ -22,12 +22,12 @@ async function getProp(slug) {
 function inject(html, js) {
   return html.replace("</head>", "<script>" + js + "</script></head>");
 }
-function renderSite(site) {
+function renderSite(site, slug) {
   const tpl = fs.readFileSync(path.join(PUBLIC, "stay-property-template.html"), "utf8");
   const c = site._contact || {};
   const theme = { brandName: site.name || "", brandSub: (site.location && site.location.area) || "" };
   if (c.phone) theme.booking = { phone: c.phone, whatsapp: (c.phone || "").replace(/[^0-9]/g, ""), url: "" };
-  return inject(tpl, "window.STAY_PROPERTY=" + JSON.stringify(site) + ";window.STAY_THEME=" + JSON.stringify(theme) + ";");
+  return inject(tpl, "window.STAY_PROPERTY=" + JSON.stringify(site) + ";window.STAY_THEME=" + JSON.stringify(theme) + ";window.STAY_SLUG=" + JSON.stringify(slug||"") + ";");
 }
 
 /* ---------- iCal export (effective blocks incl. entire/room overlap) ---------- */
@@ -128,7 +128,7 @@ app.use(async (req, res, next) => {
       if (slug && slug !== "www" && slug !== "app") {
         const p = await getProp(slug);
         if (!p) return res.status(404).send("Proprietate negăsită");
-        return res.send(renderSite(p.site));
+        return res.send(renderSite(p.site, p.slug));
       }
     }
   } catch (e) { return next(e); }
@@ -239,6 +239,21 @@ app.post("/api/host/:slug/sync", async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.get("/api/availability/:slug", async (req, res) => {
+  try {
+    const p = await getProp(req.params.slug);
+    if (!p) return res.status(404).json({ error: "not found" });
+    const units = (p.admin_state.units || []);
+    const out = {};
+    units.forEach(u => { out[u.id] = [...effectiveBlocked(p.admin_state, u.id)]; });
+    // "entire" availability = union of all units (if any unit is booked that day, the whole place is taken)
+    const all = new Set();
+    units.forEach(u => effectiveBlocked(p.admin_state, u.id).forEach(d => all.add(d)));
+    out.__all = [...all];
+    res.json({ units: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get("/api/site/:slug", async (req, res) => {
   const p = await getProp(req.params.slug);
   if (!p) return res.status(404).json({ error: "not found" });
@@ -259,7 +274,7 @@ app.get("/admin", async (req, res) => {
 app.get("/s/:slug", async (req, res) => {
   const p = await getProp(req.params.slug);
   if (!p) return res.status(404).send("Proprietate negăsită");
-  res.send(renderSite(p.site));
+  res.send(renderSite(p.site, p.slug));
 });
 
 /* iCal export per unit — paste this URL into Booking/Airbnb */
