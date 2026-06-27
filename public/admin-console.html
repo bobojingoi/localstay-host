@@ -143,6 +143,52 @@ textarea.inp{min-height:70px;resize:vertical;line-height:1.5}
 .ms-drop{position:absolute;top:100%;left:0;right:0;z-index:15;background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:var(--shadow);max-height:240px;overflow:auto;margin-top:4px;display:none}
 .ms-drop.on{display:block}.ms-opt{padding:8px 11px;font-size:13px;cursor:pointer}.ms-opt:hover{background:var(--brand-soft)}
 .ms-empty{padding:9px 11px;color:var(--muted);font-size:12px}
+.img-prev{width:96px;height:72px;border-radius:9px;overflow:hidden;background:#f0f2f5;border:1px solid var(--line);display:grid;place-items:center;flex:none}
+.img-prev img{width:100%;height:100%;object-fit:cover}
+.img-empty{font-size:11px;color:var(--muted)}
+.img-row{display:flex;gap:12px;align-items:center}
+.img-acts{display:flex;gap:8px;flex-wrap:wrap}
+.photo-card{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px;background:#fcfdfe;position:relative}
+.photo-tag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--brand);margin-bottom:8px}
+.photo-acts{display:flex;gap:6px;margin-top:10px}
+.pe-overlay{position:fixed;inset:0;background:rgba(16,24,20,.6);display:none;align-items:center;justify-content:center;z-index:80;padding:16px}
+.pe-overlay.on{display:flex}
+.pe-modal{background:#fff;border-radius:16px;width:100%;max-width:920px;max-height:94vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 80px -20px rgba(0,0,0,.5)}
+.pe-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--line-2)}
+.pe-head b{font-size:15px;color:var(--ink)}
+.pe-x{background:none;border:0;font-size:24px;cursor:pointer;color:var(--muted);line-height:1}
+.pe-body{display:flex;gap:0;min-height:0;flex:1}
+.pe-stage{flex:1;background:#0f1512;display:grid;place-items:center;position:relative;min-height:340px;background-image:linear-gradient(45deg,#171f1b 25%,transparent 25%),linear-gradient(-45deg,#171f1b 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#171f1b 75%),linear-gradient(-45deg,transparent 75%,#171f1b 75%);background-size:18px 18px;background-position:0 0,0 9px,9px -9px,-9px 0}
+.pe-stage.over{outline:3px dashed var(--brand);outline-offset:-6px}
+.pe-canwrap{position:relative;line-height:0}
+.pe-canvas{max-width:100%;max-height:62vh;border-radius:6px;touch-action:none;cursor:crosshair;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.pe-stage:not(.cropping) .pe-canvas{cursor:default}
+.pe-cropbox{position:absolute;border:1.5px solid #fff;box-shadow:0 0 0 9999px rgba(0,0,0,.45);pointer-events:none}
+.pe-empty{color:#9fb2a8;display:flex;flex-direction:column;align-items:center;gap:10px;cursor:pointer;font-size:13.5px;padding:30px}
+.pe-empty svg{width:40px;height:40px}
+.pe-empty[hidden],.pe-tctrl[hidden],.pe-mini[hidden]{display:none}
+.pe-side{width:280px;flex:none;padding:14px;overflow:auto;border-left:1px solid var(--line-2);background:#fafbfc;display:flex;flex-direction:column;gap:12px}
+.pe-group{border-bottom:1px solid var(--line-2);padding-bottom:12px}
+.pe-gl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:8px}
+.pe-rowb{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.pe-mini{flex:1;min-width:42px;border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 6px;font-size:13px;font-weight:600;cursor:pointer;color:var(--ink)}
+.pe-mini:hover{border-color:var(--brand);color:var(--brand)}
+.pe-mini.pe-apply{background:var(--brand);color:#fff;border-color:var(--brand)}
+.pe-adj{margin-bottom:9px}
+.pe-al{display:flex;justify-content:space-between;font-size:12px;color:var(--text);margin-bottom:3px}
+.pe-av{color:var(--ink);font-weight:600}
+.pe-range{width:100%;accent-color:var(--brand)}
+.pe-filters{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.pe-fbtn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--ink)}
+.pe-fbtn.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+.pe-tin{flex:1;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px}
+.pe-tctrl{margin-top:8px}.pe-tcolor{width:40px;height:34px;border:1px solid var(--line);border-radius:8px;padding:2px;cursor:pointer}.pe-tsize{flex:1}
+.pe-btn{border:0;border-radius:9px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer}
+.pe-up{background:var(--brand-soft);color:var(--brand);width:100%}
+.pe-pri{background:var(--brand);color:#fff}.pe-pri:disabled{opacity:.6;cursor:default}
+.pe-ghost{background:#fff;border:1px solid var(--line);color:var(--ink)}
+.pe-foot{display:flex;align-items:center;gap:10px;padding:12px 18px;border-top:1px solid var(--line-2)}
+@media(max-width:760px){.pe-body{flex-direction:column}.pe-side{width:100%;border-left:0;border-top:1px solid var(--line-2)}}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:12px 20px;border-radius:11px;font-size:13.5px;font-weight:500;opacity:0;transition:.3s;z-index:60;box-shadow:0 16px 40px -12px rgba(0,0,0,.4)}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .menu-btn{display:none;width:38px;height:38px;border:1px solid var(--line);border-radius:9px;background:#fff;place-items:center;cursor:pointer}
 @media(max-width:880px){
@@ -264,7 +310,7 @@ textarea.inp{min-height:70px;resize:vertical;line-height:1.5}
     let slopes=[];(L.zones||[]).forEach(z=>{(z.slopes||[]).forEach(s=>slopes.push({name:s.name||s.label||nm(s),distance:s.distance??0}));});
     return {mainAttractions:dist(L.mainAttractions),nearbyAttractions:dist(L.nearbyAttractions),slopes:slopes.filter(s=>s.name),publicTransport:dist(L.publicTransport),nearbyAirports:dist(L.nearbyAirports)};
   }
-  function photoUrl(p){const v=p&&(p.photoName||p.url||p.src||"");return (typeof v==="string"&&/^https?:/.test(v))?v:"";}
+  function photoUrl(p){const v=p&&(p.photoName||p.url||p.src||"");return (typeof v==="string"&&(/^https?:/.test(v)||/^data:image\//.test(v)))?v:"";}
 
   function deriveAdminState(m){
     const g=m.general||m, bi=g.basicInfo||{};
@@ -614,6 +660,354 @@ function distList(host,label,arr){
   const s=h("div",{});host.appendChild(s);
   listEditor(s,arr,{fields:[{k:"name",type:"text",ph:"Denumire"},{k:"distance",type:"number",ph:"km",short:true}],item:{name:"",distance:0},addLabel:"loc"});
 }
+/* ============================================================
+   Photo editor — upload, crop, rotate/flip, adjust, filters,
+   text overlay; exports WebP resized to max 1600px.
+   API: openPhotoEditor(initialSrc, onSave)  // onSave(dataUrl)
+   ============================================================ */
+(function(){
+  const MAXDIM = 1600;
+  const PRESETS = {
+    none:"", bw:"grayscale(100%)", sepia:"sepia(75%)",
+    warm:"sepia(30%) saturate(150%) hue-rotate(-10deg)",
+    cool:"saturate(120%) hue-rotate(15deg)",
+    vivid:"saturate(165%) contrast(108%)"
+  };
+  const PRESET_LABELS = { none:"Original", bw:"Alb-negru", sepia:"Sepia", warm:"Cald", cool:"Rece", vivid:"Vivid" };
+
+  let overlay, view, vctx, ctrls;
+  let work=null;            // canvas with geometry baked (native res, no filter)
+  let st=null;              // editor session state
+
+  function build(){
+    overlay = document.createElement("div");
+    overlay.className = "pe-overlay";
+    overlay.innerHTML =
+      '<div class="pe-modal">'
+      + '<div class="pe-head"><b>Editor foto</b><button class="pe-x" data-act="cancel">&times;</button></div>'
+      + '<div class="pe-body">'
+        + '<div class="pe-stage"><div class="pe-canwrap"><canvas class="pe-canvas"></canvas><div class="pe-cropbox" hidden></div></div>'
+          + '<div class="pe-empty" data-act="pick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg><span>Trage o poză aici sau click pentru a încărca</span></div>'
+        + '</div>'
+        + '<div class="pe-side">'
+          + '<button class="pe-btn pe-up" data-act="pick">Încarcă poză</button>'
+          + '<input type="file" accept="image/*" class="pe-file" hidden>'
+          + '<div class="pe-group"><div class="pe-gl">Rotire</div><div class="pe-rowb">'
+            + '<button class="pe-mini" data-act="rotL" title="Rotește stânga">⟲</button>'
+            + '<button class="pe-mini" data-act="rotR" title="Rotește dreapta">⟳</button>'
+            + '<button class="pe-mini" data-act="flipH" title="Oglindă orizontal">⇆</button>'
+            + '<button class="pe-mini" data-act="flipV" title="Oglindă vertical">⇅</button>'
+          + '</div></div>'
+          + '<div class="pe-group"><div class="pe-gl">Decupare (crop)</div>'
+            + '<div class="pe-rowb pe-ratios">'
+              + '<button class="pe-mini" data-ratio="free">Liber</button>'
+              + '<button class="pe-mini" data-ratio="1">1:1</button>'
+              + '<button class="pe-mini" data-ratio="1.333">4:3</button>'
+              + '<button class="pe-mini" data-ratio="1.777">16:9</button>'
+            + '</div>'
+            + '<div class="pe-rowb"><button class="pe-mini pe-apply" data-act="cropApply" hidden>Aplică</button><button class="pe-mini" data-act="cropCancel" hidden>Renunță</button></div>'
+          + '</div>'
+          + '<div class="pe-group"><div class="pe-gl">Ajustări</div>'
+            + adjRow("Luminozitate","brightness",0,200,100)
+            + adjRow("Contrast","contrast",0,200,100)
+            + adjRow("Saturație","saturation",0,200,100)
+          + '</div>'
+          + '<div class="pe-group"><div class="pe-gl">Filtre</div><div class="pe-filters">'
+            + Object.keys(PRESETS).map(k=>'<button class="pe-fbtn'+(k==="none"?" on":"")+'" data-preset="'+k+'">'+PRESET_LABELS[k]+'</button>').join("")
+          + '</div></div>'
+          + '<div class="pe-group"><div class="pe-gl">Text pe poză</div>'
+            + '<div class="pe-rowb"><input class="pe-tin" placeholder="Scrie un text..."><button class="pe-mini" data-act="addText">+</button></div>'
+            + '<div class="pe-rowb pe-tctrl" hidden><input type="color" class="pe-tcolor" value="#ffffff"><input type="range" class="pe-tsize" min="14" max="160" value="48"><button class="pe-mini" data-act="delText">Șterge text</button></div>'
+          + '</div>'
+        + '</div>'
+      + '</div>'
+      + '<div class="pe-foot"><button class="pe-btn pe-ghost" data-act="reset">Resetează</button><div style="flex:1"></div><button class="pe-btn pe-ghost" data-act="cancel">Anulează</button><button class="pe-btn pe-pri" data-act="save">Salvează</button></div>'
+      + '</div>';
+    document.body.appendChild(overlay);
+    view = overlay.querySelector(".pe-canvas");
+    vctx = view.getContext("2d");
+    ctrls = {
+      file: overlay.querySelector(".pe-file"),
+      empty: overlay.querySelector(".pe-empty"),
+      cropbox: overlay.querySelector(".pe-cropbox"),
+      canwrap: overlay.querySelector(".pe-canwrap"),
+      tin: overlay.querySelector(".pe-tin"),
+      tctrl: overlay.querySelector(".pe-tctrl"),
+      tcolor: overlay.querySelector(".pe-tcolor"),
+      tsize: overlay.querySelector(".pe-tsize"),
+      applyBtn: overlay.querySelector('[data-act="cropApply"]'),
+      cancelCropBtn: overlay.querySelector('[data-act="cropCancel"]')
+    };
+    wire();
+  }
+  function adjRow(label,key,min,max,val){
+    return '<div class="pe-adj"><div class="pe-al"><span>'+label+'</span><span class="pe-av" data-av="'+key+'">'+val+'</span></div>'
+      + '<input type="range" class="pe-range" data-adj="'+key+'" min="'+min+'" max="'+max+'" value="'+val+'"></div>';
+  }
+
+  function freshState(){
+    return { brightness:100, contrast:100, saturation:100, preset:"none",
+             texts:[], sel:-1, cropMode:false, ratio:"free", crop:null, drag:null, onSave:null };
+  }
+  function curFilter(){
+    return (PRESETS[st.preset]?PRESETS[st.preset]+" ":"")
+      + "brightness("+st.brightness+"%) contrast("+st.contrast+"%) saturate("+st.saturation+"%)";
+  }
+
+  // fit display canvas to the stage while keeping aspect
+  function layout(){
+    if(!work) return;
+    const maxW = 560, maxH = 460;
+    const s = Math.min(maxW/work.width, maxH/work.height, 1);
+    view.width = Math.round(work.width*s);
+    view.height = Math.round(work.height*s);
+    view.dataset.scale = s;
+    draw();
+  }
+  function dscale(){ return parseFloat(view.dataset.scale||"1"); }
+
+  function draw(){
+    if(!work) return;
+    vctx.clearRect(0,0,view.width,view.height);
+    vctx.filter = curFilter();
+    vctx.drawImage(work, 0, 0, view.width, view.height);
+    vctx.filter = "none";
+    const s = dscale();
+    st.texts.forEach((t,i)=>{
+      vctx.save();
+      vctx.font = Math.round(t.size*s)+"px "+t.font;
+      vctx.fillStyle = t.color; vctx.textBaseline="top";
+      vctx.shadowColor="rgba(0,0,0,.45)"; vctx.shadowBlur=4*s;
+      vctx.fillText(t.str, t.x*s, t.y*s);
+      vctx.restore();
+      if(i===st.sel){
+        const w = vctx.measureText? measureW(t,s):0;
+        vctx.strokeStyle="#2f7355"; vctx.lineWidth=1.5; vctx.setLineDash([5,4]);
+        vctx.strokeRect(t.x*s-4, t.y*s-4, w+8, t.size*s+8); vctx.setLineDash([]);
+      }
+    });
+  }
+  function measureW(t,s){ vctx.save(); vctx.font=Math.round(t.size*s)+"px "+t.font; const w=vctx.measureText(t.str).width; vctx.restore(); return w; }
+
+  function loadSrc(src){
+    if(!src){ work=null; ctrls.empty.hidden=false; view.style.display="none"; return; }
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = ()=>{
+      const c = document.createElement("canvas"); c.width=img.naturalWidth; c.height=img.naturalHeight;
+      c.getContext("2d").drawImage(img,0,0);
+      work = c; ctrls.empty.hidden=true; view.style.display="block"; layout();
+    };
+    img.onerror = ()=>{ ctrls.empty.hidden=false; view.style.display="none"; toast&&toast("Nu am putut încărca imaginea"); };
+    img.src = src;
+  }
+  function loadFile(file){
+    if(!file || !/^image\//.test(file.type)){ toast&&toast("Alege un fișier imagine"); return; }
+    const r = new FileReader(); r.onload=()=>loadSrc(r.result); r.readAsDataURL(file);
+  }
+
+  /* geometry ops (bake into `work`, transform text coords) */
+  function rotate(cw){
+    if(!work) return;
+    const w=work.width,h=work.height, c=document.createElement("canvas");
+    c.width=h; c.height=w; const x=c.getContext("2d");
+    x.translate(c.width/2,c.height/2); x.rotate((cw?90:-90)*Math.PI/180); x.drawImage(work,-w/2,-h/2);
+    st.texts.forEach(t=>{ const nx=cw?(h-t.y):(t.y), ny=cw?(t.x):(w-t.x); t.x=nx; t.y=ny; });
+    work=c; layout();
+  }
+  function flip(horiz){
+    if(!work) return;
+    const w=work.width,h=work.height,c=document.createElement("canvas"); c.width=w;c.height=h; const x=c.getContext("2d");
+    if(horiz){ x.translate(w,0); x.scale(-1,1); } else { x.translate(0,h); x.scale(1,-1); }
+    x.drawImage(work,0,0);
+    st.texts.forEach(t=>{ if(horiz) t.x=w-t.x; else t.y=h-t.y; });
+    work=c; draw();
+  }
+  function applyCrop(){
+    if(!st.crop||!work) return;
+    const r=st.crop, c=document.createElement("canvas");
+    c.width=Math.max(1,Math.round(r.w)); c.height=Math.max(1,Math.round(r.h));
+    c.getContext("2d").drawImage(work, r.x, r.y, r.w, r.h, 0,0, c.width, c.height);
+    st.texts.forEach(t=>{ t.x-=r.x; t.y-=r.y; });
+    work=c; exitCrop(); layout();
+  }
+  function exitCrop(){ st.cropMode=false; st.crop=null; ctrls.cropbox.hidden=true; ctrls.applyBtn.hidden=true; ctrls.cancelCropBtn.hidden=true; overlay.querySelector(".pe-stage").classList.remove("cropping"); }
+
+  /* export: resize to <=1600, webp */
+  function exportWebp(){
+    if(!work) return Promise.resolve("");
+    const s = Math.min(1, MAXDIM/Math.max(work.width,work.height));
+    const ow=Math.round(work.width*s), oh=Math.round(work.height*s);
+    const out=document.createElement("canvas"); out.width=ow; out.height=oh; const c=out.getContext("2d");
+    c.filter = curFilter(); c.drawImage(work,0,0,ow,oh); c.filter="none";
+    st.texts.forEach(t=>{ c.save(); c.font=Math.round(t.size*s)+"px "+t.font; c.fillStyle=t.color; c.textBaseline="top";
+      c.shadowColor="rgba(0,0,0,.45)"; c.shadowBlur=4*s; c.fillText(t.str, t.x*s, t.y*s); c.restore(); });
+    return new Promise(res=>{
+      out.toBlob(b=>{ if(!b){ res(out.toDataURL("image/png")); return; } const r=new FileReader(); r.onload=()=>res(r.result); r.readAsDataURL(b); }, "image/webp", 0.85);
+    });
+  }
+
+  function wire(){
+    overlay.addEventListener("click", e=>{
+      const act = e.target.closest("[data-act]") && e.target.closest("[data-act]").dataset.act;
+      const preset = e.target.dataset.preset, ratio = e.target.dataset.ratio;
+      if(act==="cancel"){ close(); return; }
+      if(act==="pick"){ ctrls.file.click(); return; }
+      if(act==="rotL"){ rotate(false); return; }
+      if(act==="rotR"){ rotate(true); return; }
+      if(act==="flipH"){ flip(true); return; }
+      if(act==="flipV"){ flip(false); return; }
+      if(act==="cropApply"){ applyCrop(); return; }
+      if(act==="cropCancel"){ exitCrop(); draw(); return; }
+      if(act==="addText"){ addText(); return; }
+      if(act==="delText"){ if(st.sel>=0){ st.texts.splice(st.sel,1); st.sel=-1; ctrls.tctrl.hidden=true; draw(); } return; }
+      if(act==="reset"){ st.brightness=100;st.contrast=100;st.saturation=100;st.preset="none";st.texts=[];st.sel=-1;
+        overlay.querySelectorAll(".pe-range").forEach(r=>{r.value=100;overlay.querySelector('[data-av="'+r.dataset.adj+'"]').textContent="100";});
+        overlay.querySelectorAll(".pe-fbtn").forEach(b=>b.classList.toggle("on",b.dataset.preset==="none"));
+        ctrls.tctrl.hidden=true; draw(); return; }
+      if(act==="save"){ doSave(); return; }
+      if(preset!==undefined){ st.preset=preset; overlay.querySelectorAll(".pe-fbtn").forEach(b=>b.classList.toggle("on",b.dataset.preset===preset)); draw(); return; }
+      if(ratio!==undefined){ enterCrop(ratio); return; }
+    });
+    overlay.addEventListener("input", e=>{
+      if(e.target.classList.contains("pe-range")){ const k=e.target.dataset.adj; st[k]=+e.target.value; overlay.querySelector('[data-av="'+k+'"]').textContent=e.target.value; draw(); }
+      if(e.target.classList.contains("pe-tcolor")&&st.sel>=0){ st.texts[st.sel].color=e.target.value; draw(); }
+      if(e.target.classList.contains("pe-tsize")&&st.sel>=0){ st.texts[st.sel].size=+e.target.value; draw(); }
+    });
+    ctrls.file.addEventListener("change",()=>{ if(ctrls.file.files[0]) loadFile(ctrls.file.files[0]); ctrls.file.value=""; });
+    // drag & drop onto stage
+    const stage = overlay.querySelector(".pe-stage");
+    stage.addEventListener("dragover",e=>{e.preventDefault();stage.classList.add("over");});
+    stage.addEventListener("dragleave",()=>stage.classList.remove("over"));
+    stage.addEventListener("drop",e=>{e.preventDefault();stage.classList.remove("over"); if(e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);});
+    // canvas pointer: crop draw OR text drag
+    view.addEventListener("pointerdown", onDown);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
+
+  function enterCrop(ratio){
+    if(!work) return;
+    st.cropMode=true; st.ratio=ratio;
+    overlay.querySelector(".pe-stage").classList.add("cropping");
+    ctrls.applyBtn.hidden=false; ctrls.cancelCropBtn.hidden=false;
+    // default crop = centered 80%
+    const w=view.width, h=view.height; let cw=w*0.8, ch=h*0.8;
+    if(ratio!=="free"){ const R=+ratio; if(cw/ch>R) cw=ch*R; else ch=cw/R; }
+    setCropDisplay((w-cw)/2,(h-ch)/2,cw,ch);
+  }
+  function setCropDisplay(x,y,w,h){
+    const s=dscale();
+    st.crop={ x:x/s, y:y/s, w:w/s, h:h/s };
+    const box=ctrls.cropbox; box.hidden=false;
+    box.style.left=x+"px"; box.style.top=y+"px"; box.style.width=w+"px"; box.style.height=h+"px";
+  }
+
+  function localXY(e){ const r=view.getBoundingClientRect(); return { x:e.clientX-r.left, y:e.clientY-r.top }; }
+  function onDown(e){
+    if(!work) return;
+    const p=localXY(e);
+    if(st.cropMode){ st.drag={mode:"crop", sx:p.x, sy:p.y}; setCropDisplay(p.x,p.y,1,1); return; }
+    // hit-test texts (topmost first)
+    const s=dscale();
+    for(let i=st.texts.length-1;i>=0;i--){ const t=st.texts[i]; const w=measureW(t,s);
+      if(p.x>=t.x*s-6 && p.x<=t.x*s+w+6 && p.y>=t.y*s-6 && p.y<=t.y*s+t.size*s+6){
+        st.sel=i; selectText(); st.drag={mode:"text", ox:p.x-t.x*s, oy:p.y-t.y*s}; draw(); return; }
+    }
+    st.sel=-1; ctrls.tctrl.hidden=true; draw();
+  }
+  function onMove(e){
+    if(!st||!st.drag) return;
+    const p=localXY(e), s=dscale();
+    if(st.drag.mode==="crop"){
+      let x=Math.min(st.drag.sx,p.x), y=Math.min(st.drag.sy,p.y), w=Math.abs(p.x-st.drag.sx), h=Math.abs(p.y-st.drag.sy);
+      if(st.ratio!=="free"){ const R=+st.ratio; if(w/h>R) w=h*R; else h=w/R; }
+      x=Math.max(0,Math.min(x,view.width)); y=Math.max(0,Math.min(y,view.height));
+      w=Math.min(w,view.width-x); h=Math.min(h,view.height-y);
+      setCropDisplay(x,y,w,h);
+    } else if(st.drag.mode==="text"){
+      const t=st.texts[st.sel]; if(!t) return;
+      t.x=(p.x-st.drag.ox)/s; t.y=(p.y-st.drag.oy)/s; draw();
+    }
+  }
+  function onUp(){ if(st) st.drag=null; }
+
+  function addText(){
+    const str=(ctrls.tin.value||"").trim(); if(!str){ toast&&toast("Scrie un text întâi"); return; }
+    if(!work){ toast&&toast("Încarcă o poză întâi"); return; }
+    const t={ str, x:work.width*0.1, y:work.height*0.1, size:Math.round(work.height*0.07)||48, color:ctrls.tcolor.value||"#ffffff", font:'"Inter", sans-serif' };
+    st.texts.push(t); st.sel=st.texts.length-1; ctrls.tin.value=""; selectText(); draw();
+  }
+  function selectText(){ const t=st.texts[st.sel]; if(!t) return; ctrls.tctrl.hidden=false; ctrls.tcolor.value=t.color; ctrls.tsize.value=t.size; }
+
+  function exportJpeg(){
+    if(!work) return Promise.resolve("");
+    const ow=work.width, oh=work.height;
+    const out=document.createElement("canvas"); out.width=ow; out.height=oh; const c=out.getContext("2d");
+    c.fillStyle="#ffffff"; c.fillRect(0,0,ow,oh);
+    c.filter=curFilter(); c.drawImage(work,0,0,ow,oh); c.filter="none";
+    st.texts.forEach(t=>{ c.save(); c.font=t.size+"px "+t.font; c.fillStyle=t.color; c.textBaseline="top";
+      c.shadowColor="rgba(0,0,0,.45)"; c.shadowBlur=4; c.fillText(t.str,t.x,t.y); c.restore(); });
+    return Promise.resolve(out.toDataURL("image/jpeg",0.92));
+  }
+  async function doSave(){
+    if(!work){ toast&&toast("Nu ai nicio poză"); return; }
+    if(st.cropMode) exitCrop();
+    const btn = overlay.querySelector('[data-act="save"]'); btn.disabled=true; btn.textContent="Se procesează...";
+    let url="", meta={};
+    try{
+      const jpeg = await exportJpeg();
+      const r = await fetch("/api/upload",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({dataUrl:jpeg})});
+      if(r.ok){ const d=await r.json(); if(d&&d.url){ url=d.url; meta={alt:d.alt||"",description:d.description||""}; } }
+    }catch(e){}
+    if(!url){ try{ url = await exportWebp(); }catch(e){ toast&&toast("Eroare la salvare"); btn.disabled=false; btn.textContent="Salvează"; return; } }
+    const cb=st.onSave; close(); cb&&cb(url, meta);
+  }
+
+  function close(){ overlay.classList.remove("on"); }
+  window.openPhotoEditor = function(initialSrc, onSave){
+    if(!overlay) build();
+    st = freshState(); st.onSave = onSave;
+    overlay.querySelectorAll(".pe-range").forEach(r=>{r.value=100;});
+    overlay.querySelectorAll('[data-av]').forEach(s=>s.textContent="100");
+    overlay.querySelectorAll(".pe-fbtn").forEach(b=>b.classList.toggle("on",b.dataset.preset==="none"));
+    ctrls.tctrl.hidden=true; overlay.querySelector('[data-act="save"]').disabled=false; overlay.querySelector('[data-act="save"]').textContent="Salvează";
+    overlay.classList.add("on");
+    loadSrc(initialSrc||"");
+  };
+})();
+
+/* ---- image field + photo list (uses openPhotoEditor) ---- */
+function imageField(obj,key,label,opts){
+  opts=opts||{};
+  const wrap=h("div",{class:"field"});
+  if(label) wrap.appendChild(h("label",{},label));
+  const prev=h("div",{class:"img-prev"});
+  function refresh(){ prev.innerHTML=""; if(obj[key]) prev.appendChild(h("img",{src:obj[key],alt:""})); else prev.appendChild(h("span",{class:"img-empty"},"fără imagine")); }
+  refresh();
+  const edit=h("button",{class:"btn btn-out sm",type:"button",onclick:()=>openPhotoEditor(obj[key]||"",(u,meta)=>{obj[key]=u;refresh();markDirty();opts.onSaved&&opts.onSaved(meta||{});})},
+    h("span",{html:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>'}),"Încarcă / Editează");
+  const rm=h("button",{class:"btn-ghost sm",type:"button",onclick:()=>{obj[key]="";refresh();markDirty();}},"Elimină");
+  wrap.appendChild(h("div",{class:"img-row"},prev,h("div",{class:"img-acts"},edit,rm)));
+  return wrap;
+}
+function renderPhotos(host,arr){
+  host.innerHTML="";
+  arr.forEach((p,i)=>{
+    const alt=h("input",{class:"inp",placeholder:"Descriere (alt)"}); alt.value=p.imageAlt||""; alt.oninput=()=>{p.imageAlt=alt.value;markDirty();};
+    const acts=h("div",{class:"photo-acts"},
+      i>0?h("button",{class:"btn-ghost sm",type:"button",onclick:()=>{const t=arr[i-1];arr[i-1]=arr[i];arr[i]=t;renderPhotos(host,arr);markDirty();}},"↑"):null,
+      i<arr.length-1?h("button",{class:"btn-ghost sm",type:"button",onclick:()=>{const t=arr[i+1];arr[i+1]=arr[i];arr[i]=t;renderPhotos(host,arr);markDirty();}},"↓"):null,
+      h("button",{class:"btn-ghost sm",type:"button",style:"color:var(--red)",onclick:()=>{arr.splice(i,1);renderPhotos(host,arr);markDirty();}},"Șterge"));
+    host.appendChild(h("div",{class:"photo-card"},
+      h("div",{class:"photo-tag"}, i===0?"Foto principală (hero)":("Foto "+(i+1))),
+      imageField(p,"photoName","",{onSaved:(meta)=>{ if(meta&&meta.alt&&!p.imageAlt){p.imageAlt=meta.alt; renderPhotos(host,arr);} }}),
+      h("div",{class:"field",style:"margin-top:8px"},alt),
+      acts));
+  });
+  host.appendChild(h("button",{class:"btn btn-out sm",type:"button",style:"margin-top:4px",onclick:()=>openPhotoEditor("",(u,meta)=>{arr.push({photoName:u,imageAlt:(meta&&meta.alt)||""});renderPhotos(host,arr);markDirty();})},
+    h("span",{html:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>'}),"Adaugă poză"));
+}
 function renderContent(){
   const P=state.property,box=$("#contentEditor"),C=window.CATALOG||{};box.innerHTML="";
   box.appendChild(accordion("Informații de bază","Identitatea unității",b=>{
@@ -625,10 +1019,14 @@ function renderContent(){
     b.appendChild(h("div",{class:"grid2",style:"margin-top:14px"},field(P.basicInfo,"latitude",{label:"Latitudine",type:"number"}),field(P.basicInfo,"longitude",{label:"Longitudine",type:"number"})));
   },true));
   box.appendChild(accordion("Gazdă","Date despre gazdă și limbi vorbite",b=>{
-    b.appendChild(h("div",{class:"grid2"},field(P.host,"hostName",{label:"Nume gazdă"}),field(P.host,"hostImage",{label:"Imagine gazdă (URL)"})));
+    b.appendChild(h("div",{class:"grid2"},field(P.host,"hostName",{label:"Nume gazdă"}),imageField(P.host,"hostImage","Imagine gazdă")));
     b.appendChild(h("div",{class:"field",style:"margin-top:12px"},h("label",{},"Descriere gazdă"),ta(P.host,"hostUnitDescription")));
     b.appendChild(h("div",{class:"fac-label",style:"margin-top:14px"},"Limbi vorbite"));
     facBlock(b,"",P.host.spokenLanguages,LANG_OPTS,"string");
+  }));
+  box.appendChild(accordion("Fotografii","Pozele proprietății. Prima e principală (hero); restul intră în galerie și pe pagina publică.",b=>{
+    if(!Array.isArray(P._photos)) P._photos=[];
+    const host=h("div",{}); b.appendChild(host); renderPhotos(host,P._photos);
   }));
   box.appendChild(accordion("Descriere & beneficii","Text de prezentare, beneficii, facilități apreciate",b=>{
     b.appendChild(h("div",{class:"field"},h("label",{},"Descriere unitate"),ta(P,"description")));
