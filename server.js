@@ -6,7 +6,7 @@ const { pool, init } = require("./db");
 const { STAY } = require("./transform");
 const sharp = require("sharp");
 const { r2put, r2ready } = require("./r2");
-const { describeImage } = require("./ai");
+const { describeImage, enhanceImage } = require("./ai");
 
 const app = express();
 app.use(express.json({ limit: "25mb" }));
@@ -136,6 +136,25 @@ app.use(async (req, res, next) => {
 });
 
 /* ---------- API ---------- */
+app.post("/api/ai-enhance", async (req, res) => {
+  try {
+    let base64, mime;
+    if (req.body.url) {
+      const r = await fetch(req.body.url);
+      if (!r.ok) throw new Error("fetch image " + r.status);
+      mime = r.headers.get("content-type") || "image/jpeg";
+      base64 = Buffer.from(await r.arrayBuffer()).toString("base64");
+    } else {
+      const m = String(req.body.dataUrl || "").match(/^data:(image\/[\w+.-]+);base64,(.+)$/);
+      if (!m) return res.status(400).json({ error: "bad image" });
+      mime = m[1]; base64 = m[2];
+    }
+    const out = await enhanceImage(base64, mime);
+    if (!out) return res.status(502).json({ error: "AI enhance failed" });
+    res.json({ dataUrl: "data:" + out.mime + ";base64," + out.image });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post("/api/upload", async (req, res) => {
   try {
     if (!r2ready()) return res.status(503).json({ error: "R2 not configured" });
