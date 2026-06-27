@@ -174,6 +174,13 @@ textarea.inp{min-height:70px;resize:vertical;line-height:1.5}
 .cmp-hint{text-align:center;font-size:12px;color:var(--muted);padding:8px}
 .cmp-foot{display:flex;align-items:center;gap:10px;padding:12px 18px;border-top:1px solid var(--line-2)}
 
+
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+@media(max-width:680px){.grid4{grid-template-columns:repeat(2,1fr)}}
+.room-block{border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;background:#fafbfc}
+.room-head{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.room-head b{font-size:15px;color:var(--ink)}
+.room-tag{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--brand);background:var(--brand-soft);padding:3px 8px;border-radius:6px}
 .gal-block{border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px;background:#fff}
 .gal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .gal-head b{font-size:16px;color:var(--ink)}
@@ -1188,6 +1195,53 @@ function renderPhotos(host,arr){
   host.appendChild(h("button",{class:"btn btn-out sm",type:"button",style:"margin-top:4px",onclick:()=>openPhotoEditor("",(u,meta)=>{arr.push({photoName:u,imageAlt:(meta&&meta.alt)||""});renderPhotos(host,arr);markDirty();})},
     h("span",{html:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>'}),"Adaugă poză"));
 }
+/* ---- Camere & detalii: per-room editor (capacity, beds, surface, view, facilities) ---- */
+function bedroomsEditor(host, spaces){
+  host.innerHTML="";
+  spaces.forEach((sp,i)=>{
+    if(!sp.spaceType||typeof sp.spaceType!=="object") sp.spaceType={name:"",beds:[]};
+    const stp=sp.spaceType;
+    if(!Array.isArray(stp.beds)) stp.beds=[];
+    if(!stp.beds.length) stp.beds.push({type:"",count:1});
+    const bed=stp.beds[0];
+    const name=h("input",{class:"inp",placeholder:"ex: Dormitor 1"}); name.value=stp.name||""; name.oninput=()=>{stp.name=name.value;markDirty();};
+    const type=h("input",{class:"inp",placeholder:"ex: pat dublu"}); type.value=bed.type||""; type.oninput=()=>{bed.type=type.value;markDirty();};
+    const cnt=h("input",{class:"inp short",type:"number",min:"1"}); cnt.value=bed.count||1; cnt.oninput=()=>{bed.count=+cnt.value||1;markDirty();};
+    const del=h("button",{class:"rep-del",title:"Șterge",onclick:()=>{spaces.splice(i,1);bedroomsEditor(host,spaces);markDirty();}},
+      h("span",{html:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>'}));
+    host.appendChild(h("div",{class:"rep"},h("div",{style:"display:grid;grid-template-columns:2fr 1.4fr 70px;gap:8px;flex:1"},name,type,cnt),del));
+  });
+  host.appendChild(h("button",{class:"btn btn-out sm",onclick:()=>{spaces.push({spaceType:{name:"",beds:[{type:"",count:1}]}});bedroomsEditor(host,spaces);markDirty();}},"+ Adaugă dormitor/spațiu"));
+}
+function renderRoomsDetail(host){
+  host.innerHTML="";
+  const rooms=(state.pricing&&state.pricing.rooms)||[];
+  if(!rooms.length){ host.appendChild(h("p",{class:"intro"},"Adaugă întâi variante de unitate în tab-ul Prețuri.")); return; }
+  rooms.forEach(r=>{
+    if(!r.details||typeof r.details!=="object") r.details={};
+    const d=r.details;
+    ["view","keyFacilities","bathroomFacilities","kitchenFacilities","unitFacilities"].forEach(k=>{ if(!Array.isArray(d[k])) d[k]=[]; });
+    if(!Array.isArray(d.spaces)) d.spaces=[];
+    const body=h("div",{});
+    body.appendChild(h("div",{class:"grid4"},
+      field(d,"adultsRoomCapacity",{label:"Adulți",type:"number"}),
+      field(d,"childrenRoomCapacity",{label:"Copii",type:"number"}),
+      field(d,"surface",{label:"Suprafață"}),
+      field(d,"bathroomsNumber",{label:"Nr. băi",type:"number"})));
+    body.appendChild(h("div",{class:"field",style:"margin-top:12px"},h("label",{},"Descriere cameră"),ta(d,"roomDescription")));
+    const sec=(label,arr,ph)=>{ body.appendChild(h("div",{class:"fac-label",style:"margin-top:16px"},label)); const hh=h("div",{}); body.appendChild(hh); stringList(hh,arr,ph,"adaugă"); };
+    body.appendChild(h("div",{class:"fac-label",style:"margin-top:16px"},"Dormitoare / paturi"));
+    const bedsHost=h("div",{}); body.appendChild(bedsHost); bedroomsEditor(bedsHost,d.spaces);
+    sec("Priveliște",d.view,"ex: Vedere la munte");
+    sec("Facilități cheie",d.keyFacilities,"ex: Balcon, Bucătărie privată");
+    sec("Facilități baie",d.bathroomFacilities,"ex: Halat de baie");
+    sec("Facilități bucătărie",d.kitchenFacilities,"ex: Cuptor cu microunde");
+    host.appendChild(h("div",{class:"room-block"},
+      h("div",{class:"room-head"},h("b",{},r.name||r.id), r.isEntire?h("span",{class:"room-tag"},"toată unitatea"):null),
+      body));
+  });
+}
+
 function renderContent(){
   const P=state.property,box=$("#contentEditor"),C=window.CATALOG||{};box.innerHTML="";
   box.appendChild(accordion("Informații de bază","Identitatea unității",b=>{
@@ -1207,6 +1261,9 @@ function renderContent(){
   box.appendChild(accordion("Fotografii","Pozele proprietății. Prima e principală (hero); restul intră în galerie și pe pagina publică.",b=>{
     if(!Array.isArray(P._photos)) P._photos=[];
     const host=h("div",{}); b.appendChild(host); renderPhotos(host,P._photos);
+  }));
+  box.appendChild(accordion("Camere & detalii","Capacitate, paturi, suprafață, priveliște și facilități pentru fiecare variantă — apar pe pagina de rezervare",b=>{
+    const host=h("div",{}); b.appendChild(host); renderRoomsDetail(host);
   }));
   box.appendChild(accordion("Descriere & beneficii","Text de prezentare, beneficii, facilități apreciate",b=>{
     b.appendChild(h("div",{class:"field"},h("label",{},"Descriere unitate"),ta(P,"description")));
