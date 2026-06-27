@@ -56,11 +56,12 @@ header.nav.solid{position:fixed;background:rgba(27,39,66,.96);backdrop-filter:bl
 
 /* HERO */
 .hero{position:relative;padding:0 16px 16px}
-.hero-img{position:relative;height:88vh;min-height:560px;border-radius:34px;overflow:hidden;background-position:center;background-size:cover;background-color:var(--navy)}
+.hero-img{position:relative;height:70vh;min-height:460px;max-height:760px;border-radius:34px;overflow:hidden;background-position:center;background-size:cover;background-color:var(--navy)}
 .hero-img::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(20,28,52,.45),rgba(20,28,52,.12) 35%,rgba(18,25,44,.85))}
-.hero-content{position:absolute;left:0;right:0;bottom:0;padding:54px clamp(28px,5vw,68px);z-index:2}
-.hero-loc{display:inline-flex;align-items:center;gap:9px;color:#fff;font-weight:600;font-size:15px;background:rgba(255,255,255,.14);backdrop-filter:blur(6px);padding:9px 16px;border-radius:100px;margin-bottom:20px}
-.hero h1{color:#fff;font-size:clamp(38px,6.2vw,80px);max-width:16ch;letter-spacing:-.03em}
+.hero-content{position:absolute;left:0;right:0;bottom:0;padding:44px clamp(28px,5vw,60px);z-index:2}
+.hero-loc{display:inline-flex;align-items:center;gap:8px;color:#fff;font-weight:600;font-size:15px;background:rgba(255,255,255,.14);backdrop-filter:blur(6px);padding:8px 15px;border-radius:100px;margin-bottom:18px}
+.hero-loc svg{flex:none;width:16px;height:16px}
+.hero h1{color:#fff;font-size:clamp(34px,5vw,62px);max-width:18ch;letter-spacing:-.03em;line-height:1.04}
 .hero .sub{color:rgba(255,255,255,.92);font-size:clamp(17px,2vw,21px);max-width:44ch;margin:18px 0 14px;font-weight:500}
 .hero .price{color:#fff;font-family:var(--font-head);font-weight:700;font-size:18px;margin-bottom:24px}
 .hero .price b{font-size:26px}
@@ -221,12 +222,68 @@ footer a:hover{color:#fff}
 }
 @media(max-width:620px){
   .wrap{padding:0 20px}.sec{padding:60px 0}
-  .hero-img{height:78vh}
+  .hero-img{height:64vh;min-height:420px}
   .rules,.rev-grid,.f-grid,.specs{grid-template-columns:1fr}
   .am-cols{columns:1}
   .specs{grid-template-columns:1fr 1fr}
   body{font-size:16px}.hero-content{padding:32px 24px}
 }
+
+/* ---- booking ---- */
+.bk-intro{color:var(--muted);max-width:52ch;margin:-6px 0 26px}
+.bk-grid{display:grid;grid-template-columns:1fr 360px;gap:28px;align-items:start}
+.bk-options{display:flex;flex-direction:column;gap:12px}
+.bk-card{display:flex;align-items:center;justify-content:space-between;gap:16px;border:1px solid var(--line);border-radius:18px;padding:18px 20px;background:#fff;transition:border-color .15s,box-shadow .15s}
+.bk-card.on{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+.bk-entire{background:color-mix(in srgb,var(--accent) 7%,#fff);border-style:solid}
+.bk-card-main{display:flex;align-items:center;gap:22px;flex:1;flex-wrap:wrap}
+.bk-card-name b{display:block;font-family:var(--font-head);font-size:18px;color:var(--navy)}
+.bk-card-name small{color:var(--muted);font-size:13.5px}
+.bk-price{display:flex;align-items:baseline;gap:5px;color:var(--navy);white-space:nowrap}
+.bk-price span{font-size:12px;color:var(--muted)}
+.bk-price b{font-family:var(--font-head);font-size:21px}
+.bk-price small{font-size:12px;color:var(--muted)}
+.bk-sel{border:1.5px solid var(--accent);background:#fff;color:var(--accent);font-weight:700;font-size:14px;border-radius:11px;padding:11px 20px;cursor:pointer;white-space:nowrap}
+.bk-card.on .bk-sel{background:var(--accent);color:#fff}
+.bk-summary{position:sticky;top:90px;border:1px solid var(--line);border-radius:22px;padding:22px;background:#fff;box-shadow:0 18px 50px -28px rgba(20,28,52,.4)}
+.bk-summary h3{font-family:var(--font-head);font-size:18px;color:var(--navy);margin-bottom:14px}
+.bk-datebtn{display:flex;align-items:center;gap:10px;width:100%;border:1px solid var(--line);background:#fafbff;border-radius:13px;padding:13px 15px;font-size:14.5px;color:var(--navy);cursor:pointer;font-weight:600;margin-bottom:14px}
+.bk-datebtn svg{color:var(--accent);flex:none}
+.bk-selected{border-top:1px solid var(--line);padding-top:14px;min-height:24px}
+.bk-selected small{color:var(--muted)}
+.bk-srow{display:flex;justify-content:space-between;gap:10px;padding:5px 0;font-size:14.5px;color:var(--navy)}
+.bk-srow b{font-weight:700}
+.bk-total{margin:10px 0 4px}
+.bk-trow{display:flex;justify-content:space-between;align-items:baseline;border-top:1px dashed var(--line);padding-top:12px;font-family:var(--font-head)}
+.bk-trow b{font-size:22px;color:var(--navy)}
+.bk-total small{color:var(--muted);font-size:13px}
+.bk-send{width:100%;justify-content:center;margin-top:14px}
+.bk-note{text-align:center;color:var(--muted);font-size:12px;margin-top:9px}
+/* calendar modal */
+.cal-overlay{position:fixed;inset:0;background:rgba(20,28,52,.55);display:none;align-items:center;justify-content:center;z-index:120;padding:16px;backdrop-filter:blur(2px)}
+.cal-overlay.on{display:flex}
+.cal-modal{background:#fff;border-radius:20px;width:100%;max-width:430px;overflow:hidden;box-shadow:0 30px 80px -20px rgba(0,0,0,.5)}
+.cal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--line)}
+.cal-head b{font-family:var(--font-head);font-size:16px;color:var(--navy)}
+.cal-x{background:none;border:0;font-size:26px;line-height:1;color:var(--muted);cursor:pointer}
+.cal-nav{display:flex;align-items:center;justify-content:space-between;padding:14px 20px 6px}
+.cal-nav span{font-family:var(--font-head);font-size:15px;color:var(--navy);text-transform:capitalize}
+.cal-nav button{width:34px;height:34px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:18px;cursor:pointer;color:var(--navy)}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;padding:6px 16px 10px}
+.cal-dow{text-align:center;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;padding:6px 0}
+.cal-day{aspect-ratio:1;border:0;background:#fff;border-radius:9px;font-size:14px;color:var(--navy);cursor:pointer;font-weight:600}
+.cal-day:hover:not(.off){background:color-mix(in srgb,var(--accent) 14%,#fff)}
+.cal-day.off{color:#c4c9d6;cursor:not-allowed;font-weight:400}
+.cal-day.blocked{text-decoration:line-through;background:#fbeaea;color:#c98a8a}
+.cal-day.range{background:color-mix(in srgb,var(--accent) 16%,#fff);border-radius:0}
+.cal-day.sel{background:var(--accent);color:#fff}
+.cal-legend{display:flex;gap:16px;justify-content:center;padding:6px 16px 12px;font-size:12px;color:var(--muted)}
+.cal-legend span{display:flex;align-items:center;gap:6px}
+.lg{width:12px;height:12px;border-radius:4px;display:inline-block}
+.lg-free{background:#eef0f6}.lg-block{background:#fbeaea}.lg-sel{background:var(--accent)}
+.cal-foot{display:flex;align-items:center;gap:10px;padding:12px 18px;border-top:1px solid var(--line)}
+.cal-foot #calInfo{font-size:13px;color:var(--muted)}
+@media(max-width:860px){.bk-grid{grid-template-columns:1fr}.bk-summary{position:static}}
 </style>
 </head>
 <body id="top">
@@ -551,7 +608,7 @@ function rNav(){
       <span><b>${esc(THEME.brandName)}</b>${THEME.brandSub?`<small>${esc(THEME.brandSub)}</small>`:''}</span>
     </a>
     <nav class="nav-links">
-      <a href="#vila">Vila</a>${facHref?`<a href="${facHref}">Facilități</a>`:''}
+      <a href="#vila">Vila</a>${has(PROPERTY.rentals)?'<a href="#rezervare">Rezervare</a>':''}${facHref?`<a href="${facHref}">Facilități</a>`:''}
       ${has(PROPERTY.galleries)?'<a href="#galerie">Galerie</a>':''}
       ${has(PROPERTY.reviews&&PROPERTY.reviews.items)?'<a href="#recenzii">Recenzii</a>':''}
       <a href="#contact">Contact</a>
@@ -572,7 +629,7 @@ function rHero(){
   const pr=PROPERTY.priceFrom;
   return `<section class="hero"><div class="hero-img" style="background-image:url('${esc(PROPERTY.photos&&PROPERTY.photos.hero||'')}')">
     <div class="hero-content">
-      ${locline?`<span class="hero-loc">${icon('view').replace('width="30" height="30"','')}<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none"></svg>${esc(locline)}</span>`:''}
+      ${locline?`<span class="hero-loc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>${esc(locline)}</span>`:''}
       <h1>${esc(PROPERTY.tagline||PROPERTY.name)}</h1>
       ${PROPERTY.intro?`<p class="sub">${esc(PROPERTY.intro)}</p>`:''}
       ${pr?`<div class="price">de la <b>${esc(pr.amount)} ${esc(pr.currency)}</b> / ${esc(pr.unit)}</div>`:''}
@@ -767,10 +824,174 @@ function setTheme(){
   document.title = PROPERTY.name + (PROPERTY.location&&PROPERTY.location.area?` · ${PROPERTY.location.area}`:'');
 }
 
+/* ===== Booking: rentable options (entire vs rooms, exclusive) + iCal availability calendar ===== */
+function rBooking(){
+  const R = (PROPERTY.rentals||[]);
+  if(!R.length) return '';
+  const cur = (R[0]&&R[0].currency)||'RON';
+  const entire = !!PROPERTY.entireUnitRental;
+  const entR = R.find(r=>r.isEntire);
+  const rooms = entire ? R.filter(r=>!r.isEntire) : R;
+  const entW = entR ? entR.weekday : Math.min.apply(null, R.map(r=>r.weekday||Infinity));
+  const priceTag = (amt,c)=>`<div class="bk-price"><span>de la</span><b>${esc(String(amt))} ${esc(c||cur)}</b><small>/noapte</small></div>`;
+  const card = (opt)=>`
+    <div class="bk-card" data-rid="${esc(opt.id)}">
+      <div class="bk-card-main">
+        <div class="bk-card-name"><b>${esc(opt.name)}</b>${opt.sub?`<small>${esc(opt.sub)}</small>`:''}</div>
+        ${priceTag(opt.weekday, opt.currency)}
+      </div>
+      <button type="button" class="bk-sel" data-rid="${esc(opt.id)}">Selectează</button>
+    </div>`;
+  const entireCard = entire ? `
+    <div class="bk-card bk-entire" data-rid="__entire">
+      <div class="bk-card-main">
+        <div class="bk-card-name"><b>Toată proprietatea</b><small>Închiriere integrală${PROPERTY.capacity?` · până la ${esc(String(PROPERTY.capacity))} oaspeți`:''}</small></div>
+        ${priceTag(isFinite(entW)?entW:'',cur)}
+      </div>
+      <button type="button" class="bk-sel" data-rid="__entire">Selectează</button>
+    </div>` : '';
+  return `<section class="sec" id="rezervare"><div class="wrap">
+    <h2 class="rv">Camere și prețuri</h2>
+    <p class="bk-intro rv">${entire?'Închiriază toată proprietatea sau alege camere individuale. Verifică disponibilitatea pe calendar.':'Alege o variantă și verifică disponibilitatea pe calendar.'}</p>
+    <div class="bk-grid">
+      <div class="bk-options rv">
+        ${entireCard}
+        ${rooms.map(o=>card(o)).join('')}
+      </div>
+      <aside class="bk-summary rv">
+        <h3>Rezervarea ta</h3>
+        <button type="button" class="bk-datebtn" id="bkDates">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+          <span id="bkDatesLbl">Alege datele</span>
+        </button>
+        <div class="bk-selected" id="bkSelected"><small>Nu ai selectat nicio variantă</small></div>
+        <div class="bk-total" id="bkTotal"></div>
+        <a class="btn btn-accent bk-send" id="bkSend" href="#">Trimite solicitarea</a>
+        <p class="bk-note">Nu vei fi taxat la etapa aceasta.</p>
+      </aside>
+    </div></div>
+    <div class="cal-overlay" id="calOv"><div class="cal-modal">
+      <div class="cal-head"><b>Alege perioada</b><button type="button" class="cal-x" id="calX">&times;</button></div>
+      <div class="cal-nav"><button type="button" id="calPrev" aria-label="Luna anterioară">‹</button><span id="calTitle"></span><button type="button" id="calNext" aria-label="Luna următoare">›</button></div>
+      <div class="cal-grid" id="calGrid"></div>
+      <div class="cal-legend"><span><i class="lg lg-free"></i>Liber</span><span><i class="lg lg-block"></i>Ocupat</span><span><i class="lg lg-sel"></i>Selectat</span></div>
+      <div class="cal-foot"><span id="calInfo"></span><div style="flex:1"></div><button type="button" class="btn btn-out" id="calClear">Șterge</button><button type="button" class="btn btn-accent" id="calOk">Confirmă</button></div>
+    </div></div>
+  </section>`;
+}
+
+function _som(d){ return new Date(d.getFullYear(),d.getMonth(),1); }
+function _piso(s){ const a=s.split('-').map(Number); return new Date(a[0],a[1]-1,a[2]); }
+function _iso(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function _fmtH(s){ return _piso(s).toLocaleDateString('ro-RO',{day:'numeric',month:'short'}); }
+
+function initBooking(){
+  const sec = document.getElementById('rezervare'); if(!sec) return;
+  const R = PROPERTY.rentals||[]; if(!R.length) return;
+  const cur = (R[0]&&R[0].currency)||'RON';
+  const slug = (window.STAY_SLUG||new URLSearchParams(location.search).get('slug')||'');
+  const byId={}; R.forEach(r=>byId[r.id]=r);
+  const entR = R.find(r=>r.isEntire)||null;
+  const st = { entire:false, rooms:new Set(), ci:null, co:null, blocked:{}, month:_som(new Date()) };
+  const $ = s=>sec.querySelector(s);
+
+  if(slug){ fetch('/api/availability/'+encodeURIComponent(slug)).then(r=>r.ok?r.json():null).then(d=>{ if(d&&d.units) st.blocked=d.units; }).catch(()=>{}); }
+
+  function selectedIds(){ return st.entire?['__entire']:[...st.rooms]; }
+  function entireOpt(){
+    if(entR) return {name:'Toată proprietatea',weekday:entR.weekday,weekend:entR.weekend||entR.weekday,currency:cur,minNights:entR.minNights||1};
+    const w=Math.min.apply(null,R.map(r=>r.weekday||Infinity)), we=Math.min.apply(null,R.map(r=>r.weekend||r.weekday||Infinity));
+    return {name:'Toată proprietatea',weekday:isFinite(w)?w:0,weekend:isFinite(we)?we:0,currency:cur,minNights:1};
+  }
+  function optFor(id){ return id==='__entire'?entireOpt():byId[id]; }
+  function activeBlocked(){
+    const s=new Set();
+    if(st.entire){ ((entR?st.blocked[entR.id]:st.blocked.__all)||[]).forEach(d=>s.add(d)); }
+    else { st.rooms.forEach(rid=>(st.blocked[rid]||[]).forEach(d=>s.add(d))); }
+    return s;
+  }
+  function nights(){ if(!st.ci||!st.co) return []; const out=[]; for(let d=_piso(st.ci); _iso(d)<st.co; d.setDate(d.getDate()+1)) out.push(_iso(d)); return out; }
+  function priceOf(opt,ds){ let t=0; ds.forEach(s=>{ const wd=_piso(s).getDay(); t+=(wd===5||wd===6)?(opt.weekend||opt.weekday||0):(opt.weekday||0); }); return t; }
+
+  sec.querySelectorAll('.bk-sel').forEach(btn=>btn.onclick=()=>{
+    const rid=btn.dataset.rid;
+    if(rid==='__entire'){ st.entire=!st.entire; if(st.entire) st.rooms.clear(); }
+    else { if(st.rooms.has(rid)) st.rooms.delete(rid); else { st.rooms.add(rid); st.entire=false; } }
+    refreshSel();
+  });
+  function refreshSel(){
+    sec.querySelectorAll('.bk-card').forEach(c=>{
+      const rid=c.dataset.rid, on = rid==='__entire'?st.entire:st.rooms.has(rid);
+      c.classList.toggle('on',on);
+      c.querySelector('.bk-sel').textContent = on?'Selectat ✓':'Selectează';
+    });
+    renderSummary();
+  }
+  function renderSummary(){
+    const ids=selectedIds();
+    $('#bkDatesLbl').textContent = (st.ci&&st.co)?(_fmtH(st.ci)+' → '+_fmtH(st.co)):'Alege datele';
+    const sel=$('#bkSelected'), tot=$('#bkTotal');
+    if(!ids.length){ sel.innerHTML='<small>Nu ai selectat nicio variantă</small>'; tot.innerHTML=''; return; }
+    const ds=nights(); let rows='', total=0;
+    ids.forEach(id=>{ const o=optFor(id), p=ds.length?priceOf(o,ds):0; total+=p;
+      rows+='<div class="bk-srow"><span>'+esc(o.name)+'</span><b>'+(ds.length?(p+' '+cur):'—')+'</b></div>'; });
+    sel.innerHTML=rows;
+    tot.innerHTML = ds.length? ('<div class="bk-trow"><span>'+ds.length+' nopți</span><b>'+total+' '+cur+'</b></div>') : '<small>Alege datele pentru a vedea totalul</small>';
+  }
+
+  const ov=$('#calOv');
+  $('#bkDates').onclick=()=>{ if(!selectedIds().length){ flash('Alege întâi o variantă'); return; } st.month=_som(st.ci?_piso(st.ci):new Date()); ov.classList.add('on'); drawCal(); };
+  $('#calX').onclick=()=>ov.classList.remove('on');
+  ov.onclick=e=>{ if(e.target===ov) ov.classList.remove('on'); };
+  $('#calPrev').onclick=()=>{ st.month.setMonth(st.month.getMonth()-1); drawCal(); };
+  $('#calNext').onclick=()=>{ st.month.setMonth(st.month.getMonth()+1); drawCal(); };
+  $('#calClear').onclick=()=>{ st.ci=null; st.co=null; $('#calInfo').textContent=''; drawCal(); };
+  $('#calOk').onclick=()=>{ ov.classList.remove('on'); renderSummary(); };
+  function drawCal(){
+    const blocked=activeBlocked(), m=st.month, y=m.getFullYear(), mo=m.getMonth();
+    $('#calTitle').textContent = m.toLocaleDateString('ro-RO',{month:'long',year:'numeric'});
+    const startDow=(new Date(y,mo,1).getDay()+6)%7, days=new Date(y,mo+1,0).getDate(), today=_iso(new Date());
+    let html=''; ['Lu','Ma','Mi','Jo','Vi','Sâ','Du'].forEach(x=>html+='<div class="cal-dow">'+x+'</div>');
+    for(let i=0;i<startDow;i++) html+='<div></div>';
+    for(let d=1;d<=days;d++){
+      const ds=_iso(new Date(y,mo,d)), past=ds<today, blk=blocked.has(ds);
+      const inR=st.ci&&st.co&&ds>st.ci&&ds<st.co, isCi=ds===st.ci, isCo=ds===st.co;
+      let cls='cal-day'; if(past||blk) cls+=' off'; if(blk) cls+=' blocked'; if(isCi||isCo) cls+=' sel'; if(inR) cls+=' range';
+      html+='<button type="button" class="'+cls+'" data-d="'+ds+'"'+((past||blk)?' disabled':'')+'>'+d+'</button>';
+    }
+    const g=$('#calGrid'); g.innerHTML=html;
+    g.querySelectorAll('.cal-day:not(.off)').forEach(b=>b.onclick=()=>pick(b.dataset.d));
+  }
+  function pick(ds){
+    if(!st.ci || (st.ci&&st.co) || ds<=st.ci){ st.ci=ds; st.co=null; $('#calInfo').textContent=''; }
+    else {
+      const blocked=activeBlocked(); let ok=true;
+      for(let d=_piso(st.ci); _iso(d)<ds; d.setDate(d.getDate()+1)){ const k=_iso(d); if(k!==st.ci && blocked.has(k)){ ok=false; break; } }
+      if(!ok){ $('#calInfo').textContent='Perioada conține zile ocupate'; st.ci=ds; st.co=null; }
+      else { st.co=ds; const n=nights().length; const minN=Math.max.apply(null, selectedIds().map(id=>optFor(id).minNights||1));
+        $('#calInfo').textContent = n<minN ? ('Minim '+minN+' nopți') : (n+' nopți selectate'); }
+    }
+    drawCal();
+  }
+  $('#bkSend').onclick=e=>{
+    e.preventDefault();
+    const ids=selectedIds(); if(!ids.length){ flash('Alege o variantă'); return; }
+    const names=ids.map(id=>optFor(id).name).join(', ');
+    const dtx=(st.ci&&st.co)?(_fmtH(st.ci)+' → '+_fmtH(st.co)+' ('+nights().length+' nopți)'):'(date neselectate)';
+    const msg='Bună ziua! Aș dori o rezervare la '+PROPERTY.name+'.\nVariantă: '+names+'\nPerioadă: '+dtx;
+    const B=THEME.booking||{};
+    if(B.url) window.open(B.url,'_blank');
+    else if(B.whatsapp) window.open('https://wa.me/'+B.whatsapp+'?text='+encodeURIComponent(msg),'_blank');
+    else if(B.phone) window.location.href='tel:'+B.phone;
+  };
+  function flash(t){ const i=$('#bkDatesLbl'); i.textContent=t; setTimeout(()=>renderSummary(),1400); }
+  refreshSel();
+}
+
 function render(){
   setTheme();
   document.getElementById('app').innerHTML = [
-    rNav(), rHero(), rStrip(), rOverview(), rHighlight(),
+    rNav(), rHero(), rStrip(), rOverview(), rBooking(), rHighlight(),
     rGalleries(), rSpaces(), rAmenities(), rReviews(), rRulesAbout(), rFaq(),
     rLocation(), rFooter()
   ].join('') + rStickyCTA();
@@ -810,6 +1031,7 @@ function wire(){
   const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}}),{threshold:.1,rootMargin:'0px 0px -40px 0px'});
   document.querySelectorAll('.rv').forEach(el=>io.observe(el));
   if(matchMedia('(prefers-reduced-motion: reduce)').matches) document.querySelectorAll('.rv').forEach(el=>el.classList.add('in'));
+  try{ initBooking(); }catch(e){ console.error('booking init', e); }
 }
 
 /* mark JS active so reveal animations apply; without JS, content stays visible */
