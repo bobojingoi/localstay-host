@@ -89,6 +89,20 @@
       grp("Media & tehnologie",P.allFacilities.mediaTechnology||[])
     ].filter(Boolean);
 
+    // highlight: data-driven from REAL facilities (no invented pool/spa claims)
+    const _well=(P.allFacilities.wellness||[]).map(nm).filter(Boolean);
+    const _ext=(P.allFacilities.exterior||[]).map(nm).filter(Boolean);
+    const _sport=(P.activities.sportsAndRecreation||[]).map(nm).filter(Boolean);
+    const _ent=(P.activities.entertainmentAndFamilyServices||[]).map(nm).filter(Boolean);
+    const _hImg=photos[2]||photos[1]||photos[0]||"";
+    const _cand=[
+      {names:_well, eyebrow:"Pentru relaxare", heading:(flags.pool?"Piscină, spa & wellness":"Spa & wellness"), text:"Centrul de wellness completează experiența cazării — relaxare după o zi petrecută afară."},
+      {names:_ext, eyebrow:"În aer liber", heading:"Spațiu exterior & relaxare", text:"Spații exterioare pentru relaxare și timp petrecut împreună."},
+      {names:_sport.concat(_ent), eyebrow:"Activități", heading:"Activități & recreere", text:"Opțiuni de petrecere a timpului pentru un sejur activ."}
+    ];
+    let highlight=null;
+    for(const c of _cand){ if(c.names.length){ highlight={eyebrow:c.eyebrow,heading:c.heading,text:c.text,image:_hImg,features:take(c.names,4).map(n=>({icon:icon(n),label:n}))}; break; } }
+
     // amenities grid (full)
     const amenities=[];
     if(P.mostAppreciatedFacilities&&P.mostAppreciatedFacilities.length)
@@ -114,7 +128,7 @@
     if(bi.roomsNumber)about.push({label:"Dormitoare",value:bi.roomsNumber});
     if(bi.unitBathroomsNumber)about.push({label:"Băi",value:bi.unitBathroomsNumber});
     if(bi.unitSurface)about.push({label:"Suprafață",value:bi.unitSurface});
-    if(flags.pool||flags.spa)about.push({label:"Wellness",value:"Piscină interioară, spa și saună"});
+    if(_well.length)about.push({label:"Wellness",value:take(_well,3).join(", ")});
     if(city)about.push({label:"Localizare",value:[bi.locality,city].filter(Boolean).join(", ")});
     if(po.parkingPolicy)about.push({label:"Parcare",value:po.parkingPolicy});
 
@@ -137,7 +151,7 @@
       priceFrom:(isFinite(minPrice)&&minPrice>0)?{amount:minPrice,currency:(pricing.rooms[0]&&pricing.rooms[0].currency)||"RON",unit:"noapte"}:null,
       photos:{hero:photos[0]||"",strip:take(photos,5)},
       overview:{image:photos[1]||photos[0]||"",heading:((bi.unitType||"Cazare")+(flags.pool?" cu piscină și spa":"")+(city?" în "+city:"")),description:desc,features},
-      flags, galleries, spaces, amenities, rules,
+      flags, galleries, spaces, highlight, amenities, rules,
       entireUnitRental:!!bi.entireUnitRental,
       rentals:((pricing&&pricing.rooms)||[]).map(r=>{
         const d=r.details||{};
