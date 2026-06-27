@@ -4,9 +4,12 @@ const path = require("path");
 const fs = require("fs");
 const { pool, init } = require("./db");
 const { STAY } = require("./transform");
+const sharp = require("sharp");
+const { r2put, r2ready } = require("./r2");
+const { describeImage } = require("./ai");
 
 const app = express();
-app.use(express.json({ limit: "5mb" }));
+app.use(express.json({ limit: "25mb" }));
 
 const PUBLIC = path.join(__dirname, "public");
 const BASE_DOMAIN = (process.env.BASE_DOMAIN || "").toLowerCase(); // e.g. staypredeal.ro
@@ -133,6 +136,33 @@ app.use(async (req, res, next) => {
 });
 
 /* ---------- API ---------- */
+app.post("/api/upload", async (req, res) => {
+  try {
+    if (!r2ready()) return res.status(503).json({ error: "R2 not configured" });
+    const m = String(req.body.dataUrl || "").match(/^data:(image\/[\w+.-]+);base64,(.+)$/);
+    if (!m) return res.status(400).json({ error: "bad image" });
+    const input = Buffer.from(m[2], "base64");
+
+    // optimize: auto-rotate (EXIF), resize<=1600, auto-contrast, sharpen, WebP + a thumbnail
+    const main = await sharp(input).rotate()
+      .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
+      .normalize().sharpen().webp({ quality: 82 }).toBuffer();
+    const thumb = await sharp(input).rotate()
+      .resize({ width: 480, height: 480, fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 75 }).toBuffer();
+
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    const url = await r2put("photos/" + id + ".webp", main, "image/webp");
+    let thumbUrl = "";
+    try { thumbUrl = await r2put("photos/" + id + "_t.webp", thumb, "image/webp"); } catch (e) {}
+
+    let alt = "", description = "";
+    try { const ai = await describeImage(main.toString("base64"), "image/webp"); alt = ai.alt; description = ai.description; } catch (e) {}
+
+    res.json({ url, thumb: thumbUrl, alt, description });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post("/api/import", async (req, res) => {
   try {
     const master = req.body;
