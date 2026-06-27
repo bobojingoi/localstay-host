@@ -1,175 +1,1094 @@
-/* ============================================================
-   STAY transform — shared by importer, admin, and site.
-   Turns a master-schema JSON (general.* + rooms/reviews/photos)
-   into: (a) the admin state {property, pricing, units}
-        (b) the site PROPERTY the template renders.
-   Exposed as window.STAY.
-   ============================================================ */
-(function(){
-  const RO={foodAndDrinks:"Mâncare & băutură",generalFacilities:"Facilități generale",wellness:"Wellness",exterior:"Exterior",cleaningServices:"Curățenie",businessFacilities:"Business",bathroom:"Baie",kitchen:"Bucătărie",bedroom:"Dormitor",comfort:"Confort & accesibilitate",commonAreas:"Zone comune",livingArea:"Zonă de zi",mediaTechnology:"Media & tehnologie",roomFacilities:"Facilitățile camerei",shops:"Magazine",skiing:"Schi",entertainmentAndFamilyServices:"Divertisment & familie",sportsAndRecreation:"Sport & recreere",receptionServices:"Recepție",servicesExtra:"Servicii extra",safety:"Siguranță",generalServices:"Servicii generale"};
-  const FAC_CATS=["foodAndDrinks","generalFacilities","wellness","exterior","cleaningServices","businessFacilities","bathroom","kitchen","bedroom","comfort","commonAreas","livingArea","mediaTechnology","roomFacilities","shops"];
-  const RULE_CATS={foodAndDrinks:1,generalFacilities:1,wellness:1,exterior:1,cleaningServices:1,businessFacilities:1};
+<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Property template</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#1b2742; --navy-2:#16203a; --footer:#171f33;
+  --body:#56607a; --muted:#8a92a6;
+  --accent:#e07d3e; --accent-d:#cb6c30;
+  --green:#1faa57; --soft:#edeffb; --soft-2:#f6f7fb;
+  --line:#e8eaf0; --bg:#ffffff;
+  --radius:28px; --radius-sm:18px;
+  --font-head:"Plus Jakarta Sans",system-ui,sans-serif;
+  --font-body:"Inter",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--body);font-family:var(--font-body);font-size:17px;line-height:1.62;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+h1,h2,h3,h4{margin:0;font-family:var(--font-head);color:var(--navy);font-weight:800;line-height:1.1;letter-spacing:-.02em}
+a{color:inherit;text-decoration:none}
+img{display:block;max-width:100%}
+.wrap{max-width:1180px;margin:0 auto;padding:0 28px}
+.eyebrow{font-family:var(--font-head);font-size:14px;font-weight:700;color:var(--accent);margin-bottom:14px}
+.lead{font-size:19px;line-height:1.65}
+.h2{font-size:clamp(28px,4.2vw,48px);letter-spacing:-.025em}
 
-  function slugify(s){return (s||"unitate").toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,60)||"unitate";}
-  function nm(x){return typeof x==="string"?x:(x&&x.name)||"";}
-  function take(a,n){return (a||[]).slice(0,n);}
-  function icon(name){const s=(name||"").toLowerCase();
-    const M=[["piscin","pool"],["saun","sauna"],["masaj","massage"],["spa","massage"],["semineu","fire"],["șemineu","fire"],["foc","fire"],["gratar","fire"],["grătar","fire"],["teras","terrace"],["balcon","terrace"],["gradin","garden"],["grădin","garden"],["curte","garden"],["parc","parking"],["wifi","wifi"],["internet","wifi"],["restaurant","restaurant"],["bar","restaurant"],["cafea","coffee"],["ceai","coffee"],["tv","lounge"],["lounge","lounge"],["joaca","playground"],["joacă","playground"],["copii","playground"],["jocuri","games"],["joc","games"],["schi","slope"],["partie","slope"],["pârtie","slope"],["spalat vase","dishwasher"],["spălat vase","dishwasher"],["spalat rufe","washer"],["spălat rufe","washer"],["sport","ball"],["tenis","ball"],["badminton","ball"],["pat","bed"],["dormitor","bed"],["check-in","checkin"],["fumat","smoke"],["animal","pet"],["liniste","quiet"],["liniște","quiet"],["petrecer","quiet"]];
-    for(const[k,v]of M)if(s.includes(k))return v; return "view";}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;font-family:var(--font-head);font-weight:700;font-size:16px;border-radius:100px;padding:15px 30px;cursor:pointer;border:1.5px solid transparent;transition:.22s;white-space:nowrap}
+.btn-accent{background:var(--accent);color:#fff}
+.btn-accent:hover{background:var(--accent-d);transform:translateY(-2px)}
+.btn-out{background:#fff;border-color:var(--navy);color:var(--navy)}
+.btn-out:hover{background:var(--navy);color:#fff}
+.btn-wa{background:#fff;border-color:var(--green);color:var(--green)}
+.btn-wa:hover{background:var(--green);color:#fff}
+.btn-ghost{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.5);color:#fff;backdrop-filter:blur(6px)}
+.btn-ghost:hover{background:#fff;color:var(--navy);border-color:#fff}
 
-  /* ---- normalize master -> admin 'property' shape ---- */
-  function normFacilities(af){const o={};FAC_CATS.forEach(c=>{let v=af[c];if(!Array.isArray(v))v=[];o[c]=v;});return o;}
-  function normPolicies(p,cio){
-    const ci=(cio.checkIn)||{},co=(cio.checkOut)||{};
-    const eb=(p.extraBedAgeRates||[]).map(r=>({ageMin:(r.age&&r.age.min)??r.ageMin??0,ageMax:(r.age&&r.age.max)??r.ageMax??0,bedType:r.bedType||"",amount:(r.price&&r.price.amount)??r.amount??0,currency:(r.price&&r.price.currency)||r.currency||"RON",per:(r.price&&r.price.per)||r.per||""}));
-    return {checkIn:{startHour:ci.startHour||"",endHour:ci.endHour||""},checkOut:{startHour:co.startHour||"",endHour:co.endHour||""},
-      childrenPolicies:p.childrenPolicies||"",petsPolicy:p.petsPolicy||"",smokingPolicy:p.smokingUnitPolicy||p.smokingPolicy||"",parkingPolicy:p.parkingPolicy||"",internetPolicy:p.internetPolicy||"",mealPolicy:p.mealPolicy||"",noisePolicy:p.noisePolicy||"",partiesPolicy:p.partiesPolicy||"",groupsPolicy:p.groupsPolicy||"",ageRestriction:p.ageRestriction||"",damageDeposit:p.damageDeposit||"",extraBedAgeRates:eb};
-  }
-  function dist(a){return (a||[]).map(x=>({name:x.name||x.label||"",distance:x.distance??0})).filter(x=>x.name);}
-  function normLocation(L){
-    let slopes=[];(L.zones||[]).forEach(z=>{(z.slopes||[]).forEach(s=>slopes.push({name:s.name||s.label||nm(s),distance:s.distance??0}));});
-    return {mainAttractions:dist(L.mainAttractions),nearbyAttractions:dist(L.nearbyAttractions),slopes:slopes.filter(s=>s.name),publicTransport:dist(L.publicTransport),nearbyAirports:dist(L.nearbyAirports)};
-  }
-  function photoUrl(p){const v=p&&(p.photoName||p.url||p.src||"");return (typeof v==="string"&&(/^https?:/.test(v)||/^data:image\//.test(v)))?v:"";}
+/* NAV */
+header.nav{position:absolute;top:0;left:0;right:0;z-index:60}
+.nav-bar{display:flex;align-items:center;justify-content:space-between;gap:24px;max-width:1180px;margin:0 auto;padding:22px 28px}
+.brand{display:flex;align-items:center;gap:11px;color:#fff}
+.brand .mk{width:38px;height:38px}
+.brand b{font-family:var(--font-head);font-weight:800;font-size:19px;letter-spacing:.02em;line-height:1;color:#fff}
+.brand small{display:block;font-size:10px;letter-spacing:.3em;text-transform:uppercase;color:rgba(255,255,255,.7);margin-top:4px}
+.nav-links{display:flex;align-items:center;gap:30px}
+.nav-links a{color:rgba(255,255,255,.92);font-family:var(--font-head);font-weight:600;font-size:15px}
+.nav-links a:hover{color:#fff}
+.nav-right{display:flex;align-items:center;gap:14px}
+.burger{display:none;background:none;border:0;color:#fff;cursor:pointer;padding:6px}
+header.nav.solid{position:fixed;background:rgba(27,39,66,.96);backdrop-filter:blur(10px);box-shadow:0 6px 30px -18px rgba(0,0,0,.4);animation:drop .3s ease}
+@keyframes drop{from{transform:translateY(-100%)}to{transform:translateY(0)}}
 
-  function deriveAdminState(m){
-    const g=m.general||m, bi=g.basicInfo||{};
-    const rooms=[],units=[],mr=m.rooms||[];
-    if(mr.length){
-      mr.forEach((r,i)=>{const id=slugify(r.roomName||("camera-"+(i+1)));const per=(r.periods&&r.periods[0])||{};
-        rooms.push({id,name:r.roomName||("Cameră "+(i+1)),sub:"",weekday:+per.adult_week_price||496,weekend:+per.adult_weekend_price||+per.adult_week_price||496,currency:per.currency||"RON",minNights:+per.min_nights||1,isEntire:!!bi.entireUnitRental&&i===0,details:r.details||{}});
-        units.push({id,feeds:[],blocks:[]});});
-    }else{const id=slugify(bi.name||"unitate");rooms.push({id,name:bi.name||"Unitate",sub:bi.unitType||"",weekday:496,weekend:496,currency:"RON",minNights:1,isEntire:!!bi.entireUnitRental,details:{}});units.push({id,feeds:[],blocks:[]});}
-    const property={
-      basicInfo:{name:bi.name||"",unitType:bi.unitType||"",starRating:bi.starRating??null,entireUnitRental:!!bi.entireUnitRental,unitCapacity:bi.unitCapacity??null,roomsNumber:bi.roomsNumber??null,unitBathroomsNumber:bi.unitBathroomsNumber??null,unitSurface:bi.unitSurface||"",address:bi.address||"",county:bi.county||"",city:bi.city||"",locality:bi.locality||"",latitude:bi.latitude??null,longitude:bi.longitude??null},
-      host:g.host||{hostName:"",hostImage:"",hostUnitDescription:"",spokenLanguages:[]},
-      description:g.description||m.description||"",
-      benefits:m.benefits||g.benefits||[],
-      mostAppreciatedFacilities:g.mostAppreciatedFacilities||[],
-      allFacilities:normFacilities(g.allFacilities||{}),
-      activities:{skiing:(g.activities&&g.activities.skiing)||[],entertainmentAndFamilyServices:(g.activities&&g.activities.entertainmentAndFamilyServices)||[],sportsAndRecreation:(g.activities&&g.activities.sportsAndRecreation)||[]},
-      services:{receptionServices:(g.services&&g.services.receptionServices)||[],servicesExtra:(g.services&&g.services.servicesExtra)||[],safety:(g.services&&g.services.safety)||[],generalServices:(g.services&&g.services.generalServices)||[]},
-      policies:normPolicies(g.policies||{},g.checkInOut||{}),
-      payment:{paymentMethods:(g.payment&&g.payment.paymentMethods)||[]},
-      location:normLocation(g.location||{}),
-      questionsAndAnswers:g.questionsAndAnswers||m.questionsAndAnswers||[],
-      contact:m.contact||{name:bi.name||"",phone:"",email:"",website:""},
-      _photos:(m.photos&&m.photos.generalPhotos)||[],
-      _reviews:m.reviews||[], _reviewSummary:m.reviewSummary||{}
-    };
-    return {property,pricing:{rooms,periods:[]},units};
-  }
+/* HERO */
+.hero{position:relative;padding:0 16px 16px}
+.hero-img{position:relative;height:70vh;min-height:460px;max-height:760px;border-radius:34px;overflow:hidden;background-position:center;background-size:cover;background-color:var(--navy)}
+.hero-img.no-img{background:radial-gradient(120% 120% at 80% 10%,#2c3c6b 0%,#1c2746 45%,#161f3a 100%)}
+.hero-img::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(20,28,52,.45),rgba(20,28,52,.12) 35%,rgba(18,25,44,.85))}
+.hero-content{position:absolute;left:0;right:0;bottom:0;padding:44px clamp(28px,5vw,60px);z-index:2}
+.hero-loc{display:inline-flex;align-items:center;gap:8px;color:#fff;font-weight:600;font-size:15px;background:rgba(255,255,255,.14);backdrop-filter:blur(6px);padding:8px 15px;border-radius:100px;margin-bottom:18px}
+.hero-loc svg{flex:none;width:16px;height:16px}
+.hero h1{color:#fff;font-size:clamp(34px,5vw,62px);max-width:18ch;letter-spacing:-.03em;line-height:1.04}
+.hero .sub{color:rgba(255,255,255,.92);font-size:clamp(17px,2vw,21px);max-width:44ch;margin:18px 0 14px;font-weight:500}
+.hero .price{color:#fff;font-family:var(--font-head);font-weight:700;font-size:18px;margin-bottom:24px}
+.hero .price b{font-size:26px}
+.hero-cta{display:flex;gap:13px;flex-wrap:wrap}
 
-  /* ---- admin property -> site PROPERTY (what the template renders) ---- */
-  function masterToSite(P,pricing){
-    const bi=P.basicInfo||{}, loc=P.location||{};
-    const city=bi.city||bi.locality||"", county=bi.county?("jud. "+bi.county):"";
-    const minPrice=Math.min.apply(null,((pricing&&pricing.rooms)||[{weekday:0}]).map(r=>r.weekday||0).filter(x=>x>0).concat([Infinity]));
-    const photos=(P._photos||[]).map(photoUrl).filter(Boolean);
-    const desc=P.description||(P.host&&P.host.hostUnitDescription)||"";
-    const firstSentence=(desc.split(/(?<=[.!?])\s/)[0]||desc).slice(0,120);
+/* SECTION */
+.sec{padding:90px 0}
+.sec.tight{padding-top:24px}
 
-    // overview features
-    const features=[];
-    if(bi.unitCapacity)features.push({icon:"guests",label:"Până la "+bi.unitCapacity+" oaspeți"});
-    if(bi.entireUnitRental)features.push({icon:"key",label:"Închiriere integrală"});
-    if(bi.roomsNumber)features.push({icon:"bed",label:bi.roomsNumber+" dormitoare"+(bi.unitBathroomsNumber?" · "+bi.unitBathroomsNumber+" băi":"")});
-    take(P.mostAppreciatedFacilities,2).forEach(f=>features.push({icon:icon(nm(f)),label:nm(f)}));
+/* PHOTO STRIP */
+.strip{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(280px,1fr);gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;padding:4px 28px;margin:0 auto;max-width:1180px;scrollbar-width:none}
+.strip::-webkit-scrollbar{display:none}
+.strip .ph{scroll-snap-align:start;border-radius:var(--radius-sm);overflow:hidden;aspect-ratio:4/3;background:var(--navy) center/cover}
 
-    // flags
-    const allNames=[].concat(...FAC_CATS.map(c=>(P.allFacilities[c]||[]).map(nm)),(P.activities.sportsAndRecreation||[]).map(nm),(P.activities.skiing||[]).map(nm)).join(" ").toLowerCase();
-    const flags={pool:/piscin/.test(allNames),spa:/saun|spa|wellness|masaj/.test(allNames),ski:(P.location.slopes||[]).length>0||/schi|pârtie|partie/.test(allNames),forest:/pădure|padure|forest/.test((P.benefits||[]).join(" ").toLowerCase())};
+/* SPLIT overview */
+.split{display:grid;grid-template-columns:1fr 1fr;gap:60px;align-items:center}
+.split .media{border-radius:var(--radius);overflow:hidden;aspect-ratio:1/1;background:var(--navy) center/cover}
+.split h2{font-size:clamp(28px,3.8vw,44px)}
+.split .desc{margin:20px 0 6px;font-size:18px}
+.frows{margin-top:16px}
+.frow{display:flex;align-items:center;gap:16px;padding:18px 0;border-bottom:1px solid var(--line)}
+.frow:last-child{border-bottom:0}
+.frow .ic{width:30px;height:30px;color:var(--navy);flex:none}
+.frow .ic svg{width:30px;height:30px;stroke-width:1.4}
+.frow .t{font-family:var(--font-head);font-weight:600;color:var(--navy);font-size:17px}
+.split .acts{display:flex;gap:13px;flex-wrap:wrap;margin-top:28px}
 
-    // spaces (curated feature-row groups)
-    const grp=(title,arr)=>{const items=take(arr,6).map(x=>({icon:icon(nm(x)),title:nm(x),sub:""})).filter(i=>i.title);return items.length?{title,items}:null;};
-    const spaces=[
-      grp("Relaxare și exterior",[].concat(P.allFacilities.wellness||[],P.allFacilities.exterior||[])),
-      grp("Confort și bucătărie",[].concat(P.allFacilities.kitchen||[],P.allFacilities.comfort||[])),
-      grp("Socializare și distracție",[].concat(P.allFacilities.commonAreas||[],P.allFacilities.livingArea||[],P.activities.entertainmentAndFamilyServices||[])),
-      grp("Media & tehnologie",P.allFacilities.mediaTechnology||[])
-    ].filter(Boolean);
+/* HIGHLIGHT (soft card) */
+.fcard{background:var(--soft);border-radius:34px;padding:26px;display:grid;grid-template-columns:1.05fr .95fr;gap:42px;align-items:center}
+.fcard .media{border-radius:24px;overflow:hidden;aspect-ratio:4/3;background:#cdd2ee center/cover;min-height:300px}
+.fcard .body{padding:18px 28px 18px 8px}
+.fcard h2{font-size:clamp(26px,3.4vw,40px)}
+.fcard p{margin:18px 0;font-size:17px}
+.fcard .frow{border-color:#dfe2f4}
 
-    // highlight: data-driven from REAL facilities (no invented pool/spa claims)
-    const _well=(P.allFacilities.wellness||[]).map(nm).filter(Boolean);
-    const _ext=(P.allFacilities.exterior||[]).map(nm).filter(Boolean);
-    const _sport=(P.activities.sportsAndRecreation||[]).map(nm).filter(Boolean);
-    const _ent=(P.activities.entertainmentAndFamilyServices||[]).map(nm).filter(Boolean);
-    const _hImg=photos[2]||photos[1]||photos[0]||"";
-    const _cand=[
-      {names:_well, eyebrow:"Pentru relaxare", heading:(flags.pool?"Piscină, spa & wellness":"Spa & wellness"), text:"Centrul de wellness completează experiența cazării — relaxare după o zi petrecută afară."},
-      {names:_ext, eyebrow:"În aer liber", heading:"Spațiu exterior & relaxare", text:"Spații exterioare pentru relaxare și timp petrecut împreună."},
-      {names:_sport.concat(_ent), eyebrow:"Activități", heading:"Activități & recreere", text:"Opțiuni de petrecere a timpului pentru un sejur activ."}
-    ];
-    let highlight=null;
-    for(const c of _cand){ if(c.names.length){ highlight={eyebrow:c.eyebrow,heading:c.heading,text:c.text,image:_hImg,features:take(c.names,4).map(n=>({icon:icon(n),label:n}))}; break; } }
+/* lists */
+.lists{display:grid;grid-template-columns:1fr 1fr;gap:56px 80px}
+.lblock h3{font-family:var(--font-head);font-size:24px;margin-bottom:6px}
+.lrow{display:flex;align-items:center;gap:18px;padding:18px 0;border-bottom:1px solid var(--line)}
+.lrow:last-child{border-bottom:0}
+.lrow .ic{width:30px;flex:none;color:var(--navy)}
+.lrow .ic svg{width:30px;height:30px;stroke-width:1.4}
+.lrow .tx b{display:block;font-family:var(--font-head);font-weight:600;color:var(--navy);font-size:16.5px}
+.lrow .tx small{color:var(--muted);font-size:14px}
 
-    // amenities grid (full)
-    const amenities=[];
-    if(P.mostAppreciatedFacilities&&P.mostAppreciatedFacilities.length)
-      amenities.push({icon:"view",title:"Cele mai apreciate",items:P.mostAppreciatedFacilities.map(f=>({name:nm(f),featured:!!f.premiumFacility,extra:false,offsite:false}))});
-    FAC_CATS.forEach(c=>{const list=P.allFacilities[c]||[];if(!list.length)return;
-      amenities.push({icon:icon(RO[c])==="view"?"view":icon(RO[c]),title:RO[c],items:list.map(x=>({name:nm(x),featured:false,extra:!!(x&&x.priceRule),offsite:!!(x&&x.locationRule)}))});});
-    ["skiing","entertainmentAndFamilyServices","sportsAndRecreation"].forEach(c=>{const list=P.activities[c]||[];if(!list.length)return;amenities.push({icon:c==="skiing"?"slope":"ball",title:RO[c],items:list.map(x=>({name:nm(x),featured:false,extra:!!(x&&x.priceRule),offsite:!!(x&&x.locationRule)}))});});
-    ["receptionServices","safety","generalServices","servicesExtra"].forEach(c=>{const list=P.services[c]||[];if(!list.length)return;amenities.push({icon:"key",title:RO[c],items:list.map(x=>({name:nm(x),featured:false,extra:!!(x&&x.priceRule),offsite:!!(x&&x.locationRule)}))});});
+/* GALLERY carousel */
+.gal-head{margin-bottom:26px}
+.gal-head h2{font-size:clamp(24px,3.2vw,38px)}
+.carousel{position:relative;border-radius:var(--radius);overflow:hidden;background:#e8eaf2}
+.car-track{display:flex;transition:transform .5s cubic-bezier(.4,0,.2,1)}
+.car-slide{min-width:100%;aspect-ratio:16/9;background:var(--navy) center/cover;position:relative}
+.car-cap{position:absolute;left:0;right:0;bottom:0;padding:22px 26px;color:#fff;font-weight:600;font-size:16px;background:linear-gradient(transparent,rgba(18,25,44,.7))}
+.car-btn{position:absolute;top:50%;transform:translateY(-50%);width:46px;height:46px;border-radius:50%;border:0;cursor:pointer;background:rgba(255,255,255,.92);color:var(--navy);display:grid;place-items:center;z-index:3;transition:.2s;box-shadow:0 6px 18px -8px rgba(0,0,0,.4)}
+.car-btn:hover{background:#fff;transform:translateY(-50%) scale(1.06)}
+.car-btn.prev{left:18px}.car-btn.next{right:18px}
+.car-dots{display:flex;gap:8px;justify-content:center;margin-top:18px}
+.car-dots .d{width:9px;height:9px;border-radius:50%;background:#cfd4e2;border:0;cursor:pointer;transition:.2s;padding:0}
+.car-dots .d.on{background:var(--navy);width:26px;border-radius:6px}
 
-    // rules from policies
-    const po=P.policies||{}, rules=[];
-    if(po.checkIn&&po.checkIn.startHour)rules.push({icon:"checkin",label:"Check-in"+(po.checkIn.endHour?" între "+po.checkIn.startHour+" și "+po.checkIn.endHour:" de la "+po.checkIn.startHour)});
-    if(po.checkOut&&po.checkOut.startHour)rules.push({icon:"checkout",label:"Check-out"+(po.checkOut.endHour?" până la "+po.checkOut.endHour:" la "+po.checkOut.startHour)});
-    if(bi.unitCapacity)rules.push({icon:"guests",label:"Număr maxim de persoane: "+bi.unitCapacity});
-    if(po.smokingPolicy)rules.push({icon:"smoke",label:po.smokingPolicy});
-    if(po.petsPolicy)rules.push({icon:"pet",label:po.petsPolicy});
-    if(po.noisePolicy||po.partiesPolicy)rules.push({icon:"quiet",label:po.partiesPolicy||po.noisePolicy});
+/* RULES */
+.rules{display:grid;grid-template-columns:repeat(3,1fr);gap:0 56px}
+.rrow{display:flex;align-items:center;gap:16px;padding:22px 0;border-bottom:1px solid var(--line)}
+.rrow .ic{width:30px;flex:none;color:var(--navy)}
+.rrow .ic svg{width:30px;height:30px;stroke-width:1.4}
+.rrow span{font-size:16px;color:var(--navy);font-family:var(--font-head);font-weight:500}
 
-    // about
-    const about=[];
-    if(bi.unitType)about.push({label:"Tip proprietate",value:bi.unitType+(bi.entireUnitRental?" · închiriere integrală":"")});
-    if(bi.unitCapacity)about.push({label:"Capacitate",value:"Până la "+bi.unitCapacity+" oaspeți"});
-    if(bi.roomsNumber)about.push({label:"Dormitoare",value:bi.roomsNumber});
-    if(bi.unitBathroomsNumber)about.push({label:"Băi",value:bi.unitBathroomsNumber});
-    if(bi.unitSurface)about.push({label:"Suprafață",value:bi.unitSurface});
-    if(_well.length)about.push({label:"Wellness",value:take(_well,3).join(", ")});
-    if(city)about.push({label:"Localizare",value:[bi.locality,city].filter(Boolean).join(", ")});
-    if(po.parkingPolicy)about.push({label:"Parcare",value:po.parkingPolicy});
+/* ABOUT specs */
+.specs{display:grid;grid-template-columns:1fr 1fr;gap:18px 48px;max-width:880px;margin-top:40px}
+.spec{border-bottom:1px solid var(--line);padding-bottom:14px}
+.spec b{display:block;font-family:var(--font-head);color:var(--navy);font-size:13px;font-weight:700;margin-bottom:4px;letter-spacing:.04em;text-transform:uppercase}
+.spec span{font-size:16px}
 
-    // reviews
-    const rs=P._reviewSummary||{}, ritems=(P._reviews||[]).map(r=>({name:(r.clientInfo&&(r.clientInfo.name||r.clientInfo.country))?("Oaspete · "+(r.clientInfo.country||r.clientInfo.name)):"Oaspete",meta:r.title||"",rating:Math.round(r.reviewRating||5),text:r.body||""})).filter(r=>r.text);
-    const reviews=ritems.length?{average:rs.generalRating?+rs.generalRating:null,count:rs.reviewCount||ritems.length,items:ritems}:null;
+/* REVIEWS */
+.rev-bar{background:var(--soft-2);border-radius:20px;padding:20px 28px;display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:28px}
+.rev-bar .l{display:flex;align-items:center;gap:14px}
+.rev-bar .score{font-family:var(--font-head);font-weight:800;font-size:30px;color:var(--navy)}
+.stars{color:#f5b315;letter-spacing:1px;font-size:18px}
+.rev-bar .cnt{font-size:15px;color:var(--muted)}
+.rev-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
+.rcard{background:var(--soft-2);border-radius:20px;padding:24px}
+.rcard .top{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.rcard .av{width:42px;height:42px;border-radius:50%;background:#dfe3f0;flex:none;display:grid;place-items:center;color:var(--navy);font-family:var(--font-head);font-weight:700}
+.rcard .nm{font-family:var(--font-head);font-weight:700;color:var(--navy);font-size:15px}
+.rcard .tm{font-size:12.5px;color:var(--muted)}
+.rcard .st{color:#f5b315;font-size:15px;margin-bottom:8px}
+.rcard p{margin:0;font-size:14.5px;color:#404a5e;line-height:1.6}
 
-    // faq (wrap flat Q&A into one category)
-    const qa=(P.questionsAndAnswers||[]).map(x=>({q:x.question||"",a:x.answer||""})).filter(x=>x.q);
-    const faq=qa.length?[{category:"Întrebări frecvente",items:qa}]:[];
+/* FAQ */
+.faq-grid{display:grid;grid-template-columns:1fr 1fr;gap:36px 64px}
+.faq-cat h3{font-family:var(--font-head);font-size:15px;letter-spacing:.04em;color:var(--accent);text-transform:uppercase;margin-bottom:6px}
+.qa{border-bottom:1px solid var(--line)}
+.qa button{width:100%;text-align:left;background:none;border:0;cursor:pointer;padding:18px 36px 18px 0;position:relative;font-family:var(--font-head);font-weight:600;font-size:16.5px;color:var(--navy);line-height:1.35}
+.qa button .ch{position:absolute;right:2px;top:20px;width:16px;height:16px;transition:.3s;color:var(--muted)}
+.qa.open .ch{transform:rotate(180deg)}
+.qa .ans{max-height:0;overflow:hidden;transition:max-height .35s ease}
+.qa .ans p{margin:0;padding:0 0 18px;font-size:15.5px;color:var(--body)}
 
-    // galleries from photos
-    const galleries=photos.length>=2?[{heading:"Galerie foto",slides:photos.map((u,i)=>({img:u,cap:""}))}]:[];
+/* LOCATION */
+.loc-grid{display:grid;grid-template-columns:.85fr 1.15fr;gap:48px;align-items:center}
+.map-wrap{border-radius:var(--radius);overflow:hidden;min-height:420px;border:1px solid var(--line)}
+.map-wrap iframe{width:100%;height:100%;min-height:420px;border:0;display:block}
+.loc-cta{margin-top:24px;display:flex;gap:13px;flex-wrap:wrap}
 
+/* FOOTER */
+footer{background:var(--footer);color:rgba(255,255,255,.7);padding:66px 0 34px}
+.f-grid{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr;gap:40px}
+.f-brand b{font-family:var(--font-head);font-weight:800;font-size:22px;color:#fff;letter-spacing:.02em}
+.f-brand p{font-size:14.5px;margin:14px 0 0;max-width:34ch;color:rgba(255,255,255,.6)}
+footer h5{font-family:var(--font-head);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.5);margin:0 0 16px;font-weight:700}
+footer a{display:block;color:rgba(255,255,255,.74);font-size:14.5px;padding:6px 0}
+footer a:hover{color:#fff}
+.f-bot{margin-top:46px;padding-top:24px;border-top:1px solid rgba(255,255,255,.12);display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:13px;color:rgba(255,255,255,.45)}
+.f-bot a{display:inline;color:rgba(255,255,255,.7)}
+
+/* AMENITIES checklist grid */
+.am-head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+.am-legend{display:flex;gap:8px;flex-wrap:wrap}
+.am-legend .lg{display:inline-flex;align-items:center;gap:7px;background:var(--soft-2);border:1px solid var(--line);border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:600;color:var(--body)}
+.am-tag-x{font-size:10.5px;font-weight:700;color:#b5762a;background:#fdf3e3;border-radius:6px;padding:1px 7px;margin-left:5px;white-space:nowrap}
+.am-tag-l{font-size:10.5px;font-weight:700;color:#5a6b8c;background:#eef1f7;border-radius:6px;padding:1px 7px;margin-left:5px;white-space:nowrap}
+.am-cols{columns:3;column-gap:42px;margin-top:24px}
+.am-cat{break-inside:avoid;margin-bottom:26px;display:inline-block;width:100%}
+.am-cat h4{display:flex;align-items:center;gap:10px;font-family:var(--font-head);font-size:16px;color:var(--navy);margin-bottom:12px;font-weight:700}
+.am-cat h4 .ic{width:22px;height:22px;color:var(--accent);flex:none}
+.am-cat h4 .ic svg{width:22px;height:22px;stroke-width:1.5}
+.am-cat ul{list-style:none;margin:0;padding:0}
+.am-cat li{display:flex;align-items:flex-start;gap:10px;font-size:14.5px;color:var(--body);padding:5px 0}
+.am-cat li .ck{color:var(--navy);flex:none;margin-top:3px}
+.am-cat li .ck svg{width:14px;height:14px;display:block;stroke-width:2.6}
+.am-cat li.feat{color:var(--navy);font-weight:600}
+
+/* STICKY CTA (mobile) */
+.sticky-cta{position:fixed;left:0;right:0;bottom:0;z-index:70;background:#fff;border-top:1px solid var(--line);padding:12px 18px;display:none;align-items:center;justify-content:space-between;gap:12px;box-shadow:0 -8px 30px -20px rgba(0,0,0,.3)}
+.sticky-cta .pr{font-family:var(--font-head);font-weight:700;color:var(--navy);font-size:15px;line-height:1.1}
+.sticky-cta .pr small{display:block;color:var(--muted);font-size:11px;font-weight:500}
+.sticky-cta .btn{padding:12px 22px;font-size:15px}
+
+/* mobile menu */
+.mmenu{position:fixed;inset:0;z-index:90;background:var(--navy);display:none;flex-direction:column;padding:90px 32px;gap:4px}
+.mmenu.show{display:flex}
+.mmenu a{color:#fff;font-family:var(--font-head);font-weight:700;font-size:28px;padding:14px 0;border-bottom:1px solid rgba(255,255,255,.12)}
+.mmenu .x{position:absolute;top:26px;right:28px;background:none;border:0;color:#fff;font-size:34px;cursor:pointer}
+
+.js .rv{opacity:0;transform:translateY(26px);transition:opacity .7s ease,transform .7s ease}
+.js .rv.in{opacity:1;transform:none}
+
+@media(max-width:980px){
+  .nav-links{display:none}.burger{display:block}
+  .split,.fcard,.lists,.loc-grid{grid-template-columns:1fr;gap:36px}
+  .fcard .media{order:-1}
+  .rules,.rev-grid{grid-template-columns:1fr 1fr}
+  .faq-grid{grid-template-columns:1fr}
+  .am-cols{columns:2}
+  .f-grid{grid-template-columns:1fr 1fr}
+  .fcard .body{padding:8px 14px 18px}
+  .sticky-cta{display:flex}
+  body{padding-bottom:72px}
+}
+@media(max-width:620px){
+  .wrap{padding:0 20px}.sec{padding:60px 0}
+  .hero-img{height:64vh;min-height:420px}
+  .rules,.rev-grid,.f-grid,.specs{grid-template-columns:1fr}
+  .am-cols{columns:1}
+  .specs{grid-template-columns:1fr 1fr}
+  body{font-size:16px}.hero-content{padding:32px 24px}
+}
+
+/* ---- booking ---- */
+.bk-intro{color:var(--muted);max-width:52ch;margin:-6px 0 26px}
+.bk-grid{display:grid;grid-template-columns:1fr 360px;gap:28px;align-items:start}
+.bk-options{display:flex;flex-direction:column;gap:12px}
+.bk-card{display:flex;flex-direction:column;gap:0;border:1px solid var(--line);border-radius:18px;padding:18px 20px;background:#fff;transition:border-color .15s,box-shadow .15s}
+
+.bk-card-head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.bk-card-name{flex:1;min-width:160px}
+.bk-meta{display:block;color:var(--muted);font-size:13px;margin-top:3px}
+.bk-more{display:inline-flex;align-items:center;gap:5px;margin-top:12px;align-self:flex-start;background:none;border:0;color:var(--accent);font-weight:600;font-size:13.5px;cursor:pointer;padding:4px 0}
+.bk-more svg{transition:transform .2s}
+.bk-more.open svg{transform:rotate(180deg)}
+.bk-details{margin-top:10px;padding-top:14px;border-top:1px solid var(--line)}
+.bk-d-desc{color:var(--text);font-size:14px;margin:0 0 12px;line-height:1.55}
+.bk-d-row{margin-bottom:12px}
+.bk-d-row b{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:7px}
+.bk-chips{display:flex;flex-wrap:wrap;gap:6px}
+.bk-chips span{background:#f3f5fa;border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:12.5px;color:var(--navy)}
+.bk-card.on{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+.bk-entire{background:color-mix(in srgb,var(--accent) 7%,#fff);border-style:solid}
+.bk-card-main{display:flex;align-items:center;gap:22px;flex:1;flex-wrap:wrap}
+.bk-card-name b{display:block;font-family:var(--font-head);font-size:18px;color:var(--navy)}
+.bk-card-name small{color:var(--muted);font-size:13.5px}
+.bk-price{display:flex;align-items:baseline;gap:5px;color:var(--navy);white-space:nowrap}
+.bk-price span{font-size:12px;color:var(--muted)}
+.bk-price b{font-family:var(--font-head);font-size:21px}
+.bk-price small{font-size:12px;color:var(--muted)}
+.bk-sel{border:1.5px solid var(--accent);background:#fff;color:var(--accent);font-weight:700;font-size:14px;border-radius:11px;padding:11px 20px;cursor:pointer;white-space:nowrap}
+.bk-card.on .bk-sel{background:var(--accent);color:#fff}
+.bk-summary{position:sticky;top:90px;border:1px solid var(--line);border-radius:22px;padding:22px;background:#fff;box-shadow:0 18px 50px -28px rgba(20,28,52,.4)}
+.bk-summary h3{font-family:var(--font-head);font-size:18px;color:var(--navy);margin-bottom:14px}
+.bk-datebtn{display:flex;align-items:center;gap:10px;width:100%;border:1px solid var(--line);background:#fafbff;border-radius:13px;padding:13px 15px;font-size:14.5px;color:var(--navy);cursor:pointer;font-weight:600;margin-bottom:14px}
+.bk-datebtn svg{color:var(--accent);flex:none}
+.bk-selected{border-top:1px solid var(--line);padding-top:14px;min-height:24px}
+.bk-selected small{color:var(--muted)}
+.bk-srow{display:flex;justify-content:space-between;gap:10px;padding:5px 0;font-size:14.5px;color:var(--navy)}
+.bk-srow b{font-weight:700}
+.bk-total{margin:10px 0 4px}
+.bk-trow{display:flex;justify-content:space-between;align-items:baseline;border-top:1px dashed var(--line);padding-top:12px;font-family:var(--font-head)}
+.bk-trow b{font-size:22px;color:var(--navy)}
+.bk-total small{color:var(--muted);font-size:13px}
+.bk-send{width:100%;justify-content:center;margin-top:14px}
+.bk-note{text-align:center;color:var(--muted);font-size:12px;margin-top:9px}
+/* calendar modal */
+.cal-overlay{position:fixed;inset:0;background:rgba(20,28,52,.55);display:none;align-items:center;justify-content:center;z-index:120;padding:16px;backdrop-filter:blur(2px)}
+.cal-overlay.on{display:flex}
+.cal-modal{background:#fff;border-radius:20px;width:100%;max-width:430px;overflow:hidden;box-shadow:0 30px 80px -20px rgba(0,0,0,.5)}
+.cal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--line)}
+.cal-head b{font-family:var(--font-head);font-size:16px;color:var(--navy)}
+.cal-x{background:none;border:0;font-size:26px;line-height:1;color:var(--muted);cursor:pointer}
+.cal-nav{display:flex;align-items:center;justify-content:space-between;padding:14px 20px 6px}
+.cal-nav span{font-family:var(--font-head);font-size:15px;color:var(--navy);text-transform:capitalize}
+.cal-nav button{width:34px;height:34px;border:1px solid var(--line);background:#fff;border-radius:9px;font-size:18px;cursor:pointer;color:var(--navy)}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;padding:6px 16px 10px}
+.cal-dow{text-align:center;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;padding:6px 0}
+.cal-day{aspect-ratio:1;border:0;background:#fff;border-radius:9px;font-size:14px;color:var(--navy);cursor:pointer;font-weight:600}
+.cal-day:hover:not(.off){background:color-mix(in srgb,var(--accent) 14%,#fff)}
+.cal-day.off{color:#c4c9d6;cursor:not-allowed;font-weight:400}
+.cal-day.blocked{text-decoration:line-through;background:#fbeaea;color:#c98a8a}
+.cal-day.range{background:color-mix(in srgb,var(--accent) 16%,#fff);border-radius:0}
+.cal-day.sel{background:var(--accent);color:#fff}
+.cal-legend{display:flex;gap:16px;justify-content:center;padding:6px 16px 12px;font-size:12px;color:var(--muted)}
+.cal-legend span{display:flex;align-items:center;gap:6px}
+.lg{width:12px;height:12px;border-radius:4px;display:inline-block}
+.lg-free{background:#eef0f6}.lg-block{background:#fbeaea}.lg-sel{background:var(--accent)}
+.cal-foot{display:flex;align-items:center;gap:10px;padding:12px 18px;border-top:1px solid var(--line)}
+.cal-foot #calInfo{font-size:13px;color:var(--muted)}
+@media(max-width:860px){.bk-grid{grid-template-columns:1fr}.bk-summary{position:static}}
+
+.split.no-img{grid-template-columns:1fr;max-width:760px}
+.fcard.no-img{grid-template-columns:1fr}
+
+.sec-head{margin-bottom:26px}
+.grp-wrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:30px}
+.grp h3{font-family:var(--font-head);font-size:17px;color:var(--navy);margin-bottom:13px}
+.grp-chips{display:flex;flex-wrap:wrap;gap:8px}
+.grp-chips span{background:#fff;border:1px solid var(--line);border-radius:9px;padding:7px 12px;font-size:13.5px;color:var(--navy)}
+.grp-chips i{font-style:normal;color:var(--accent);font-size:11px;margin-left:5px;font-weight:700;text-transform:uppercase}
+</style>
+</head>
+<body id="top">
+<div id="app"></div>
+
+<script>
+/* =====================================================================
+   STAY TEMPLATE — JSON-driven property site
+   ---------------------------------------------------------------------
+   To generate a client's subdomain: replace PROPERTY with that client's
+   JSON and set the THEME values. Nothing else needs editing.
+   Every section renders ONLY if the matching data exists, so a thin
+   listing (no pool, no reviews, few facilities) stays clean.
+   ===================================================================== */
+
+/* ---- THEME: per-client branding + booking action ---- */
+let THEME = {
+  brandName: "Vila Maria",
+  brandSub: "Rustic · Predeal",
+  colors: { navy:"#1b2742", accent:"#e07d3e", green:"#1faa57", soft:"#edeffb" },
+  booking: {
+    phone: "+40723221610",
+    whatsapp: "40723221610",          // digits only, no +
+    url: ""                            // optional: platform reservation URL; falls back to phone/WA
+  },
+  platform: { name:"StayPredeal", url:"https://staypredeal.ro" },
+  // reviews: hide the headline average if it's below this (out of 5).
+  // Testimonials still show; a weak score just isn't broadcast.
+  reviewScoreThreshold: 4.0,
+  // facilities: "rows" = curated feature-row groups (from PROPERTY.spaces);
+  // "grid" = also show the full amenities checklist (from PROPERTY.amenities).
+  facilitiesStyle: "rows",
+  policyLinks: [
+    { label:"Politica de confidențialitate", url:"#" },
+    { label:"Termeni și condiții", url:"#" },
+    { label:"Politica cookies", url:"#" }
+  ]
+};
+
+/* ---- PROPERTY: the data contract the platform emits per listing ----
+   Any field can be omitted/empty — its section won't render.
+   The platform can also inject data at runtime by setting
+   window.STAY_PROPERTY / window.STAY_THEME before this script runs. ---- */
+let PROPERTY = {
+  name: "Vila Maria Rustic Predeal",
+  tagline: "Liniște, pădure și munte. Într-un singur loc.",
+  intro: "O vilă rustică privată, închiriată integral pentru până la 12 oaspeți — cu piscină interioară, spa, saună și vatră de foc, la poalele Bucegilor.",
+  location: { area:"Predeal", county:"jud. Brașov", note:"la marginea pădurii",
+    address:"Șoseaua Națională 87, 505300 Predeal, jud. Brașov", lat:45.482432, lng:25.565507 },
+  priceFrom: { amount:496, currency:"RON", unit:"noapte" },
+
+  photos: {
+    hero: "https://images.unsplash.com/photo-1518733057094-95b53143d2a7?w=2000&q=80&auto=format&fit=crop",
+    strip: [
+      "https://images.unsplash.com/photo-1449158743715-0a90ebb6d2d8?w=800&q=80&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1505691938895-1758d7feb511?w=800&q=80&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1571902943202-507ec2618e8f?w=800&q=80&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?w=800&q=80&auto=format&fit=crop",
+      "https://images.unsplash.com/photo-1583416750470-965b2707b355?w=800&q=80&auto=format&fit=crop"
+    ]
+  },
+
+  overview: {
+    image: "https://images.unsplash.com/photo-1449158743715-0a90ebb6d2d8?w=1000&q=80&auto=format&fit=crop",
+    heading: "Vilă rustică cu piscină și spa în Predeal",
+    description: "Vilă privată pentru până la 12 oaspeți, cu 6 dormitoare cu baie proprie, piscină interioară încălzită, spa și saună, șemineu, vatră de foc și priveliște spre munte. Restaurant propriu și mic dejun inclus.",
+    features: [
+      { icon:"guests", label:"Până la 12 oaspeți" },
+      { icon:"key",    label:"Închiriere integrală — toată vila" },
+      { icon:"bed",    label:"6 dormitoare cu baie proprie" },
+      { icon:"pool",   label:"Piscină interioară & spa" },
+      { icon:"fire",   label:"Vatră de foc cu grătar și lemne" }
+    ]
+  },
+
+  /* flags used to auto-pick the highlight card; set what's true */
+  flags: { pool:true, spa:true, ski:true, forest:true },
+
+  galleries: [
+    { heading:"Cum arată exteriorul vilei", slides:[
+      { img:"https://images.unsplash.com/photo-1449158743715-0a90ebb6d2d8?w=1400&q=80&auto=format&fit=crop", cap:"Vila rustică la marginea pădurii" },
+      { img:"https://images.unsplash.com/photo-1475483768296-6163e08872a1?w=1400&q=80&auto=format&fit=crop", cap:"Vatră de foc cu grătar și lemne" },
+      { img:"https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1400&q=80&auto=format&fit=crop", cap:"Priveliște spre culmile Bucegilor" }
+    ]},
+    { heading:"Cum arată interiorul vilei", slides:[
+      { img:"https://images.unsplash.com/photo-1505691938895-1758d7feb511?w=1400&q=80&auto=format&fit=crop", cap:"Living cu șemineu" },
+      { img:"https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?w=1400&q=80&auto=format&fit=crop", cap:"Dormitor cu baie proprie" },
+      { img:"https://images.unsplash.com/photo-1571902943202-507ec2618e8f?w=1400&q=80&auto=format&fit=crop", cap:"Piscină interioară & wellness" }
+    ]}
+  ],
+
+  spaces: [
+    { title:"Spații de dormit", items:[
+      { icon:"bed", title:"Dormitor 1", sub:"1 × pat dublu · baie proprie" },
+      { icon:"bed", title:"Dormitor 2", sub:"1 × pat dublu · baie proprie" },
+      { icon:"bed", title:"Dormitor 3", sub:"1 × pat dublu · baie proprie" },
+      { icon:"bed", title:"Dormitor 4", sub:"1 × pat dublu · baie proprie" },
+      { icon:"bed", title:"Dormitor 5", sub:"1 × pat dublu + 1 × futon · baie proprie" },
+      { icon:"bed", title:"Dormitor 6", sub:"1 × pat dublu + 1 × futon · baie proprie" }
+    ]},
+    { title:"Relaxare și exterior", items:[
+      { icon:"pool", title:"Piscină interioară încălzită" },
+      { icon:"sauna", title:"Saună privată la interior" },
+      { icon:"fire", title:"Șemineu în living" },
+      { icon:"fire", title:"Vatră de foc + grătar cu lemne" },
+      { icon:"terrace", title:"Terasă la soare & balcon" },
+      { icon:"garden", title:"Grădină & curte privată" }
+    ]},
+    { title:"Socializare și distracție", items:[
+      { icon:"games", title:"Cameră de jocuri" },
+      { icon:"restaurant", title:"Restaurant & bar propriu" },
+      { icon:"lounge", title:"Lounge cu TV comună" },
+      { icon:"projector", title:"Living și zonă de dining" }
+    ]},
+    { title:"Confort și bucătărie", items:[
+      { icon:"restaurant", title:"Bucătărie complet utilată" },
+      { icon:"coffee", title:"Aparat de cafea" },
+      { icon:"dishwasher", title:"Mașină de spălat vase" },
+      { icon:"washer", title:"Mașină de spălat rufe" },
+      { icon:"fire", title:"Lemne de foc" }
+    ]},
+    { title:"Spații comune", items:[
+      { icon:"playground", title:"Loc de joacă pentru copii" },
+      { icon:"ball", title:"Echipament sportiv (tenis, badminton)" },
+      { icon:"lounge", title:"Lounge & zonă de relaxare" },
+      { icon:"parking", title:"Parcare privată, în curte" }
+    ]},
+    { title:"Zonă & împrejurimi", items:[
+      { icon:"slope", title:"Pârtia Clăbucet", sub:"2,3 km" },
+      { icon:"train", title:"Gara Predeal", sub:"2 km" },
+      { icon:"castle", title:"Castelul Peleș", sub:"18 km" },
+      { icon:"view", title:"Restaurant White Horse", sub:"850 m" }
+    ]}
+  ],
+
+  /* AMENITIES: full facilities checklist. Accepts items as plain
+     strings, {name, featured, extra, offsite}, OR the raw source shape
+     {name, priceRule, locationRule, premiumFacility} — the renderer
+     auto-detects $ (cost suplimentar) and "în afara locației", and
+     de-dupes repeats. Any category with no items is skipped. */
+  amenities: {
+    legend: true,
+    categories: [
+      { title:"Cele mai apreciate", icon:"view", items:[
+        { name:"Priveliște", featured:true }, { name:"Șemineu", featured:true }, { name:"Vatră de foc", featured:true },
+        "Piscină interioară", "Spa și centru de wellness", "Parcare gratuită", "Camere pentru familii",
+        "Restaurant", "WiFi gratuit inclus", "Grătar", "Camere destinate nefumătorilor", "Bar", "Mic dejun" ]},
+      { title:"Bucătărie", icon:"restaurant", items:[
+        "Bucătărie complet echipată", "Frigider", "Microunde", "Aragaz electric", "Cuptor",
+        "Mașină de spălat vase", "Aparat de cafea", "Cană fierbător", "Toaster", "Instrumente de gătit", "Scaun ridicat pentru copii" ]},
+      { title:"Baie", icon:"pool", items:[
+        "Baie privată", "Duș", "Robe de baie", "Încălțăminte de interior", "Uscător de păr",
+        "Produse de igienă gratuite", "Prosoape", "Hârtie igienică", "Toaletă suplimentară" ]},
+      /* raw source shape — renderer detects priceRule -> $ */
+      { title:"Wellness & spa", icon:"sauna", items:[
+        { name:"Saună", priceRule:"Cost suplimentar" },
+        { name:"Spa și centru de wellness", priceRule:"Cost suplimentar" },
+        { name:"Masaj pentru tot corpul", priceRule:"Cost suplimentar" },
+        { name:"Masaj spate" }, { name:"Masaj picioare" }, { name:"Masaj ceafă" },
+        { name:"Pachete Spa" }, { name:"Lounge Spa" }, { name:"Zonă de relaxare" }, { name:"Piscină pentru copii" } ]},
+      { title:"Piscină interioară", icon:"pool", items:[
+        "Piscină încălzită", "Deschisă tot anul", "Pentru toate vârstele", "Zonă de mică adâncime",
+        "Bar la piscină", "Șezlonguri sau paturi de plajă", "Umbrele de plajă", "Gard în jurul piscinei" ]},
+      { title:"Exterior", icon:"garden", items:[
+        "Grătar cu lemne", "Terasă la soare", "Balcon", "Grădină", "Zonă de picnic",
+        "Zonă de luat masa în aer liber", "Mobilier exterior" ]},
+      { title:"Mâncare & băutură", icon:"restaurant", items:[
+        "Restaurant", "Bar", "Room service", "Minibar", "Snack bar", "Bufet potrivit copiilor",
+        "Meniuri cu diete speciale", "Prânz la pachet", "Cafea", "Aparat pentru ceai",
+        { name:"Livrări de alimente", priceRule:"Cost suplimentar" }, { name:"Fructe", priceRule:"Cost suplimentar" } ]},
+      { title:"Zone comune", icon:"lounge", items:[ "Lounge", "Cameră cu TV comună", "Cameră de jocuri" ]},
+      { title:"Media & tehnologie", icon:"games", items:[
+        "TV cu ecran plat", "Canale prin cablu", "Canale prin satelit", "Seif pentru laptop", "WiFi gratuit" ]},
+      { title:"Servicii & siguranță", icon:"key", items:[
+        "Menaj zilnic", "Recepție & check-in", "Securitate non-stop", "Alarmă de fum", "Extinctoare",
+        "Detector de monoxid de carbon", "Camere de supraveghere", "Seif", { name:"Spălătorie", priceRule:"Cost suplimentar" } ]},
+      /* raw source shape — renderer detects locationRule -> "în afara locației" */
+      { title:"Sport & recreere", icon:"slope", items:[
+        "Acces direct la pârtii", { name:"Școală de schi", priceRule:"Cost suplimentar" },
+        { name:"Depozit schiuri", priceRule:"Cost suplimentar" }, "Tururi cu bicicleta", "Drumeții",
+        { name:"Echipament de tenis", priceRule:"Cost suplimentar" }, { name:"Tenis de masă", priceRule:"Cost suplimentar" },
+        { name:"Schi", locationRule:"în afara locației" }, { name:"Pescuit", locationRule:"în afara locației" } ]},
+      { title:"Familii & copii", icon:"playground", items:[
+        "Teren de joacă pentru copii", "Zonă de joacă interioară", "Jocuri și puzzle-uri", "Cărucioare", "Piscină pentru copii" ]},
+      { title:"Vedere exterioară", icon:"view", items:[
+        "Vedere la munte", "Vedere la piscină", "Vedere la grădină", "Vedere la curtea interioară", "Vedere la punct de atracție" ]},
+      { title:"Business", icon:"key", items:[
+        "Fax", { name:"Copiator", priceRule:"Cost suplimentar" }, { name:"Business centre", priceRule:"Cost suplimentar" },
+        { name:"Săli de conferință și petreceri", priceRule:"Cost suplimentar" } ]}
+    ]
+  },
+
+  rules: [
+    { icon:"checkin", label:"Check-in între 14:00 și 18:00" },
+    { icon:"checkout", label:"Check-out înainte de 11:00" },
+    { icon:"quiet", label:"Ore de liniște respectate noaptea" },
+    { icon:"guests", label:"Număr maxim de persoane: 12" },
+    { icon:"smoke", label:"Fumatul interzis în interior" },
+    { icon:"pet", label:"Animale acceptate doar cu acord prealabil" }
+  ],
+
+  reviews: {
+    average: 2.47, count: 5,
+    items: [
+      { name:"Oaspete · Franța", meta:"escapadă cu prietenii", rating:5,
+        text:"Vila ne-a impresionat cu piscina interioară, deschisă în fiecare zi între 08:00 și 22:00. Am apreciat mult amabilitatea personalului. Recomand cu căldură!" },
+      { name:"Oaspete · Olanda", meta:"sejur de relaxare", rating:5,
+        text:"Sejur minunat. Ne-a încântat piscina interioară cu program convenabil și sauna care ne-a ajutat să ne relaxăm pe deplin după zilele petrecute la munte." },
+      { name:"Oaspete · România", meta:"escapadă cu prietenii", rating:5,
+        text:"Experiență minunată! Piscina interioară este fantastică, saunele foarte relaxante, iar parcarea la fața locului a fost un plus binevenit pentru tot grupul." }
+    ]
+  },
+
+  faq: [
+    { category:"Rezervare", items:[
+      { q:"Se închiriază vila integral?", a:"Da. Vila se poate închiria integral pentru grupuri și familii — 6 dormitoare cu baie proprie, până la 12 oaspeți. Camerele pot fi rezervate și individual." },
+      { q:"Câți oaspeți pot fi cazați?", a:"Capacitatea maximă este de 12 oaspeți. Sunt disponibile paturi suplimentare la cerere pentru copii (50 RON / copil / noapte)." },
+      { q:"Există parcare la proprietate?", a:"Da, proprietatea dispune de parcare privată gratuită. Nu este necesară rezervarea locului." }
+    ]},
+    { category:"Facilități", items:[
+      { q:"Cum funcționează piscina și spa-ul?", a:"Piscina interioară încălzită este deschisă zilnic între 08:00 și 22:00 (cost suplimentar). Centrul de wellness include saună, lounge spa și pachete de masaj la cerere." },
+      { q:"Există restaurant la vilă?", a:"Da, vila are restaurant și bar propriu cu bucătărie europeană, ungurească și grătar. Micul dejun este inclus în cazare." },
+      { q:"Camerele au baie privată?", a:"Da, toate cele 6 dormitoare dispun de baie proprie. Sunt destinate nefumătorilor." }
+    ]},
+    { category:"Politici", items:[
+      { q:"Sunt acceptate animalele de companie?", a:"Animalele de companie sunt acceptate la cerere. Pot fi aplicate taxe suplimentare, te rugăm să ne anunți la rezervare." },
+      { q:"Care sunt metodele de plată?", a:"Acceptăm Visa, Mastercard, Maestro, card de credit UnionPay și numerar." }
+    ]},
+    { category:"General", items:[
+      { q:"Unde este situată vila?", a:"În Predeal, cartierul Malul Ursului, la marginea pădurii. La 850 m de restaurantul White Horse, 2 km de gară și 2,3 km de pârtia Clăbucet." },
+      { q:"Ce limbi se vorbesc la recepție?", a:"Engleză și română." }
+    ]}
+  ],
+
+  about: [
+    { label:"Tip proprietate", value:"Vilă privată · închiriere integrală" },
+    { label:"Capacitate", value:"Până la 12 oaspeți" },
+    { label:"Dormitoare", value:"6 dormitoare cu baie proprie" },
+    { label:"Băi", value:"6 băi private" },
+    { label:"Suprafață", value:"180 mp" },
+    { label:"Wellness", value:"Piscină interioară, spa și saună" },
+    { label:"Localizare", value:"Malul Ursului, Predeal · Brașov" },
+    { label:"Parcare", value:"Privată, gratuită, în curte" }
+  ]
+};
+
+/* ============================ ENGINE ============================ */
+
+const ICONS = {
+  guests:'<path d="M12 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM5 21v-1a7 7 0 0 1 14 0v1"/>',
+  key:'<path d="M15 7a3 3 0 1 0-6 0 3 3 0 0 0 6 0zM12 10v5m-3 0h6m-3 0v5"/>',
+  bed:'<path d="M3 18v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4M3 18h18M3 14V9M21 14V9M7 12V9h4"/>',
+  pool:'<path d="M2 13h20M3 13c1-2 3-3 5-3M12 13c1-2 3-3 5-3M2 18h20"/>',
+  fire:'<path d="M12 3s4 4 4 8a4 4 0 0 1-8 0c0-2 2-4 4-8zM8 21h8"/>',
+  sauna:'<path d="M6 13a6 6 0 0 1 12 0v8H6zM9 8c0-2 1-3 3-3"/>',
+  massage:'<path d="M4 18c2-3 5-4 8-4s6 1 8 4M9 9a3 3 0 1 1 6 0"/>',
+  kids:'<path d="M3 15c1.5-2 4-2 6 0s4.5 2 6 0 4.5-2 6 0M3 19c1.5-2 4-2 6 0s4.5 2 6 0 4.5-2 6 0"/>',
+  terrace:'<path d="M3 21V10l9-6 9 6v11M9 21v-6h6v6"/>',
+  garden:'<path d="M12 22V12M12 12c0-4 3-7 7-7 0 4-3 7-7 7zM12 14c0-3-2.5-5-5.5-5 0 3 2.5 5 5.5 5z"/>',
+  games:'<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 14l3-3M14 11l3 3"/>',
+  restaurant:'<path d="M4 11h16M5 11V8a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v3M6 11v8M18 11v8"/>',
+  lounge:'<rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/>',
+  playground:'<circle cx="12" cy="6" r="2"/><path d="M5 12h14M12 8v8M9 21l3-5 3 5"/>',
+  slope:'<path d="M3 20l6-15 5 9 3-5 4 11z"/>',
+  train:'<rect x="4" y="8" width="16" height="11" rx="1"/><path d="M4 12h16M9 19v3M15 19v3"/>',
+  castle:'<path d="M3 21h18M5 21V8l7-5 7 5v13M10 21v-5h4v5"/>',
+  museum:'<path d="M3 10l9-6 9 6M5 10v9M19 10v9M3 21h18M9 13v4M15 13v4"/>',
+  view:'<path d="M12 22s8-4.5 8-11a8 8 0 0 0-16 0c0 6.5 8 11 8 11z"/><circle cx="12" cy="11" r="2.5"/>',
+  checkin:'<path d="M11 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h6M15 8l4 4-4 4M19 12H9"/>',
+  checkout:'<path d="M13 4h6a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-6M9 8l-4 4 4 4M5 12h10"/>',
+  quiet:'<path d="M11 5L6 9H2v6h4l5 4zM23 9l-6 6M17 9l6 6"/>',
+  smoke:'<circle cx="12" cy="12" r="9"/><path d="M5 5l14 14"/>',
+  pet:'<path d="M4.5 16.5c-1.5 1.3-2 5-2 5s3.7-.5 5-2c.7-.8.7-2 0-2.8a2 2 0 0 0-3 0zM12 15l-3-3a22 22 0 0 1 10-10l1 1a22 22 0 0 1-8 12z"/>',
+  wifi:'<path d="M5 12.5a11 11 0 0 1 14 0M8.5 16a6 6 0 0 1 7 0M2 9a16 16 0 0 1 20 0M12 20h.01"/>',
+  coffee:'<path d="M4 8h13v5a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4zM17 9h2a2 2 0 0 1 0 4h-2M8 2v2M11 2v2"/>',
+  dishwasher:'<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 8h16M7 5.5h.01M10 5.5h4M9 11a3 3 0 0 1 6 0c0 2-3 2-3 5"/>',
+  washer:'<rect x="4" y="3" width="16" height="18" rx="2"/><circle cx="12" cy="13" r="4"/><path d="M7 6h.01M10 6h.01M9.5 13a2.5 2.5 0 0 1 5 0"/>',
+  ball:'<circle cx="12" cy="12" r="9"/><path d="M12 7.5l3.2 2.3-1.2 3.7h-4l-1.2-3.7zM12 3v4.5M5.5 16l3.5-2.7M18.5 16L15 13.3"/>',
+  projector:'<rect x="3" y="7" width="18" height="11" rx="2"/><circle cx="14" cy="12.5" r="3"/><path d="M6 11h.01M7 18v2M17 18v2"/>',
+  parking:'<path d="M3 9l9-7 9 7v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M10 12h3a2 2 0 0 0 0-4h-3v8"/>'
+};
+const icon = k => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor">'+(ICONS[k]||ICONS.view)+'</svg>';
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const has = a => Array.isArray(a) && a.length>0;
+const stars = n => '★★★★★'.slice(0, Math.round(n||5)).padEnd(5,'☆');
+
+/* booking link helper: prefer platform URL, else WhatsApp, else phone */
+function bookHref(){
+  if(THEME.booking.url) return THEME.booking.url;
+  if(THEME.booking.whatsapp) return 'https://wa.me/'+THEME.booking.whatsapp+'?text='+encodeURIComponent('Bună ziua! Aș dori o rezervare la '+PROPERTY.name+'.');
+  return 'tel:'+THEME.booking.phone;
+}
+function waHref(){ return THEME.booking.whatsapp ? 'https://wa.me/'+THEME.booking.whatsapp : 'tel:'+THEME.booking.phone; }
+
+/* ---------- highlight auto-pick ---------- */
+function pickHighlight(){ return null; /* highlight comes only from real data (PROPERTY.highlight); no fabricated content */ }
+
+/* ---------- section renderers (return '' when no data) ---------- */
+function rNav(){
+  const gridOn = (THEME.facilitiesStyle||'rows')==='grid' && PROPERTY.amenities && has(PROPERTY.amenities.categories);
+  const facHref = gridOn ? '#facilitati' : (has(PROPERTY.spaces) ? '#camere' : (PROPERTY.highlight ? '#highlight' : ''));
+  return `<header class="nav" id="nav"><div class="nav-bar">
+    <a href="#top" class="brand">
+      <svg class="mk" viewBox="0 0 40 40" fill="none"><path d="M20 4L5 31h30L20 4z" stroke="#fff" stroke-width="1.6"/><path d="M20 15l-9 16h18l-9-16z" fill="${THEME.colors.accent}"/><path d="M20 31v6" stroke="#fff" stroke-width="1.6"/></svg>
+      <span><b>${esc(THEME.brandName)}</b>${THEME.brandSub?`<small>${esc(THEME.brandSub)}</small>`:''}</span>
+    </a>
+    <nav class="nav-links">
+      <a href="#vila">Vila</a>${has(PROPERTY.rentals)?'<a href="#rezervare">Rezervare</a>':''}${facHref?`<a href="${facHref}">Facilități</a>`:''}
+      ${has(PROPERTY.galleries)?'<a href="#galerie">Galerie</a>':''}
+      ${has(PROPERTY.reviews&&PROPERTY.reviews.items)?'<a href="#recenzii">Recenzii</a>':''}
+      <a href="#contact">Contact</a>
+    </nav>
+    <div class="nav-right">
+      <a class="btn btn-ghost" href="tel:${esc(THEME.booking.phone)}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2 4.1 2 2 0 0 1 4 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.4 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7A2 2 0 0 1 22 16.9z"/></svg> Contactează-ne</a>
+      <button class="burger" id="burger" aria-label="Meniu"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+    </div></div></header>
+    <div class="mmenu" id="mmenu"><button class="x" id="mx">&times;</button>
+      <a href="#vila">Vila</a>${has(PROPERTY.galleries)?'<a href="#galerie">Galerie</a>':''}
+      ${has(PROPERTY.spaces)?'<a href="#camere">Camere</a>':''}
+      ${has(PROPERTY.reviews&&PROPERTY.reviews.items)?'<a href="#recenzii">Recenzii</a>':''}
+      <a href="#contact">Contact</a></div>`;
+}
+
+function rHero(){
+  const L=PROPERTY.location||{}, locline=[L.area,L.county,L.note].filter(Boolean).join(' · ');
+  const pr=PROPERTY.priceFrom;
+  const heroImg=(PROPERTY.photos&&PROPERTY.photos.hero)||'';
+  return `<section class="hero"><div class="hero-img${heroImg?'':' no-img'}" style="background-image:url('${esc(heroImg)}')">
+    <div class="hero-content">
+      ${locline?`<span class="hero-loc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>${esc(locline)}</span>`:''}
+      <h1>${esc(PROPERTY.tagline||PROPERTY.name)}</h1>
+      ${PROPERTY.intro?`<p class="sub">${esc(PROPERTY.intro)}</p>`:''}
+      ${pr?`<div class="price">de la <b>${esc(pr.amount)} ${esc(pr.currency)}</b> / ${esc(pr.unit)}</div>`:''}
+      <div class="hero-cta">
+        <a class="btn btn-accent" href="${bookHref()}" ${THEME.booking.url?'':'target="_blank" rel="noopener"'}>Rezervă acum</a>
+        <a class="btn btn-ghost" href="#vila">Vezi vila</a>
+      </div></div></div></section>`;
+}
+
+function rStrip(){
+  const s=PROPERTY.photos&&PROPERTY.photos.strip;
+  if(!has(s)||s.length<3) return '';
+  return `<section class="sec tight" style="padding-bottom:0"><div class="strip rv">
+    ${s.map(u=>`<div class="ph" style="background-image:url('${esc(u)}')"></div>`).join('')}
+  </div></section>`;
+}
+
+function rOverview(){
+  const o=PROPERTY.overview; if(!o) return '';
+  const hasImg=!!(o.image&&String(o.image).trim());
+  return `<section class="sec" id="vila"><div class="wrap"><div class="split${hasImg?'':' no-img'}">
+    ${hasImg?`<div class="media rv" style="background-image:url('${esc(o.image)}')"></div>`:''}
+    <div class="rv">
+      ${o.heading?`<h2>${esc(o.heading)}</h2>`:''}
+      ${o.description?`<p class="desc">${esc(o.description)}</p>`:''}
+      ${has(o.features)?`<div class="frows">${o.features.map(f=>`<div class="frow"><span class="ic">${icon(f.icon)}</span><span class="t">${esc(f.label)}</span></div>`).join('')}</div>`:''}
+      <div class="acts">
+        <a class="btn btn-accent" href="${bookHref()}" ${THEME.booking.url?'':'target="_blank" rel="noopener"'}>Rezervă acum</a>
+        ${has(PROPERTY.spaces)?'<a class="btn btn-out" href="#camere">Vezi detalii</a>':''}
+      </div>
+    </div></div></div></section>`;
+}
+
+function rHighlight(){
+  const h=PROPERTY.highlight; if(!h) return '';
+  const hasImg=!!(h.image&&String(h.image).trim());
+  return `<section class="sec tight" id="highlight"><div class="wrap"><div class="fcard rv${hasImg?'':' no-img'}">
+    ${hasImg?`<div class="media" style="background-image:url('${esc(h.image)}')"></div>`:''}
+    <div class="body">
+      ${h.eyebrow?`<span class="eyebrow">${esc(h.eyebrow)}</span>`:''}
+      <h2>${esc(h.heading)}</h2>
+      ${h.text?`<p>${esc(h.text)}</p>`:''}
+      ${has(h.features)?`<div class="frows">${h.features.map(f=>`<div class="frow"><span class="ic">${icon(f.icon)}</span><span class="t">${esc(f.label)}</span></div>`).join('')}</div>`:''}
+    </div></div></div></section>`;
+}
+
+function rGalleries(){
+  if(!has(PROPERTY.galleries)) return '';
+  return `<section class="sec tight" id="galerie"><div class="wrap">
+    ${PROPERTY.galleries.map((g,i)=>`
+      <div class="gal-head rv" ${i>0?'style="margin-top:60px"':''}>${i===0?'<span class="eyebrow">Galerie</span>':''}<h2>${esc(g.heading)}</h2></div>
+      <div class="carousel rv" data-carousel><div class="car-track">
+        ${g.slides.map(s=>`<div class="car-slide" style="background-image:url('${esc(s.img)}')">${s.cap?`<div class="car-cap">${esc(s.cap)}</div>`:''}</div>`).join('')}
+      </div>
+      <button class="car-btn prev" aria-label="Înapoi"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 18l-6-6 6-6"/></svg></button>
+      <button class="car-btn next" aria-label="Înainte"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18l6-6-6-6"/></svg></button>
+      </div><div class="car-dots"></div>`).join('')}
+  </div></section>`;
+}
+
+function rSpaces(){
+  const blocks=(PROPERTY.spaces||[]).filter(b=>has(b.items));
+  if(!has(blocks)) return '';
+  return `<section class="sec tight" id="camere"><div class="wrap"><div class="lists">
+    ${blocks.map(b=>`<div class="lblock rv"><h3>${esc(b.title)}</h3>
+      ${b.items.map(it=>`<div class="lrow"><span class="ic">${icon(it.icon)}</span><div class="tx"><b>${esc(it.title)}</b>${it.sub?`<small>${esc(it.sub)}</small>`:''}</div></div>`).join('')}
+    </div>`).join('')}
+  </div></div></section>`;
+}
+
+function rAmenities(){
+  if((THEME.facilitiesStyle||'rows')!=='grid') return '';
+  const a=PROPERTY.amenities; if(!a||!has(a.categories)) return '';
+  const norm=it=>{
+    if(typeof it==='string') return {name:it};
     return {
-      name:bi.name||"",
-      tagline:(firstSentence&&firstSentence.length<=70)?firstSentence:((bi.unitType||"Cazare")+(flags.pool?" cu piscină și spa":(flags.ski?" la munte":""))+(city?" în "+city:"")),
-      intro:desc.slice(0,240),
-      location:{area:city,county,note:bi.locality||"",address:bi.address||"",lat:bi.latitude,lng:bi.longitude},
-      priceFrom:(isFinite(minPrice)&&minPrice>0)?{amount:minPrice,currency:(pricing.rooms[0]&&pricing.rooms[0].currency)||"RON",unit:"noapte"}:null,
-      photos:{hero:photos[0]||"",strip:take(photos,5)},
-      overview:{image:photos[1]||photos[0]||"",heading:((bi.unitType||"Cazare")+(flags.pool?" cu piscină și spa":"")+(city?" în "+city:"")),description:desc,features},
-      flags, galleries, spaces, highlight, amenities, rules,
-      entireUnitRental:!!bi.entireUnitRental,
-      rentals:((pricing&&pricing.rooms)||[]).map(r=>{
-        const d=r.details||{};
-        const beds=(d.spaces||[]).flatMap(sp=>((sp.spaceType&&sp.spaceType.beds)||[]));
-        const bm={}; beds.forEach(b=>{const t=b.type||"pat";bm[t]=(bm[t]||0)+(+b.count||1);});
-        const bedsTxt=Object.keys(bm).map(t=>bm[t]+" "+t).join(", ");
-        return {id:r.id,name:r.name,sub:r.sub||"",weekday:+r.weekday||0,weekend:+r.weekend||+r.weekday||0,currency:r.currency||"RON",minNights:+r.minNights||1,isEntire:!!r.isEntire,
-          capacity:d.adultsRoomCapacity||null,children:+d.childrenRoomCapacity||0,surface:d.surface||"",bathrooms:d.bathroomsNumber||null,
-          bedrooms:((d.spaces||[]).length||d.spacesNumber||null),beds:bedsTxt,view:d.view||[],description:d.roomDescription||"",
-          facilities:[].concat(d.keyFacilities||[],d.unitFacilities||[],d.bathroomFacilities||[],d.kitchenFacilities||[])};
-      }),
-      capacity:bi.unitCapacity||null, roomsNumber:bi.roomsNumber||null, surface:bi.unitSurface||"",
-      reviews:reviews||{items:[]}, faq, about,
-      _contact:P.contact||{}
+      name: it.name||'',
+      feat: it.featured===true || it.premiumFacility===true,
+      extra: it.extra===true || /supliment|extra|cost/i.test(it.priceRule||''),
+      offsite: it.offsite===true || /afara|offsite/i.test(it.locationRule||'')
     };
+  };
+  const cats=a.categories.map(c=>{
+    const seen=new Set();
+    const items=(c.items||[]).map(norm).filter(x=>{
+      const k=(x.name||'').toLowerCase().trim();
+      if(!k||seen.has(k)) return false; seen.add(k); return true;
+    });
+    return {title:c.title, icon:c.icon, items};
+  }).filter(c=>has(c.items));
+  if(!has(cats)) return '';
+  const ck='<span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12l5 5L20 6"/></svg></span>';
+  const showLegend = a.legend!==false && cats.some(c=>c.items.some(i=>i.extra||i.offsite));
+  return `<section class="sec tight" id="facilitati"><div class="wrap">
+    <div class="am-head rv"><h2 class="h2" style="font-size:clamp(26px,3.6vw,42px)">Facilități</h2>
+    ${showLegend?`<div class="am-legend">
+      <span class="lg"><span class="am-tag-x" style="margin:0">$</span> Cost suplimentar</span>
+      <span class="lg"><span class="am-tag-l" style="margin:0">loc</span> În afara locației</span>
+    </div>`:''}</div>
+    <div class="am-cols rv">
+      ${cats.map(c=>`<div class="am-cat"><h4>${c.icon?`<span class="ic">${icon(c.icon)}</span>`:''}${esc(c.title)}</h4>
+        <ul>${c.items.map(i=>`<li class="${i.feat?'feat':''}">${ck}<span>${esc(i.name)}${i.extra?'<span class="am-tag-x">$</span>':''}${i.offsite?'<span class="am-tag-l">în afara locației</span>':''}</span></li>`).join('')}</ul>
+      </div>`).join('')}
+    </div></div></section>`;
+}
+
+function rReviews(){
+  const r=PROPERTY.reviews; if(!r||!has(r.items)) return '';
+  const showScore = typeof r.average==='number' && r.average >= (THEME.reviewScoreThreshold||0);
+  return `<section class="sec tight" id="recenzii"><div class="wrap">
+    <div class="gal-head rv"><h2>Ce spun oaspeții</h2></div>
+    <div class="rev-bar rv"><div class="l">
+      ${showScore?`<span class="score">${r.average.toFixed(1).replace('.',',')}</span>`:''}
+      <span class="stars">★★★★★</span>
+      <div><span class="cnt">${showScore?'media generală · ':''}${r.count||r.items.length} recenzii ale oaspeților</span></div>
+    </div><a class="btn btn-out" href="${bookHref()}" style="padding:11px 22px;font-size:15px">Lasă o recenzie</a></div>
+    <div class="rev-grid rv">
+      ${r.items.slice(0,3).map(rv=>`<div class="rcard">
+        <div class="top"><div class="av">${esc((rv.name||'?').replace(/^[^A-Za-zĂÂÎȘȚ]*/,'').charAt(0).toUpperCase())}</div>
+          <div><div class="nm">${esc(rv.name)}</div>${rv.meta?`<div class="tm">${esc(rv.meta)}</div>`:''}</div></div>
+        <div class="st">${stars(rv.rating)}</div><p>${esc(rv.text)}</p></div>`).join('')}
+    </div></div></section>`;
+}
+
+function rRulesAbout(){
+  const hasRules=has(PROPERTY.rules), hasAbout=has(PROPERTY.about);
+  if(!hasRules&&!hasAbout) return '';
+  return `<section class="sec tight"><div class="wrap">
+    ${hasRules?`<div class="gal-head rv" style="max-width:760px"><h2>Regulile casei</h2>
+      <p class="lead" style="margin-top:14px;color:var(--body)">Pentru ca fiecare sejur să fie confortabil și bine organizat, te rugăm să consulți principalele reguli înainte de sosire.</p></div>
+      <div class="rules rv" style="margin-top:18px">
+      ${PROPERTY.rules.map(r=>`<div class="rrow"><span class="ic">${icon(r.icon)}</span><span>${esc(r.label)}</span></div>`).join('')}
+      </div>`:''}
+    ${hasAbout?`<div class="gal-head rv" style="margin-top:${hasRules?'70px':'0'}"><h2>Despre unitate</h2></div>
+      <div class="specs rv">${PROPERTY.about.map(a=>`<div class="spec"><b>${esc(a.label)}</b><span>${esc(a.value)}</span></div>`).join('')}</div>`:''}
+  </div></section>`;
+}
+
+function rFaq(){
+  const cats=(PROPERTY.faq||[]).filter(c=>has(c.items));
+  if(!has(cats)) return '';
+  return `<section class="sec tight"><div class="wrap"><div class="gal-head rv"><h2>Întrebări frecvente</h2></div>
+    <div class="faq-grid rv">${cats.map(c=>`<div class="faq-cat"><h3>${esc(c.category)}</h3>
+      ${c.items.map(it=>`<div class="qa"><button>${esc(it.q)}<svg class="ch" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button><div class="ans"><p>${esc(it.a)}</p></div></div>`).join('')}
+    </div>`).join('')}</div></div></section>`;
+}
+
+function rLocation(){
+  const L=PROPERTY.location; if(!L||L.lat==null) return '';
+  return `<section class="sec tight" id="contact"><div class="wrap"><div class="loc-grid">
+    <div class="rv"><span class="eyebrow">Locație</span><h2 class="h2" style="font-size:clamp(26px,3.6vw,42px)">Unde ne aflăm</h2>
+      ${L.address?`<p class="lead" style="margin-top:16px;color:var(--body)">${esc(PROPERTY.name)} este situat în ${esc([L.area,L.note].filter(Boolean).join(', '))}.</p>
+      <p style="margin-top:12px;font-weight:600;color:var(--navy)">${esc(L.address)}</p>`:''}
+      <div class="loc-cta">
+        <a class="btn btn-accent" href="${bookHref()}" ${THEME.booking.url?'':'target="_blank" rel="noopener"'}>Rezervă acum</a>
+        <a class="btn btn-wa" href="${waHref()}" target="_blank" rel="noopener"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.3L2 22l4.8-1.5A10 10 0 1 0 12 2zm5.3 14.2c-.2.6-1.2 1.1-1.7 1.2-.4 0-1 .1-1.6-.1-.4-.1-.9-.3-1.5-.6-2.7-1.2-4.4-3.9-4.6-4.1-.1-.2-1-1.4-1-2.6s.6-1.8.9-2.1c.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.7 1.8c.1.1.1.3 0 .5l-.3.4-.4.4c-.1.1-.3.3-.1.5.1.3.6 1 1.3 1.6.9.8 1.6 1 1.9 1.2.2.1.4.1.5-.1l.6-.7c.2-.2.3-.2.6-.1l1.7.8c.3.1.4.2.5.3.1.2.1.7-.1 1.3z"/></svg> WhatsApp</a>
+      </div></div>
+    <div class="map-wrap rv"><iframe loading="lazy" title="Hartă ${esc(PROPERTY.name)}" src="https://maps.google.com/maps?q=${L.lat},${L.lng}&z=14&output=embed"></iframe></div>
+  </div></div></section>`;
+}
+
+function rFooter(){
+  const L=PROPERTY.location||{};
+  return `<footer><div class="wrap"><div class="f-grid">
+    <div class="f-brand"><b>${esc((THEME.brandName+' '+(THEME.brandSub||'')).trim()).toUpperCase()}</b>
+      ${PROPERTY.intro?`<p>${esc(PROPERTY.intro)}</p>`:''}</div>
+    <div><h5>Contact</h5>
+      <a href="tel:${esc(THEME.booking.phone)}">Telefon: ${esc(THEME.booking.phone)}</a>
+      ${THEME.booking.whatsapp?`<a href="${waHref()}" target="_blank" rel="noopener">WhatsApp</a>`:''}
+      ${L.lat!=null?`<a href="https://maps.google.com/maps?q=${L.lat},${L.lng}" target="_blank" rel="noopener">${esc(L.address||'Vezi pe hartă')}</a>`:''}</div>
+    <div><h5>Explorează</h5><a href="#vila">Vila</a>${has(PROPERTY.galleries)?'<a href="#galerie">Galerie</a>':''}${has(PROPERTY.reviews&&PROPERTY.reviews.items)?'<a href="#recenzii">Recenzii</a>':''}<a href="#contact">Contact</a></div>
+    <div><h5>Politici</h5>${(THEME.policyLinks||[]).map(p=>`<a href="${esc(p.url)}">${esc(p.label)}</a>`).join('')}</div>
+  </div><div class="f-bot">
+    <span>© <span id="yr"></span> ${esc(PROPERTY.name)}${THEME.platform&&THEME.platform.name?` · pe platforma <a href="${esc(THEME.platform.url||'#')}" target="_blank" rel="noopener">${esc(THEME.platform.name)}</a>`:''}</span>
+    <span>${esc([L.area,L.county].filter(Boolean).join(' · '))} · România</span>
+  </div></div></footer>`;
+}
+
+function rStickyCTA(){
+  const pr=PROPERTY.priceFrom;
+  return `<div class="sticky-cta">
+    <div class="pr">${pr?`de la ${esc(pr.amount)} ${esc(pr.currency)}<small>/ ${esc(pr.unit)}</small>`:esc(PROPERTY.name)}</div>
+    <a class="btn btn-accent" href="${bookHref()}" ${THEME.booking.url?'':'target="_blank" rel="noopener"'}>Rezervă acum</a>
+  </div>`;
+}
+
+/* ---------- mount ---------- */
+function setTheme(){
+  const c=THEME.colors||{}, r=document.documentElement.style;
+  if(c.navy){r.setProperty('--navy',c.navy);r.setProperty('--footer',c.navy);}
+  if(c.accent){r.setProperty('--accent',c.accent);}
+  if(c.green){r.setProperty('--green',c.green);}
+  if(c.soft){r.setProperty('--soft',c.soft);}
+  document.title = PROPERTY.name + (PROPERTY.location&&PROPERTY.location.area?` · ${PROPERTY.location.area}`:'');
+}
+
+/* ===== Booking: rentable options (entire vs rooms, exclusive) + iCal availability calendar ===== */
+function rBooking(){
+  const R = (PROPERTY.rentals||[]);
+  if(!R.length) return '';
+  const cur = (R[0]&&R[0].currency)||'RON';
+  const entire = !!PROPERTY.entireUnitRental;
+  const entR = R.find(r=>r.isEntire);
+  const rooms = entire ? R.filter(r=>!r.isEntire) : R;
+  const entW = entR ? entR.weekday : Math.min.apply(null, R.map(r=>r.weekday||Infinity));
+  const priceTag = (amt,c)=>`<div class="bk-price"><span>de la</span><b>${esc(String(amt))} ${esc(c||cur)}</b><small>/noapte</small></div>`;
+  const metaLine = (opt)=>{ const p=[];
+    if(opt.capacity) p.push(opt.capacity+(opt.children?('+'+opt.children):'')+' oaspeți');
+    if(opt.beds) p.push(opt.beds);
+    if(opt.surface) p.push(esc(opt.surface));
+    if(opt.bathrooms) p.push(opt.bathrooms+(opt.bathrooms===1?' baie':' băi'));
+    return p.join(' · '); };
+  const detailsPanel = (opt)=>{
+    const has=(opt.view&&opt.view.length)||(opt.facilities&&opt.facilities.length)||opt.description;
+    if(!has) return '';
+    return `<button type="button" class="bk-more">Vezi detalii camere<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+      <div class="bk-details" hidden>
+        ${opt.description?`<p class="bk-d-desc">${esc(opt.description)}</p>`:''}
+        ${opt.view&&opt.view.length?`<div class="bk-d-row"><b>Priveliște</b><div class="bk-chips">${opt.view.map(v=>`<span>${esc(v)}</span>`).join('')}</div></div>`:''}
+        ${opt.facilities&&opt.facilities.length?`<div class="bk-d-row"><b>Facilități</b><div class="bk-chips">${opt.facilities.slice(0,30).map(v=>`<span>${esc(v)}</span>`).join('')}</div></div>`:''}
+      </div>`;
+  };
+  const card = (opt,rid,nameOv,subOv)=>{
+    const m=metaLine(opt);
+    return `<div class="bk-card${rid==='__entire'?' bk-entire':''}" data-rid="${esc(rid||opt.id)}">
+      <div class="bk-card-head">
+        <div class="bk-card-name"><b>${esc(nameOv||opt.name)}</b>${(subOv||opt.sub)?`<small>${esc(subOv||opt.sub)}</small>`:''}${m?`<small class="bk-meta">${m}</small>`:''}</div>
+        ${priceTag(opt.weekday, opt.currency)}
+        <button type="button" class="bk-sel" data-rid="${esc(rid||opt.id)}">Selectează</button>
+      </div>
+      ${detailsPanel(opt)}
+    </div>`;
+  };
+  const entireCard = entire ? card(entR||{weekday:isFinite(entW)?entW:'',currency:cur,capacity:PROPERTY.capacity},'__entire','Toată proprietatea','Închiriere integrală') : '';
+  return `<section class="sec" id="rezervare"><div class="wrap">
+    <h2 class="rv">Camere și prețuri</h2>
+    <p class="bk-intro rv">${entire?'Închiriază toată proprietatea sau alege camere individuale. Verifică disponibilitatea pe calendar.':'Alege o variantă și verifică disponibilitatea pe calendar.'}</p>
+    <div class="bk-grid">
+      <div class="bk-options rv">
+        ${entireCard}
+        ${rooms.map(o=>card(o)).join('')}
+      </div>
+      <aside class="bk-summary rv">
+        <h3>Rezervarea ta</h3>
+        <button type="button" class="bk-datebtn" id="bkDates">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+          <span id="bkDatesLbl">Alege datele</span>
+        </button>
+        <div class="bk-selected" id="bkSelected"><small>Nu ai selectat nicio variantă</small></div>
+        <div class="bk-total" id="bkTotal"></div>
+        <a class="btn btn-accent bk-send" id="bkSend" href="#">Trimite solicitarea</a>
+        <p class="bk-note">Nu vei fi taxat la etapa aceasta.</p>
+      </aside>
+    </div></div>
+    <div class="cal-overlay" id="calOv"><div class="cal-modal">
+      <div class="cal-head"><b>Alege perioada</b><button type="button" class="cal-x" id="calX">&times;</button></div>
+      <div class="cal-nav"><button type="button" id="calPrev" aria-label="Luna anterioară">‹</button><span id="calTitle"></span><button type="button" id="calNext" aria-label="Luna următoare">›</button></div>
+      <div class="cal-grid" id="calGrid"></div>
+      <div class="cal-legend"><span><i class="lg lg-free"></i>Liber</span><span><i class="lg lg-block"></i>Ocupat</span><span><i class="lg lg-sel"></i>Selectat</span></div>
+      <div class="cal-foot"><span id="calInfo"></span><div style="flex:1"></div><button type="button" class="btn btn-out" id="calClear">Șterge</button><button type="button" class="btn btn-accent" id="calOk">Confirmă</button></div>
+    </div></div>
+  </section>`;
+}
+
+function _som(d){ return new Date(d.getFullYear(),d.getMonth(),1); }
+function _piso(s){ const a=s.split('-').map(Number); return new Date(a[0],a[1]-1,a[2]); }
+function _iso(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function _fmtH(s){ return _piso(s).toLocaleDateString('ro-RO',{day:'numeric',month:'short'}); }
+
+function initBooking(){
+  const sec = document.getElementById('rezervare'); if(!sec) return;
+  const R = PROPERTY.rentals||[]; if(!R.length) return;
+  const cur = (R[0]&&R[0].currency)||'RON';
+  const slug = (window.STAY_SLUG||new URLSearchParams(location.search).get('slug')||'');
+  const byId={}; R.forEach(r=>byId[r.id]=r);
+  const entR = R.find(r=>r.isEntire)||null;
+  const st = { entire:false, rooms:new Set(), ci:null, co:null, blocked:{}, month:_som(new Date()) };
+  const $ = s=>sec.querySelector(s);
+
+  if(slug){ fetch('/api/availability/'+encodeURIComponent(slug)).then(r=>r.ok?r.json():null).then(d=>{ if(d&&d.units) st.blocked=d.units; }).catch(()=>{}); }
+
+  function selectedIds(){ return st.entire?['__entire']:[...st.rooms]; }
+  function entireOpt(){
+    if(entR) return {name:'Toată proprietatea',weekday:entR.weekday,weekend:entR.weekend||entR.weekday,currency:cur,minNights:entR.minNights||1};
+    const w=Math.min.apply(null,R.map(r=>r.weekday||Infinity)), we=Math.min.apply(null,R.map(r=>r.weekend||r.weekday||Infinity));
+    return {name:'Toată proprietatea',weekday:isFinite(w)?w:0,weekend:isFinite(we)?we:0,currency:cur,minNights:1};
+  }
+  function optFor(id){ return id==='__entire'?entireOpt():byId[id]; }
+  function activeBlocked(){
+    const s=new Set();
+    if(st.entire){ ((entR?st.blocked[entR.id]:st.blocked.__all)||[]).forEach(d=>s.add(d)); }
+    else { st.rooms.forEach(rid=>(st.blocked[rid]||[]).forEach(d=>s.add(d))); }
+    return s;
+  }
+  function nights(){ if(!st.ci||!st.co) return []; const out=[]; for(let d=_piso(st.ci); _iso(d)<st.co; d.setDate(d.getDate()+1)) out.push(_iso(d)); return out; }
+  function priceOf(opt,ds){ let t=0; ds.forEach(s=>{ const wd=_piso(s).getDay(); t+=(wd===5||wd===6)?(opt.weekend||opt.weekday||0):(opt.weekday||0); }); return t; }
+
+  sec.querySelectorAll('.bk-sel').forEach(btn=>btn.onclick=()=>{
+    const rid=btn.dataset.rid;
+    if(rid==='__entire'){ st.entire=!st.entire; if(st.entire) st.rooms.clear(); }
+    else { if(st.rooms.has(rid)) st.rooms.delete(rid); else { st.rooms.add(rid); st.entire=false; } }
+    refreshSel();
+  });
+  function refreshSel(){
+    sec.querySelectorAll('.bk-card').forEach(c=>{
+      const rid=c.dataset.rid, on = rid==='__entire'?st.entire:st.rooms.has(rid);
+      c.classList.toggle('on',on);
+      c.querySelector('.bk-sel').textContent = on?'Selectat ✓':'Selectează';
+    });
+    renderSummary();
+  }
+  function renderSummary(){
+    const ids=selectedIds();
+    $('#bkDatesLbl').textContent = (st.ci&&st.co)?(_fmtH(st.ci)+' → '+_fmtH(st.co)):'Alege datele';
+    const sel=$('#bkSelected'), tot=$('#bkTotal');
+    if(!ids.length){ sel.innerHTML='<small>Nu ai selectat nicio variantă</small>'; tot.innerHTML=''; return; }
+    const ds=nights(); let rows='', total=0;
+    ids.forEach(id=>{ const o=optFor(id), p=ds.length?priceOf(o,ds):0; total+=p;
+      rows+='<div class="bk-srow"><span>'+esc(o.name)+'</span><b>'+(ds.length?(p+' '+cur):'—')+'</b></div>'; });
+    sel.innerHTML=rows;
+    tot.innerHTML = ds.length? ('<div class="bk-trow"><span>'+ds.length+' nopți</span><b>'+total+' '+cur+'</b></div>') : '<small>Alege datele pentru a vedea totalul</small>';
   }
 
-  const STAY={slugify,deriveAdminState,masterToSite};
-  if(typeof module!=="undefined"&&module.exports) module.exports={STAY};
-  if(typeof window!=="undefined") window.STAY=STAY;
-})();
+  sec.querySelectorAll('.bk-more').forEach(btn=>btn.onclick=()=>{ const d=btn.nextElementSibling; if(d){ const open=!d.hidden; d.hidden=open; btn.classList.toggle('open',!open); } });
+  const ov=$('#calOv');
+  $('#bkDates').onclick=()=>{ if(!selectedIds().length){ flash('Alege întâi o variantă'); return; } st.month=_som(st.ci?_piso(st.ci):new Date()); ov.classList.add('on'); drawCal(); };
+  $('#calX').onclick=()=>ov.classList.remove('on');
+  ov.onclick=e=>{ if(e.target===ov) ov.classList.remove('on'); };
+  $('#calPrev').onclick=()=>{ st.month.setMonth(st.month.getMonth()-1); drawCal(); };
+  $('#calNext').onclick=()=>{ st.month.setMonth(st.month.getMonth()+1); drawCal(); };
+  $('#calClear').onclick=()=>{ st.ci=null; st.co=null; $('#calInfo').textContent=''; drawCal(); };
+  $('#calOk').onclick=()=>{ ov.classList.remove('on'); renderSummary(); };
+  function drawCal(){
+    const blocked=activeBlocked(), m=st.month, y=m.getFullYear(), mo=m.getMonth();
+    $('#calTitle').textContent = m.toLocaleDateString('ro-RO',{month:'long',year:'numeric'});
+    const startDow=(new Date(y,mo,1).getDay()+6)%7, days=new Date(y,mo+1,0).getDate(), today=_iso(new Date());
+    let html=''; ['Lu','Ma','Mi','Jo','Vi','Sâ','Du'].forEach(x=>html+='<div class="cal-dow">'+x+'</div>');
+    for(let i=0;i<startDow;i++) html+='<div></div>';
+    for(let d=1;d<=days;d++){
+      const ds=_iso(new Date(y,mo,d)), past=ds<today, blk=blocked.has(ds);
+      const inR=st.ci&&st.co&&ds>st.ci&&ds<st.co, isCi=ds===st.ci, isCo=ds===st.co;
+      let cls='cal-day'; if(past||blk) cls+=' off'; if(blk) cls+=' blocked'; if(isCi||isCo) cls+=' sel'; if(inR) cls+=' range';
+      html+='<button type="button" class="'+cls+'" data-d="'+ds+'"'+((past||blk)?' disabled':'')+'>'+d+'</button>';
+    }
+    const g=$('#calGrid'); g.innerHTML=html;
+    g.querySelectorAll('.cal-day:not(.off)').forEach(b=>b.onclick=()=>pick(b.dataset.d));
+  }
+  function pick(ds){
+    if(!st.ci || (st.ci&&st.co) || ds<=st.ci){ st.ci=ds; st.co=null; $('#calInfo').textContent=''; }
+    else {
+      const blocked=activeBlocked(); let ok=true;
+      for(let d=_piso(st.ci); _iso(d)<ds; d.setDate(d.getDate()+1)){ const k=_iso(d); if(k!==st.ci && blocked.has(k)){ ok=false; break; } }
+      if(!ok){ $('#calInfo').textContent='Perioada conține zile ocupate'; st.ci=ds; st.co=null; }
+      else { st.co=ds; const n=nights().length; const minN=Math.max.apply(null, selectedIds().map(id=>optFor(id).minNights||1));
+        $('#calInfo').textContent = n<minN ? ('Minim '+minN+' nopți') : (n+' nopți selectate'); }
+    }
+    drawCal();
+  }
+  $('#bkSend').onclick=e=>{
+    e.preventDefault();
+    const ids=selectedIds(); if(!ids.length){ flash('Alege o variantă'); return; }
+    const names=ids.map(id=>optFor(id).name).join(', ');
+    const dtx=(st.ci&&st.co)?(_fmtH(st.ci)+' → '+_fmtH(st.co)+' ('+nights().length+' nopți)'):'(date neselectate)';
+    const msg='Bună ziua! Aș dori o rezervare la '+PROPERTY.name+'.\nVariantă: '+names+'\nPerioadă: '+dtx;
+    const B=THEME.booking||{};
+    if(B.url) window.open(B.url,'_blank');
+    else if(B.whatsapp) window.open('https://wa.me/'+B.whatsapp+'?text='+encodeURIComponent(msg),'_blank');
+    else if(B.phone) window.location.href='tel:'+B.phone;
+  };
+  function flash(t){ const i=$('#bkDatesLbl'); i.textContent=t; setTimeout(()=>renderSummary(),1400); }
+  refreshSel();
+}
+
+/* ---- Activities + Services (grouped chips, real data only) ---- */
+function rGroupSec(id,eyebrow,title,groups){
+  if(!has(groups)) return '';
+  return `<section class="sec tight" id="${id}"><div class="wrap">
+    <div class="rv sec-head"><span class="eyebrow">${esc(eyebrow)}</span><h2>${esc(title)}</h2></div>
+    <div class="grp-wrap rv">${groups.map(g=>`
+      <div class="grp"><h3>${esc(g.title)}</h3><div class="grp-chips">${g.items.map(it=>`<span>${esc(it.name)}${it.extra?'<i title="cost suplimentar">$</i>':''}${it.offsite?'<i title="în afara locației">loc</i>':''}</span>`).join('')}</div></div>`).join('')}
+    </div></div></section>`;
+}
+function rActivities(){ return rGroupSec('activitati','De făcut','Activități & recreere', PROPERTY.activities); }
+function rServices(){ return rGroupSec('servicii','La fața locului','Servicii', PROPERTY.services); }
+
+function render(){
+  setTheme();
+  document.getElementById('app').innerHTML = [
+    rNav(), rHero(), rStrip(), rOverview(), rBooking(), rHighlight(),
+    rGalleries(), rSpaces(), rAmenities(), rActivities(), rServices(), rReviews(), rRulesAbout(), rFaq(),
+    rLocation(), rFooter()
+  ].join('') + rStickyCTA();
+  wire();
+}
+
+/* ---------- behaviors ---------- */
+function wire(){
+  const y=document.getElementById('yr'); if(y) y.textContent=new Date().getFullYear();
+  const nav=document.getElementById('nav');
+  const onScroll=()=>nav&&nav.classList.toggle('solid',window.scrollY>window.innerHeight*0.7);
+  onScroll(); addEventListener('scroll',onScroll,{passive:true});
+
+  const mm=document.getElementById('mmenu'), bg=document.getElementById('burger'), mx=document.getElementById('mx');
+  if(bg) bg.onclick=()=>mm.classList.add('show');
+  if(mx) mx.onclick=()=>mm.classList.remove('show');
+  if(mm) mm.querySelectorAll('a').forEach(a=>a.onclick=()=>mm.classList.remove('show'));
+
+  document.querySelectorAll('.qa button').forEach(b=>b.onclick=()=>{
+    const qa=b.parentElement, ans=qa.querySelector('.ans'), open=qa.classList.contains('open');
+    if(open){qa.classList.remove('open');ans.style.maxHeight=null;}
+    else{qa.classList.add('open');ans.style.maxHeight=ans.scrollHeight+'px';}
+  });
+
+  document.querySelectorAll('[data-carousel]').forEach(car=>{
+    const track=car.querySelector('.car-track'), n=track.children.length, dotsWrap=car.nextElementSibling;
+    let i=0;
+    for(let d=0;d<n;d++){const x=document.createElement('button');x.className='d'+(d?'':' on');x.onclick=()=>go(d);dotsWrap.appendChild(x);}
+    const dots=dotsWrap.querySelectorAll('.d');
+    function go(k){i=(k+n)%n;track.style.transform='translateX(-'+(i*100)+'%)';dots.forEach((d,j)=>d.classList.toggle('on',j===i));}
+    car.querySelector('.prev').onclick=()=>go(i-1); car.querySelector('.next').onclick=()=>go(i+1);
+    let t=setInterval(()=>go(i+1),6000);
+    car.addEventListener('mouseenter',()=>clearInterval(t));
+    car.addEventListener('mouseleave',()=>t=setInterval(()=>go(i+1),6000));
+  });
+
+  const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}}),{threshold:.1,rootMargin:'0px 0px -40px 0px'});
+  document.querySelectorAll('.rv').forEach(el=>io.observe(el));
+  if(matchMedia('(prefers-reduced-motion: reduce)').matches) document.querySelectorAll('.rv').forEach(el=>el.classList.add('in'));
+  try{ initBooking(); }catch(e){ console.error('booking init', e); }
+}
+
+/* mark JS active so reveal animations apply; without JS, content stays visible */
+document.documentElement.classList.add('js');
+
+/* connected store: load by ?slug= from the importer/admin */
+try{
+  var _sp=new URLSearchParams(location.search).get("slug");
+  if(_sp){ var _d=JSON.parse(localStorage.getItem("stay_site_"+_sp)||"null");
+    if(_d){ window.STAY_PROPERTY=_d;
+      var _ph=(_d._contact&&_d._contact.phone)||"";
+      window.STAY_THEME=Object.assign({brandName:_d.name||"",brandSub:(_d.location&&_d.location.area)||""},
+        _ph?{booking:{phone:_ph,whatsapp:_ph.replace(/[^0-9]/g,""),url:""}}:{});
+    }
+  }
+}catch(e){}
+
+/* allow the platform to inject data before render */
+if (typeof window!=='undefined' && window.STAY_PROPERTY) PROPERTY = window.STAY_PROPERTY;
+if (typeof window!=='undefined' && window.STAY_THEME) THEME = Object.assign({}, THEME, window.STAY_THEME);
+
+render();
+</script>
+</body>
+</html>
