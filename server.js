@@ -182,18 +182,35 @@ app.post("/api/upload", async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+/* Smart re-import: keep host-added data (iCal feeds/blocks, galleries, uploaded photos) when re-importing an existing slug */
+function mergeAdminState(oldS, newS) {
+  if (!oldS) return newS;
+  const oldUnits = oldS.units || [];
+  (newS.units || []).forEach(u => {
+    const o = oldUnits.find(x => x.id === u.id);
+    if (o) { u.feeds = o.feeds || u.feeds || []; u.blocks = o.blocks || u.blocks || []; }
+  });
+  if (oldS.galleries && Object.keys(oldS.galleries).length) newS.galleries = oldS.galleries;
+  const np = (newS.property && newS.property._photos) || [];
+  const op = (oldS.property && oldS.property._photos) || [];
+  if (!np.length && op.length && newS.property) newS.property._photos = op;
+  return newS;
+}
+
 app.post("/api/import", async (req, res) => {
   try {
     const master = req.body;
     const admin = STAY.deriveAdminState(master);
     const slug = STAY.slugify(admin.property.basicInfo.name || "unitate");
-    const site = STAY.masterToSite(admin.property, admin.pricing);
+    const existing = await getProp(slug);
+    const merged = existing ? mergeAdminState(existing.admin_state, admin) : admin;
+    const site = STAY.masterToSite(merged.property, merged.pricing);
     await pool.query(
       `insert into properties(slug, admin_state, site) values($1,$2,$3)
        on conflict(slug) do update set admin_state=excluded.admin_state, site=excluded.site, updated_at=now()`,
-      [slug, admin, site]
+      [slug, merged, site]
     );
-    res.json({ slug, name: admin.property.basicInfo.name || slug });
+    res.json({ slug, name: merged.property.basicInfo.name || slug, merged: !!existing });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
