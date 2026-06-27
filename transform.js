@@ -138,6 +138,9 @@
       photos:{hero:photos[0]||"",strip:take(photos,5)},
       overview:{image:photos[1]||photos[0]||"",heading:((bi.unitType||"Cazare")+(flags.pool?" cu piscină și spa":"")+(city?" în "+city:"")),description:desc,features},
       flags, galleries, spaces, amenities, rules,
+      entireUnitRental:!!bi.entireUnitRental,
+      rentals:((pricing&&pricing.rooms)||[]).map(r=>({id:r.id,name:r.name,sub:r.sub||"",weekday:+r.weekday||0,weekend:+r.weekend||+r.weekday||0,currency:r.currency||"RON",minNights:+r.minNights||1,isEntire:!!r.isEntire})),
+      capacity:bi.unitCapacity||null, roomsNumber:bi.roomsNumber||null, surface:bi.unitSurface||"",
       reviews:reviews||{items:[]}, faq, about,
       _contact:P.contact||{}
     };
