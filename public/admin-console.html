@@ -151,6 +151,28 @@ textarea.inp{min-height:70px;resize:vertical;line-height:1.5}
 .photo-card{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px;background:#fcfdfe;position:relative}
 .photo-tag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--brand);margin-bottom:8px}
 .photo-acts{display:flex;gap:6px;margin-top:10px}
+
+.photo-toolbar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.btn-ai-bulk{background:linear-gradient(135deg,#7c4dff,#b14dff);color:#fff;border:0}
+.btn-ai-bulk:disabled{opacity:.5;cursor:default}
+.photo-pick{position:absolute;top:10px;right:10px;display:flex;align-items:center;gap:5px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:4px 8px;font-size:11px;font-weight:700;color:var(--brand);cursor:pointer;z-index:2}
+.photo-chk{width:16px;height:16px;accent-color:#7c4dff;cursor:pointer;margin:0}
+.cmp-overlay{position:fixed;inset:0;background:rgba(16,24,20,.65);display:none;align-items:center;justify-content:center;z-index:90;padding:16px}
+.cmp-overlay.on{display:flex}
+.cmp-modal{background:#fff;border-radius:16px;width:100%;max-width:820px;max-height:94vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 80px -20px rgba(0,0,0,.5)}
+.cmp-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--line-2)}
+.cmp-head b{font-size:15px;color:var(--ink)}
+.cmp-count{font-size:12.5px;color:var(--muted);font-weight:600}
+.cmp-stage{padding:16px;background:#0f1512;display:grid;place-items:center}
+.cmp-box{position:relative;width:100%;max-width:760px;line-height:0;user-select:none;touch-action:none;cursor:ew-resize;border-radius:8px;overflow:hidden}
+.cmp-box img{display:block;width:100%;height:auto;-webkit-user-drag:none}
+.cmp-before{position:absolute;inset:0;clip-path:inset(0 50% 0 0)}
+.cmp-handle{position:absolute;top:0;bottom:0;left:50%;width:2px;background:#fff;transform:translateX(-1px);box-shadow:0 0 0 1px rgba(0,0,0,.2)}
+.cmp-grip{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:34px;height:34px;border-radius:50%;background:#fff;color:#333;display:grid;place-items:center;font-size:15px;box-shadow:0 2px 10px rgba(0,0,0,.35)}
+.cmp-tag{position:absolute;top:10px;font-size:10.5px;font-weight:700;letter-spacing:.05em;color:#fff;background:rgba(0,0,0,.55);padding:3px 8px;border-radius:6px;line-height:1.2}
+.cmp-tagL{left:10px}.cmp-tagR{right:10px}
+.cmp-hint{text-align:center;font-size:12px;color:var(--muted);padding:8px}
+.cmp-foot{display:flex;align-items:center;gap:10px;padding:12px 18px;border-top:1px solid var(--line-2)}
 .pe-overlay{position:fixed;inset:0;background:rgba(16,24,20,.6);display:none;align-items:center;justify-content:center;z-index:80;padding:16px}
 .pe-overlay.on{display:flex}
 .pe-modal{background:#fff;border-radius:16px;width:100%;max-width:920px;max-height:94vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 80px -20px rgba(0,0,0,.5)}
@@ -185,6 +207,8 @@ textarea.inp{min-height:70px;resize:vertical;line-height:1.5}
 .pe-tctrl{margin-top:8px}.pe-tcolor{width:40px;height:34px;border:1px solid var(--line);border-radius:8px;padding:2px;cursor:pointer}.pe-tsize{flex:1}
 .pe-btn{border:0;border-radius:9px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer}
 .pe-up{background:var(--brand-soft);color:var(--brand);width:100%}
+.pe-ai{background:linear-gradient(135deg,#7c4dff,#b14dff);color:#fff;width:100%}
+.pe-ai:disabled{opacity:.7;cursor:default}
 .pe-pri{background:var(--brand);color:#fff}.pe-pri:disabled{opacity:.6;cursor:default}
 .pe-ghost{background:#fff;border:1px solid var(--line);color:var(--ink)}
 .pe-foot{display:flex;align-items:center;gap:10px;padding:12px 18px;border-top:1px solid var(--line-2)}
@@ -691,6 +715,7 @@ function distList(host,label,arr){
         + '</div>'
         + '<div class="pe-side">'
           + '<button class="pe-btn pe-up" data-act="pick">Încarcă poză</button>'
+          + '<button class="pe-btn pe-ai" data-act="aiEnhance" title="Corecție lumină, culoare și perspectivă cu AI">✨ Optimizează cu AI</button>'
           + '<input type="file" accept="image/*" class="pe-file" hidden>'
           + '<div class="pe-group"><div class="pe-gl">Rotire</div><div class="pe-rowb">'
             + '<button class="pe-mini" data-act="rotL" title="Rotește stânga">⟲</button>'
@@ -853,6 +878,7 @@ function distList(host,label,arr){
       const preset = e.target.dataset.preset, ratio = e.target.dataset.ratio;
       if(act==="cancel"){ close(); return; }
       if(act==="pick"){ ctrls.file.click(); return; }
+      if(act==="aiEnhance"){ aiEnhance(); return; }
       if(act==="rotL"){ rotate(false); return; }
       if(act==="rotR"){ rotate(true); return; }
       if(act==="flipH"){ flip(true); return; }
@@ -940,6 +966,23 @@ function distList(host,label,arr){
   }
   function selectText(){ const t=st.texts[st.sel]; if(!t) return; ctrls.tctrl.hidden=false; ctrls.tcolor.value=t.color; ctrls.tsize.value=t.size; }
 
+  function exportRawJpeg(){
+    const c=document.createElement("canvas"); c.width=work.width; c.height=work.height;
+    c.getContext("2d").drawImage(work,0,0);
+    return c.toDataURL("image/jpeg",0.95);
+  }
+  async function aiEnhance(){
+    if(!work){ toast&&toast("Încarcă o poză întâi"); return; }
+    const btn=overlay.querySelector('[data-act="aiEnhance"]'); const old=btn.textContent;
+    btn.disabled=true; btn.textContent="Se optimizează cu AI...";
+    try{
+      const r=await fetch("/api/ai-enhance",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({dataUrl:exportRawJpeg()})});
+      const d=await r.json().catch(()=>({}));
+      if(r.ok && d.dataUrl){ loadSrc(d.dataUrl); toast&&toast("Poză optimizată cu AI — verific-o înainte de a salva"); }
+      else { toast&&toast("Optimizarea AI nu a reușit"+(d.error?(" ("+d.error+")"):"")); }
+    }catch(e){ toast&&toast("Optimizarea AI nu a reușit (server)"); }
+    finally{ btn.disabled=false; btn.textContent=old; }
+  }
   function exportJpeg(){
     if(!work) return Promise.resolve("");
     const ow=work.width, oh=work.height;
@@ -977,6 +1020,108 @@ function distList(host,label,arr){
   };
 })();
 
+/* ===== Before/After comparison slider =====
+   openCompare(beforeSrc, afterSrc, { index, total, onAccept, onSkip, onCancel }) */
+(function(){
+  let ov, box, before, handle, count, cb;
+  function build(){
+    ov=document.createElement("div"); ov.className="cmp-overlay";
+    ov.innerHTML=
+      '<div class="cmp-modal">'
+      + '<div class="cmp-head"><b>Înainte / După — comparație AI</b><span class="cmp-count"></span></div>'
+      + '<div class="cmp-stage"><div class="cmp-box">'
+        + '<img class="cmp-after" alt="după">'
+        + '<img class="cmp-before" alt="înainte">'
+        + '<div class="cmp-handle"><span class="cmp-grip">⇆</span></div>'
+        + '<span class="cmp-tag cmp-tagL">ÎNAINTE</span><span class="cmp-tag cmp-tagR">DUPĂ · AI</span>'
+      + '</div></div>'
+      + '<div class="cmp-hint">Trage de mijloc pentru a compara.</div>'
+      + '<div class="cmp-foot">'
+        + '<button class="pe-btn pe-ghost" data-c="skip">Păstrează originalul</button>'
+        + '<div style="flex:1"></div>'
+        + '<button class="pe-btn pe-ghost" data-c="cancel">Renunță la tot</button>'
+        + '<button class="pe-btn pe-pri" data-c="accept">Folosește versiunea AI</button>'
+      + '</div></div>';
+    document.body.appendChild(ov);
+    box=ov.querySelector(".cmp-box");
+    before=ov.querySelector(".cmp-before");
+    handle=ov.querySelector(".cmp-handle");
+    count=ov.querySelector(".cmp-count");
+
+    function setPos(pct){
+      pct=Math.max(2,Math.min(98,pct));
+      before.style.clipPath="inset(0 "+(100-pct)+"% 0 0)";
+      handle.style.left=pct+"%";
+    }
+    setPos(50);
+    let dragging=false;
+    function move(e){
+      const r=box.getBoundingClientRect();
+      const x=( (e.touches?e.touches[0].clientX:e.clientX) - r.left)/r.width*100;
+      setPos(x);
+    }
+    box.addEventListener("pointerdown",e=>{dragging=true;move(e);});
+    window.addEventListener("pointermove",e=>{if(dragging)move(e);});
+    window.addEventListener("pointerup",()=>{dragging=false;});
+
+    ov.addEventListener("click",e=>{
+      const c=e.target.closest("[data-c]"); if(!c) return;
+      const act=c.dataset.c; close();
+      if(cb){ const f=cb; cb=null; f(act); }
+    });
+  }
+  function close(){ ov && ov.classList.remove("on"); }
+  window.openCompare=function(beforeSrc, afterSrc, opts){
+    opts=opts||{};
+    if(!ov) build();
+    ov.querySelector(".cmp-after").src=afterSrc;
+    before.src=beforeSrc;
+    before.style.clipPath="inset(0 50% 0 0)"; handle.style.left="50%";
+    count.textContent = (opts.total>1) ? ("Poza "+opts.index+" din "+opts.total) : "";
+    cb=function(act){
+      if(act==="accept") opts.onAccept&&opts.onAccept();
+      else if(act==="skip") opts.onSkip&&opts.onSkip();
+      else opts.onCancel&&opts.onCancel();
+    };
+    ov.classList.add("on");
+  };
+})();
+
+/* ---- bulk AI selection state + runner ---- */
+const photoSel = new WeakSet();
+async function aiOptimizeSelected(arr, host){
+  const sel = arr.filter(p=>photoSel.has(p) && p.photoName);
+  if(!sel.length){ toast("Bifează cel puțin o poză"); return; }
+  let used=0, kept=0, failed=0, cancelled=false;
+  for(let i=0;i<sel.length;i++){
+    const p=sel[i];
+    toast("Optimizez "+(i+1)+" din "+sel.length+" cu AI...");
+    let enhanced=null;
+    try{
+      const payload = /^data:/.test(p.photoName) ? {dataUrl:p.photoName} : {url:p.photoName};
+      const r=await fetch("/api/ai-enhance",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+      const d=await r.json().catch(()=>({}));
+      if(r.ok&&d.dataUrl) enhanced=d.dataUrl; else { failed++; }
+    }catch(e){ failed++; }
+    if(!enhanced) continue;
+    const decision = await new Promise(res=>openCompare(p.photoName, enhanced, {index:i+1,total:sel.length,
+      onAccept:()=>res("accept"), onSkip:()=>res("skip"), onCancel:()=>res("cancel")}));
+    if(decision==="cancel"){ cancelled=true; break; }
+    if(decision==="skip"){ kept++; continue; }
+    // accept -> upload enhanced to R2 (short url); fallback to embedding if upload fails
+    try{
+      const ur=await fetch("/api/upload",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({dataUrl:enhanced})});
+      const ud=await ur.json().catch(()=>({}));
+      if(ur.ok&&ud.url){ p.photoName=ud.url; if(ud.alt&&!p.imageAlt)p.imageAlt=ud.alt; }
+      else { p.photoName=enhanced; }
+      used++; markDirty();
+    }catch(e){ p.photoName=enhanced; used++; markDirty(); }
+  }
+  sel.forEach(p=>photoSel.delete(p));
+  renderPhotos(host,arr);
+  toast("Gata: "+used+" optimizate, "+kept+" păstrate"+(failed?(", "+failed+" eșuate"):"")+(cancelled?" — oprit":""));
+}
+
 /* ---- image field + photo list (uses openPhotoEditor) ---- */
 function imageField(obj,key,label,opts){
   opts=opts||{};
@@ -993,15 +1138,29 @@ function imageField(obj,key,label,opts){
 }
 function renderPhotos(host,arr){
   host.innerHTML="";
+  const selCount=arr.filter(p=>photoSel.has(p)).length;
+  const aiBtn=h("button",{class:"btn btn-ai-bulk sm",type:"button",disabled:selCount?undefined:"disabled",
+    onclick:()=>aiOptimizeSelected(arr,host)},
+    h("span",{html:'✨'}),"Optimizează selectatele"+(selCount?(" ("+selCount+")"):""));
+  const allSel=arr.length&&arr.every(p=>photoSel.has(p));
+  const selAll=arr.length?h("button",{class:"btn-ghost sm",type:"button",onclick:()=>{
+      if(allSel) arr.forEach(p=>photoSel.delete(p)); else arr.forEach(p=>photoSel.add(p));
+      renderPhotos(host,arr);
+    }}, allSel?"Deselectează tot":"Selectează tot"):null;
+  host.appendChild(h("div",{class:"photo-toolbar"}, aiBtn, selAll));
+
   arr.forEach((p,i)=>{
     const alt=h("input",{class:"inp",placeholder:"Descriere (alt)"}); alt.value=p.imageAlt||""; alt.oninput=()=>{p.imageAlt=alt.value;markDirty();};
+    const chk=h("input",{type:"checkbox",class:"photo-chk"}); chk.checked=photoSel.has(p);
+    chk.onchange=()=>{ if(chk.checked)photoSel.add(p); else photoSel.delete(p); renderPhotos(host,arr); };
     const acts=h("div",{class:"photo-acts"},
       i>0?h("button",{class:"btn-ghost sm",type:"button",onclick:()=>{const t=arr[i-1];arr[i-1]=arr[i];arr[i]=t;renderPhotos(host,arr);markDirty();}},"↑"):null,
       i<arr.length-1?h("button",{class:"btn-ghost sm",type:"button",onclick:()=>{const t=arr[i+1];arr[i+1]=arr[i];arr[i]=t;renderPhotos(host,arr);markDirty();}},"↓"):null,
       h("button",{class:"btn-ghost sm",type:"button",style:"color:var(--red)",onclick:()=>{arr.splice(i,1);renderPhotos(host,arr);markDirty();}},"Șterge"));
     host.appendChild(h("div",{class:"photo-card"},
+      h("label",{class:"photo-pick"}, chk, h("span",{},"AI")),
       h("div",{class:"photo-tag"}, i===0?"Foto principală (hero)":("Foto "+(i+1))),
-      imageField(p,"photoName","",{onSaved:(meta)=>{ if(meta&&meta.alt&&!p.imageAlt){p.imageAlt=meta.alt; renderPhotos(host,arr);} }}),
+      imageField(p,"photoName","",{onSaved:(meta)=>{ if(meta&&meta.alt&&!p.imageAlt){p.imageAlt=meta.alt;} renderPhotos(host,arr); }}),
       h("div",{class:"field",style:"margin-top:8px"},alt),
       acts));
   });
