@@ -803,7 +803,7 @@ function renderIcal(){
         h("button",{class:"icon-btn",onclick:()=>{u.feeds.splice(idx,1);persist();renderIcal();renderCalendar();}},h("span",{html:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>'}))));
     });
     if(!(u.feeds||[]).length)feedsWrap.appendChild(h("div",{style:"color:var(--muted);font-size:13px;padding:4px 0 10px"},"Niciun calendar importat."));
-    const exportUrl=`https://staypredeal.ro/ical/${SLUG}/${r.id}.ics`;
+    const exportUrl=location.origin+"/ical/"+SLUG+"/"+r.id+".ics";
     const block=h("div",{class:"unit-block"},
       h("div",{class:"uh"},h("div",{},h("b",{},r.name),r.isEntire?h("span",{class:"tag"},"toată vila"):null),
         h("button",{class:"btn btn-pri sm",onclick:()=>openFeed(r.id)},h("span",{html:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>'}),"Conectează calendar")),
