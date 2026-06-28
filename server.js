@@ -11,6 +11,19 @@ const { describeImage, enhanceImage } = require("./ai");
 const app = express();
 app.use(express.json({ limit: "25mb" }));
 
+// Safety net: never let a request hang forever (e.g. if the DB is briefly down).
+// If a handler hasn't responded in time, return 503 instead of spinning.
+app.use((req, res, next) => {
+  const t = setTimeout(() => {
+    if (!res.headersSent) {
+      try { res.status(503).json({ error: "Serviciul este momentan ocupat. Reîncearcă în câteva momente." }); } catch (e) {}
+    }
+  }, 12000);
+  res.on("finish", () => clearTimeout(t));
+  res.on("close", () => clearTimeout(t));
+  next();
+});
+
 const PUBLIC = path.join(__dirname, "public");
 const BASE_DOMAIN = (process.env.BASE_DOMAIN || "").toLowerCase(); // e.g. staypredeal.ro
 
