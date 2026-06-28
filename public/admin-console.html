@@ -542,12 +542,34 @@ let state=api.load()||{
     ], periods:[] },
   units:[ {id:"vila-standard",feeds:[],blocks:[]}, {id:"camera-dubla",feeds:[],blocks:[]} ]
 };
+/* normalize null arrays/objects so imported skeleton data (with nulls) doesn't break section rendering */
+function _na(o,k){ if(!o||typeof o!=="object")return; if(!Array.isArray(o[k])) o[k]=[]; }
+function normalizeState(s){
+  if(!s||typeof s!=="object") return s;
+  const P=s.property=s.property||{};
+  P.basicInfo=P.basicInfo||{};
+  P.host=P.host||{}; _na(P.host,"spokenLanguages");
+  ["benefits","mostAppreciatedFacilities","_photos","questionsAndAnswers"].forEach(k=>_na(P,k));
+  P.allFacilities=P.allFacilities||{};
+  ["foodAndDrinks","generalFacilities","wellness","exterior","cleaningServices","businessFacilities","bathroom","kitchen","bedroom","comfort","commonAreas","livingArea","mediaTechnology","roomFacilities","shops","pools","restaurants","internet","parking"].forEach(k=>_na(P.allFacilities,k));
+  P.activities=P.activities||{}; ["skiing","entertainmentAndFamilyServices","sportsAndRecreation"].forEach(k=>_na(P.activities,k));
+  P.services=P.services||{}; ["receptionServices","servicesExtra","safety","generalServices"].forEach(k=>_na(P.services,k));
+  P.policies=P.policies||{}; P.policies.checkIn=P.policies.checkIn||{}; P.policies.checkOut=P.policies.checkOut||{}; _na(P.policies,"extraBedAgeRates");
+  P.payment=P.payment||{}; _na(P.payment,"paymentMethods");
+  P.location=P.location||{}; ["mainAttractions","nearbyAttractions","slopes","publicTransport","nearbyAirports","nearbyBeaches","naturalLandscapes","restaurantsAndCafes","zones"].forEach(k=>_na(P.location,k));
+  P.contact=P.contact||{};
+  s.pricing=s.pricing||{}; _na(s.pricing,"rooms"); _na(s.pricing,"periods");
+  (s.pricing.rooms||[]).forEach(r=>{ r.details=r.details||{}; ["spaces","view","keyFacilities","bathroomFacilities","kitchenFacilities","unitFacilities"].forEach(k=>_na(r.details,k)); });
+  _na(s,"units"); s.galleries=s.galleries||{};
+  return s;
+}
+normalizeState(state);
 /* keep units in sync with pricing rooms */
 function syncUnits(){
   state.pricing.rooms.forEach(r=>{ if(!state.units.find(u=>u.id===r.id)) state.units.push({id:r.id,feeds:[],blocks:[]}); });
   state.units=state.units.filter(u=>state.pricing.rooms.find(r=>r.id===u.id));
 }
-function regenSite(){ try{ if(window.STAY) localStorage.setItem("stay_site_"+SLUG, JSON.stringify(STAY.masterToSite(state.property,state.pricing))); }catch(e){} }
+function regenSite(){ try{ if(window.STAY) localStorage.setItem("stay_site_"+SLUG, JSON.stringify(STAY.masterToSite(state.property,state.pricing,state.galleries))); }catch(e){} }
 function persist(){ api.save(state); regenSite(); $("#saveState").innerHTML='<span class="dot"></span> Salvat'; }
 function markDirty(){ $("#saveState").innerHTML='<span class="dot" style="background:var(--amber)"></span> Modificări nesalvate'; }
 
@@ -639,7 +661,8 @@ function stringList(host,arr,ph,addLabel){
   host.appendChild(h("button",{class:"btn btn-out sm",onclick:()=>{arr.push("");stringList(host,arr,ph,addLabel);markDirty();}},"+ "+addLabel));
 }
 function accordion(title,sub,buildBody,open){
-  const body=h("div",{class:"bd"}); buildBody(body);
+  const body=h("div",{class:"bd"});
+  try{ buildBody(body); }catch(e){ console.error("Secțiune indisponibilă ("+title+"):",e); body.appendChild(h("p",{style:"color:#c0392b;font-size:13px;margin:4px 0"},"Această secțiune n-a putut fi încărcată (date incomplete). Restul funcționează normal.")); }
   const card=h("div",{class:"card acc"+(open?" open":"")},
     h("div",{class:"hd",onclick:()=>card.classList.toggle("open")},
       h("div",{},h("h2",{},title),sub?h("p",{},sub):null),
