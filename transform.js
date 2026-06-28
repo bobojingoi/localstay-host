@@ -61,11 +61,18 @@
   }
 
   /* ---- admin property -> site PROPERTY (what the template renders) ---- */
-  function masterToSite(P,pricing){
+  function masterToSite(P,pricing,galleries){
     const bi=P.basicInfo||{}, loc=P.location||{};
     const city=bi.city||bi.locality||"", county=bi.county?("jud. "+bi.county):"";
     const minPrice=Math.min.apply(null,((pricing&&pricing.rooms)||[{weekday:0}]).map(r=>r.weekday||0).filter(x=>x>0).concat([Infinity]));
     const photos=(P._photos||[]).map(photoUrl).filter(Boolean);
+    const _gv=galleries||{};
+    const _roomPhotos=rid=>((_gv[rid]||[]).map(p=>p&&p.url).filter(Boolean));
+    const _allVariantPhotos=[]; ((pricing&&pricing.rooms)||[]).forEach(r=>_roomPhotos(r.id).forEach(u=>_allVariantPhotos.push(u)));
+    const _entireRoom=((pricing&&pricing.rooms)||[]).find(r=>r.isEntire);
+    const _entirePhotos=_entireRoom?_roomPhotos(_entireRoom.id):[];
+    const _mainPool=(photos.length?photos:(_entirePhotos.length?_entirePhotos:_allVariantPhotos));
+    const _hero=_mainPool[0]||"";
     const desc=P.description||(P.host&&P.host.hostUnitDescription)||"";
     const firstSentence=(desc.split(/(?<=[.!?])\s/)[0]||desc).slice(0,120);
 
@@ -141,7 +148,7 @@
     const faq=qa.length?[{category:"Întrebări frecvente",items:qa}]:[];
 
     // galleries from photos
-    const galleries=photos.length>=2?[{heading:"Galerie foto",slides:photos.map((u,i)=>({img:u,cap:""}))}]:[];
+    const mainGalleries=_mainPool.length>=2?[{heading:"Galerie foto",slides:_mainPool.map((u)=>({img:u,cap:""}))}]:[];
 
     // dedicated Activities + Services sections (grouped, real data only)
     const mkItem=x=>({name:nm(x),extra:!!(x&&x.priceRule),offsite:!!(x&&x.locationRule)});
@@ -156,9 +163,9 @@
       intro:desc.slice(0,240),
       location:{area:city,county,note:bi.locality||"",address:bi.address||"",lat:bi.latitude,lng:bi.longitude},
       priceFrom:(isFinite(minPrice)&&minPrice>0)?{amount:minPrice,currency:(pricing.rooms[0]&&pricing.rooms[0].currency)||"RON",unit:"noapte"}:null,
-      photos:{hero:photos[0]||"",strip:take(photos,5)},
-      overview:{image:photos[1]||photos[0]||"",heading:((bi.unitType||"Cazare")+(flags.pool?" cu piscină și spa":"")+(city?" în "+city:"")),description:desc,features},
-      flags, galleries, spaces, highlight, amenities, rules,
+      photos:{hero:_hero,strip:take(_mainPool,5)},
+      overview:{image:_mainPool[1]||_mainPool[0]||"",heading:((bi.unitType||"Cazare")+(flags.pool?" cu piscină și spa":"")+(city?" în "+city:"")),description:desc,features},
+      flags, galleries:mainGalleries, spaces, highlight, amenities, rules,
       entireUnitRental:!!bi.entireUnitRental,
       rentals:((pricing&&pricing.rooms)||[]).map(r=>{
         const d=r.details||{};
@@ -168,10 +175,12 @@
         return {id:r.id,name:r.name,sub:r.sub||"",weekday:+r.weekday||0,weekend:+r.weekend||+r.weekday||0,currency:r.currency||"RON",minNights:+r.minNights||1,isEntire:!!r.isEntire,
           capacity:d.adultsRoomCapacity||null,children:+d.childrenRoomCapacity||0,surface:d.surface||"",bathrooms:d.bathroomsNumber||null,
           bedrooms:((d.spaces||[]).length||d.spacesNumber||null),beds:bedsTxt,view:d.view||[],description:d.roomDescription||"",
-          facilities:[].concat(d.keyFacilities||[],d.unitFacilities||[],d.bathroomFacilities||[],d.kitchenFacilities||[])};
+          facilities:[].concat(d.keyFacilities||[],d.unitFacilities||[],d.bathroomFacilities||[],d.kitchenFacilities||[]),
+          gallery:(_gv[r.id]||[]).map(p=>({url:p.url,thumb:p.thumb||p.url,alt:p.alt||""})).filter(p=>p.url)};
       }),
       capacity:bi.unitCapacity||null, roomsNumber:bi.roomsNumber||null, surface:bi.unitSurface||"",
       reviews:reviews||{items:[]}, faq, about,
+      pricing:{ periods:((pricing&&pricing.periods)||[]).map(p=>({roomId:p.roomId||"all",start:p.start||"",end:p.end||"",weekday:+p.weekday||0,weekend:+p.weekend||+p.weekday||0,label:p.label||""})), dayPrices:(pricing&&pricing.dayPrices)||{} },
       _contact:P.contact||{}
     };
   }
