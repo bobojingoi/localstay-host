@@ -213,6 +213,13 @@ textarea.inp{min-height:70px;resize:vertical;line-height:1.5}
 .de-stage{position:relative;background:#0f1512;min-height:200px;display:grid;place-items:center;background-image:linear-gradient(45deg,#171f1b 25%,transparent 25%),linear-gradient(-45deg,#171f1b 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#171f1b 75%),linear-gradient(-45deg,transparent 75%,#171f1b 75%);background-size:18px 18px;background-position:0 0,0 9px,9px -9px,-9px 0}
 .de-stage.over{outline:3px dashed var(--brand);outline-offset:-6px}
 .de-canvas{max-width:100%;max-height:300px;display:block}
+.de-cmp{position:absolute;left:50%;transform:translateX(-50%);bottom:8px;z-index:3;border:1px solid rgba(255,255,255,.55);background:rgba(0,0,0,.5);color:#fff;border-radius:8px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer}
+.de-cmp:hover{background:rgba(0,0,0,.7)}
+.de-cmp.on{background:var(--brand);border-color:var(--brand)}
+.de-cmp[hidden]{display:none}
+.de-lbl{position:absolute;top:9px;z-index:3;font-size:10px;font-weight:700;letter-spacing:.05em;color:#fff;background:rgba(0,0,0,.55);padding:3px 7px;border-radius:6px;pointer-events:none}
+.de-lbl-b{left:9px}.de-lbl-a{right:9px}
+.de-lbl[hidden]{display:none}
 .de-empty{color:#9fb2a8;display:flex;flex-direction:column;align-items:center;gap:9px;font-size:12.5px;padding:30px 18px;text-align:center;cursor:pointer}
 .de-empty svg{width:34px;height:34px}
 .de-empty[hidden]{display:none}
@@ -1634,11 +1641,16 @@ const DOCK_PRESET_LABELS = { none:"Original", bw:"Alb-negru", sepia:"Sepia", war
 function createDockEditor(container){
   const MAXDIM=1600;
   let work=null;                 // full-res source canvas (geometry baked, no filter)
+  let original=null;             // snapshot of the image as first loaded (for before/after)
+  let aiApplied=false, geomChanged=false;  // real changes that make before/after meaningful
+  let compareOn=false, comparePos=0.5, cmpDrag=false;
   let adj={brightness:100,contrast:100,saturation:100,preset:"none"};
   container.innerHTML =
     '<div class="de">'
     + '<div class="de-h"><b>Editor foto</b><span class="de-hint">AI · ajustări</span></div>'
     + '<div class="de-stage"><canvas class="de-canvas" style="display:none"></canvas>'
+      + '<button class="de-cmp" data-act="cmp" hidden>Înainte / După</button>'
+      + '<span class="de-lbl de-lbl-b" hidden>ÎNAINTE</span><span class="de-lbl de-lbl-a" hidden>DUPĂ</span>'
       + '<div class="de-empty" data-act="pick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg><span>Trage o poză din galerie aici<br>sau click pentru a încărca</span></div>'
       + '<input type="file" accept="image/*" class="de-file" hidden></div>'
     + '<div class="de-body">'
@@ -1666,25 +1678,59 @@ function createDockEditor(container){
   const $$=s=>container.querySelector(s);
   const view=$$(".de-canvas"), vctx=view.getContext("2d");
   const empty=$$(".de-empty"), stage=$$(".de-stage"), file=$$(".de-file"), out=$$(".de-out");
+  const cmpBtn=$$(".de-cmp"), lblB=$$(".de-lbl-b"), lblA=$$(".de-lbl-a");
 
   function curFilter(){ return (DOCK_PRESETS[adj.preset]?DOCK_PRESETS[adj.preset]+" ":"")+"brightness("+adj.brightness+"%) contrast("+adj.contrast+"%) saturate("+adj.saturation+"%)"; }
-  function draw(){
-    if(!work){ view.style.display="none"; empty.hidden=false; out.classList.add("disabled"); out.setAttribute("draggable","false"); return; }
-    empty.hidden=true; out.classList.remove("disabled"); out.setAttribute("draggable","true");
-    const s=Math.min(300/work.height, 320/work.width, 1);
-    view.width=Math.round(work.width*s); view.height=Math.round(work.height*s); view.style.display="block";
-    vctx.clearRect(0,0,view.width,view.height); vctx.filter=curFilter(); vctx.drawImage(work,0,0,view.width,view.height); vctx.filter="none";
+  function isEdited(){ return aiApplied||geomChanged||adj.preset!=="none"||adj.brightness!==100||adj.contrast!==100||adj.saturation!==100; }
+  function dispSize(){ const s=Math.min(300/work.height, 320/work.width, 1); return { w:Math.max(1,Math.round(work.width*s)), h:Math.max(1,Math.round(work.height*s)) }; }
+  function drawCover(src,vw,vh){ // object-fit: cover
+    const r=Math.max(vw/src.width, vh/src.height), dw=src.width*r, dh=src.height*r;
+    vctx.drawImage(src, (vw-dw)/2, (vh-dh)/2, dw, dh);
   }
-  function loadSrc(src){
+  function draw(){
+    if(!work){ view.style.display="none"; empty.hidden=false; out.classList.add("disabled"); out.setAttribute("draggable","false"); cmpBtn.hidden=true; lblB.hidden=lblA.hidden=true; return; }
+    empty.hidden=true; out.classList.remove("disabled"); out.setAttribute("draggable","true");
+    const d=dispSize(); view.width=d.w; view.height=d.h; view.style.display="block";
+    const canCompare = !!(original && isEdited());
+    cmpBtn.hidden = !canCompare;
+    if(!canCompare && compareOn){ compareOn=false; }
+    cmpBtn.classList.toggle("on",compareOn);
+    view.style.cursor = compareOn ? "col-resize" : "default";
+    if(compareOn && original){ drawCompare(d.w,d.h); }
+    else { vctx.clearRect(0,0,d.w,d.h); vctx.filter=curFilter(); vctx.drawImage(work,0,0,d.w,d.h); vctx.filter="none"; lblB.hidden=lblA.hidden=true; }
+  }
+  function drawCompare(vw,vh){
+    vctx.clearRect(0,0,vw,vh);
+    // AFTER (current edited result) fills the canvas
+    vctx.filter=curFilter(); vctx.drawImage(work,0,0,vw,vh); vctx.filter="none";
+    // BEFORE (original) revealed on the left of the split
+    const split=Math.max(0,Math.min(vw,Math.round(vw*comparePos)));
+    vctx.save(); vctx.beginPath(); vctx.rect(0,0,split,vh); vctx.clip();
+    drawCover(original,vw,vh);
+    vctx.restore();
+    // divider + handle
+    vctx.fillStyle="#fff"; vctx.fillRect(split-1,0,2,vh);
+    vctx.beginPath(); vctx.arc(split, vh/2, 11, 0, Math.PI*2); vctx.fillStyle="#fff"; vctx.fill();
+    vctx.strokeStyle="#2f7355"; vctx.lineWidth=2; vctx.stroke();
+    vctx.fillStyle="#2f7355"; vctx.font="bold 11px system-ui"; vctx.textAlign="center"; vctx.textBaseline="middle"; vctx.fillText("⇆",split,vh/2); vctx.textAlign="start";
+    // position labels
+    lblB.hidden=lblA.hidden=false;
+  }
+  function snapshot(c){ const s=document.createElement("canvas"); s.width=c.width; s.height=c.height; s.getContext("2d").drawImage(c,0,0); return s; }
+  function loadSrc(src,isResult){
     if(!src) return;
     const img=new Image(); img.crossOrigin="anonymous";
-    img.onload=()=>{ const c=document.createElement("canvas"); c.width=img.naturalWidth; c.height=img.naturalHeight; c.getContext("2d").drawImage(img,0,0); work=c; draw(); };
+    img.onload=()=>{ const c=document.createElement("canvas"); c.width=img.naturalWidth; c.height=img.naturalHeight; c.getContext("2d").drawImage(img,0,0); work=c;
+      if(isResult){ aiApplied=true; compareOn=true; comparePos=0.5; }
+      else { original=snapshot(c); aiApplied=false; geomChanged=false; compareOn=false; adj={brightness:100,contrast:100,saturation:100,preset:"none"}; resetAdjUI(); }
+      draw(); };
     img.onerror=()=>toast("Nu am putut încărca imaginea (CORS?)");
     img.src=src;
   }
+  function resetAdjUI(){ container.querySelectorAll(".de-range").forEach(r=>{r.value=100;}); container.querySelectorAll("[data-av]").forEach(s=>s.textContent="100"); container.querySelectorAll("[data-preset]").forEach(b=>b.classList.toggle("on",b.dataset.preset==="none")); }
   function loadFile(f){ if(!f||!/^image\//.test(f.type)){toast("Alege un fișier imagine");return;} const r=new FileReader(); r.onload=()=>loadSrc(r.result); r.readAsDataURL(f); }
-  function rotate(cw){ if(!work)return; const w=work.width,hh=work.height,c=document.createElement("canvas"); c.width=hh;c.height=w; const x=c.getContext("2d"); x.translate(c.width/2,c.height/2); x.rotate((cw?90:-90)*Math.PI/180); x.drawImage(work,-w/2,-hh/2); work=c; draw(); }
-  function flip(horiz){ if(!work)return; const w=work.width,hh=work.height,c=document.createElement("canvas"); c.width=w;c.height=hh; const x=c.getContext("2d"); if(horiz){x.translate(w,0);x.scale(-1,1);}else{x.translate(0,hh);x.scale(1,-1);} x.drawImage(work,0,0); work=c; draw(); }
+  function rotate(cw){ if(!work)return; const w=work.width,hh=work.height,c=document.createElement("canvas"); c.width=hh;c.height=w; const x=c.getContext("2d"); x.translate(c.width/2,c.height/2); x.rotate((cw?90:-90)*Math.PI/180); x.drawImage(work,-w/2,-hh/2); work=c; geomChanged=true; draw(); }
+  function flip(horiz){ if(!work)return; const w=work.width,hh=work.height,c=document.createElement("canvas"); c.width=w;c.height=hh; const x=c.getContext("2d"); if(horiz){x.translate(w,0);x.scale(-1,1);}else{x.translate(0,hh);x.scale(1,-1);} x.drawImage(work,0,0); work=c; geomChanged=true; draw(); }
   function exportRawJpeg(){ const c=document.createElement("canvas"); c.width=work.width;c.height=work.height; c.getContext("2d").drawImage(work,0,0); return c.toDataURL("image/jpeg",0.95); }
   function exportEdited(){ if(!work)return ""; const s=Math.min(1,MAXDIM/Math.max(work.width,work.height)); const ow=Math.round(work.width*s),oh=Math.round(work.height*s); const c=document.createElement("canvas"); c.width=ow;c.height=oh; const x=c.getContext("2d"); x.fillStyle="#fff"; x.fillRect(0,0,ow,oh); x.filter=curFilter(); x.drawImage(work,0,0,ow,oh); x.filter="none"; return c.toDataURL("image/jpeg",0.92); }
   async function aiEnhance(){
@@ -1692,17 +1738,23 @@ function createDockEditor(container){
     const btn=$$('[data-act="ai"]'), old=btn.textContent; btn.disabled=true; btn.textContent="Se optimizează cu AI...";
     try{ const r=await fetch("/api/ai-enhance",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({dataUrl:exportRawJpeg()})});
       const d=await r.json().catch(()=>({}));
-      if(r.ok&&d.dataUrl){ loadSrc(d.dataUrl); toast("Poză optimizată cu AI — trage-o în galerie"); }
+      if(r.ok&&d.dataUrl){ loadSrc(d.dataUrl,true); toast("Poză optimizată cu AI — glisează pentru înainte/după, apoi trage-o în galerie"); }
       else toast("Optimizarea AI nu a reușit"+(d.error?(" ("+d.error+")"):""));
     }catch(e){ toast("Optimizarea AI nu a reușit (server)"); }
     finally{ btn.disabled=false; btn.textContent=old; }
   }
+  // before/after slider drag on the canvas
+  function cmpSet(e){ const r=view.getBoundingClientRect(); const x=(e.clientX!=null?e.clientX:(e.touches&&e.touches[0]?e.touches[0].clientX:0))-r.left; comparePos=Math.max(0,Math.min(1, x/Math.max(1,r.width))); draw(); }
+  view.addEventListener("pointerdown",e=>{ if(!compareOn)return; cmpDrag=true; try{view.setPointerCapture(e.pointerId);}catch(_){ } cmpSet(e); });
+  view.addEventListener("pointermove",e=>{ if(compareOn&&cmpDrag) cmpSet(e); });
+  view.addEventListener("pointerup",()=>{ cmpDrag=false; });
   // events
   container.addEventListener("click",e=>{
     const t=e.target.closest("[data-act],[data-preset]"); if(!t)return;
     const act=t.dataset.act, pre=t.dataset.preset;
     if(act==="pick"){ file.click(); return; }
     if(act==="ai"){ aiEnhance(); return; }
+    if(act==="cmp"){ if(original&&isEdited()){ compareOn=!compareOn; comparePos=0.5; draw(); } return; }
     if(act==="rotL"){ rotate(false); return; }
     if(act==="rotR"){ rotate(true); return; }
     if(act==="flipH"){ flip(true); return; }
