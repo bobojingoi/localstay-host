@@ -325,11 +325,26 @@ app.use(express.static(PUBLIC));
 app.get("/", (req, res) => res.redirect("/importer.html"));
 
 /* ---------- start ---------- */
-init()
-  .then(() => {
-    app.listen(process.env.PORT || 3000, () => console.log("StayPredeal running on port " + (process.env.PORT || 3000)));
-    // Background iCal sync: once shortly after boot, then every 15 minutes.
-    setTimeout(syncAll, 30000);
-    setInterval(syncAll, 15 * 60 * 1000);
-  })
-  .catch(e => { console.error("Startup failed:", e); process.exit(1); });
+// Keep the web service alive even through transient DB outages: a stray async
+// rejection (e.g. a request that hits the DB while it's briefly down) must not kill the process.
+process.on("unhandledRejection", (e) => console.error("Unhandled rejection (ignored):", e && e.message));
+
+const PORT = process.env.PORT || 3000;
+// Listen FIRST so the port is open and health checks pass — no 502 if the DB is briefly unavailable.
+app.listen(PORT, () => console.log("StayPredeal running on port " + PORT));
+
+let _icalStarted = false;
+function startIcalSync() {
+  if (_icalStarted) return; _icalStarted = true;
+  setTimeout(syncAll, 30000);
+  setInterval(syncAll, 15 * 60 * 1000);
+}
+function bootDb() {
+  init()
+    .then(() => { console.log("StayPredeal DB ready."); startIcalSync(); })
+    .catch((e) => {
+      console.error("DB not ready, server stays up; retrying in 30s:", e && e.message);
+      setTimeout(bootDb, 30000); // recover automatically when the DB comes back
+    });
+}
+bootDb();
