@@ -199,6 +199,40 @@ textarea.inp{min-height:70px;resize:vertical;line-height:1.5}
 .gal-chk{width:17px;height:17px;accent-color:#7c4dff;cursor:pointer;margin:0}
 .gal-edit{position:absolute;top:7px;right:7px;background:rgba(255,255,255,.92);border:0;border-radius:7px;width:28px;height:28px;display:grid;place-items:center;cursor:pointer;color:var(--ink)}
 .gal-edit:hover{color:var(--brand)}
+.gal-cell img{cursor:grab}
+.gal-cell.dragging{opacity:.45}
+/* gallery 2-col layout + editor dock */
+.gal-layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;align-items:start}
+.gal-dock{position:sticky;top:18px}
+.gal-block.drop-on{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+@media(max-width:1080px){.gal-layout{grid-template-columns:1fr}.gal-dock{position:static}}
+/* docked inline editor */
+.de{border:1px solid var(--line);border-radius:14px;background:#fff;overflow:hidden;display:flex;flex-direction:column}
+.de-h{padding:13px 16px;border-bottom:1px solid var(--line-2);display:flex;align-items:center;justify-content:space-between}
+.de-h b{font-size:14.5px}.de-h .de-hint{font-size:11px;color:var(--muted)}
+.de-stage{position:relative;background:#0f1512;min-height:200px;display:grid;place-items:center;background-image:linear-gradient(45deg,#171f1b 25%,transparent 25%),linear-gradient(-45deg,#171f1b 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#171f1b 75%),linear-gradient(-45deg,transparent 75%,#171f1b 75%);background-size:18px 18px;background-position:0 0,0 9px,9px -9px,-9px 0}
+.de-stage.over{outline:3px dashed var(--brand);outline-offset:-6px}
+.de-canvas{max-width:100%;max-height:300px;display:block}
+.de-empty{color:#9fb2a8;display:flex;flex-direction:column;align-items:center;gap:9px;font-size:12.5px;padding:30px 18px;text-align:center;cursor:pointer}
+.de-empty svg{width:34px;height:34px}
+.de-empty[hidden]{display:none}
+.de-body{padding:12px 14px;display:flex;flex-direction:column;gap:11px}
+.de-ai{width:100%;justify-content:center}
+.de-rowb{display:flex;gap:6px;flex-wrap:wrap}
+.de-mini{flex:1;min-width:0;border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 4px;font-size:12px;cursor:pointer;color:var(--ink)}
+.de-mini:hover{border-color:var(--brand);color:var(--brand)}
+.de-mini.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+.de-gl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:5px}
+.de-adj{display:flex;flex-direction:column;gap:2px}
+.de-al{display:flex;justify-content:space-between;font-size:12px;color:var(--ink)}
+.de-al .de-av{color:var(--muted)}
+.de-range{width:100%;accent-color:var(--brand)}
+.de-foot{padding:12px 14px;border-top:1px solid var(--line-2);background:#fafbfc;display:flex;flex-direction:column;gap:9px}
+.de-out{display:flex;align-items:center;gap:9px;border:1.5px dashed var(--brand);border-radius:10px;padding:10px;background:var(--brand-soft);cursor:grab}
+.de-out svg{width:18px;height:18px;color:var(--brand);flex:none}
+.de-out span{font-size:12px;color:var(--brand);font-weight:600;line-height:1.3}
+.de-out.disabled{opacity:.45;cursor:not-allowed;border-color:var(--line);background:#f4f6f8}
+.de-out.disabled svg,.de-out.disabled span{color:var(--muted)}
 .pe-overlay{position:fixed;inset:0;background:rgba(16,24,20,.6);display:none;align-items:center;justify-content:center;z-index:80;padding:16px}
 .pe-overlay.on{display:flex}
 .pe-modal{background:#fff;border-radius:16px;width:100%;max-width:920px;max-height:94vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 80px -20px rgba(0,0,0,.5)}
@@ -313,8 +347,11 @@ textarea.inp{min-height:70px;resize:vertical;line-height:1.5}
         <div id="icalUnits"></div>
       </section>
       <section class="panel" id="panel-galerie">
-        <p class="intro">Galeria principală a proprietății plus o galerie separată pentru fiecare variantă (toată unitatea și fiecare cameră). Încarcă mai multe poze deodată — fiecare e optimizată automat (WebP) și stocată pe CDN. Bifează pentru ștergere în masă.</p>
-        <div id="galerieBox"></div>
+        <p class="intro">Galeria principală a proprietății plus o galerie separată pentru fiecare variantă (toată unitatea și fiecare cameră). Încarcă mai multe poze deodată — fiecare e optimizată automat (WebP) și stocată pe CDN. Bifează pentru ștergere în masă. <b>Trage o poză în editorul din dreapta</b> ca s-o optimizezi cu AI, apoi <b>trage rezultatul înapoi într-o galerie</b>.</p>
+        <div class="gal-layout">
+          <div id="galerieBox"></div>
+          <aside class="gal-dock" id="galDock"></aside>
+        </div>
       </section>
     </div>
   </div>
@@ -1588,6 +1625,125 @@ $("#propName").textContent=state.property.basicInfo.name;
 const galSel = new WeakSet();
 function fileToDataUrl(f){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(f); }); }
 
+/* shared drag payload between gallery thumbs and the docked editor */
+let galDragState = null;
+
+/* ---- Docked photo editor (right of gallery): AI optimize + adjustments, drag in/out ---- */
+const DOCK_PRESETS = { none:"", bw:"grayscale(100%)", sepia:"sepia(75%)", warm:"sepia(30%) saturate(150%) hue-rotate(-10deg)", cool:"saturate(120%) hue-rotate(15deg)", vivid:"saturate(165%) contrast(108%)" };
+const DOCK_PRESET_LABELS = { none:"Original", bw:"Alb-negru", sepia:"Sepia", warm:"Cald", cool:"Rece", vivid:"Vivid" };
+function createDockEditor(container){
+  const MAXDIM=1600;
+  let work=null;                 // full-res source canvas (geometry baked, no filter)
+  let adj={brightness:100,contrast:100,saturation:100,preset:"none"};
+  container.innerHTML =
+    '<div class="de">'
+    + '<div class="de-h"><b>Editor foto</b><span class="de-hint">AI · ajustări</span></div>'
+    + '<div class="de-stage"><canvas class="de-canvas" style="display:none"></canvas>'
+      + '<div class="de-empty" data-act="pick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg><span>Trage o poză din galerie aici<br>sau click pentru a încărca</span></div>'
+      + '<input type="file" accept="image/*" class="de-file" hidden></div>'
+    + '<div class="de-body">'
+      + '<button class="btn btn-pri sm de-ai" data-act="ai" title="Corecție lumină, culoare și perspectivă cu AI">✨ Optimizează cu AI</button>'
+      + '<div><div class="de-gl">Rotire / oglindă</div><div class="de-rowb">'
+        + '<button class="de-mini" data-act="rotL" title="Rotește stânga">⟲</button>'
+        + '<button class="de-mini" data-act="rotR" title="Rotește dreapta">⟳</button>'
+        + '<button class="de-mini" data-act="flipH" title="Oglindă orizontal">⇆</button>'
+        + '<button class="de-mini" data-act="flipV" title="Oglindă vertical">⇅</button>'
+      + '</div></div>'
+      + '<div><div class="de-gl">Ajustări</div>'
+        + deAdj("Luminozitate","brightness") + deAdj("Contrast","contrast") + deAdj("Saturație","saturation")
+      + '</div>'
+      + '<div><div class="de-gl">Filtre</div><div class="de-rowb">'
+        + Object.keys(DOCK_PRESETS).map(k=>'<button class="de-mini'+(k==="none"?" on":"")+'" data-preset="'+k+'">'+DOCK_PRESET_LABELS[k]+'</button>').join("")
+      + '</div></div>'
+    + '</div>'
+    + '<div class="de-foot">'
+      + '<div class="de-rowb"><button class="de-mini" data-act="reset">Resetează ajustările</button><button class="de-mini" data-act="addMain">Adaugă în galeria principală</button></div>'
+      + '<div class="de-out disabled" draggable="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 9l-3 3 3 3M2 12h13M14 5l3 3M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H9"/></svg><span>Trage rezultatul într-o galerie din stânga</span></div>'
+    + '</div>'
+    + '</div>';
+  function deAdj(label,key){ return '<div class="de-adj"><div class="de-al"><span>'+label+'</span><span class="de-av" data-av="'+key+'">100</span></div><input type="range" class="de-range" data-adj="'+key+'" min="0" max="200" value="100"></div>'; }
+
+  const $$=s=>container.querySelector(s);
+  const view=$$(".de-canvas"), vctx=view.getContext("2d");
+  const empty=$$(".de-empty"), stage=$$(".de-stage"), file=$$(".de-file"), out=$$(".de-out");
+
+  function curFilter(){ return (DOCK_PRESETS[adj.preset]?DOCK_PRESETS[adj.preset]+" ":"")+"brightness("+adj.brightness+"%) contrast("+adj.contrast+"%) saturate("+adj.saturation+"%)"; }
+  function draw(){
+    if(!work){ view.style.display="none"; empty.hidden=false; out.classList.add("disabled"); out.setAttribute("draggable","false"); return; }
+    empty.hidden=true; out.classList.remove("disabled"); out.setAttribute("draggable","true");
+    const s=Math.min(300/work.height, 320/work.width, 1);
+    view.width=Math.round(work.width*s); view.height=Math.round(work.height*s); view.style.display="block";
+    vctx.clearRect(0,0,view.width,view.height); vctx.filter=curFilter(); vctx.drawImage(work,0,0,view.width,view.height); vctx.filter="none";
+  }
+  function loadSrc(src){
+    if(!src) return;
+    const img=new Image(); img.crossOrigin="anonymous";
+    img.onload=()=>{ const c=document.createElement("canvas"); c.width=img.naturalWidth; c.height=img.naturalHeight; c.getContext("2d").drawImage(img,0,0); work=c; draw(); };
+    img.onerror=()=>toast("Nu am putut încărca imaginea (CORS?)");
+    img.src=src;
+  }
+  function loadFile(f){ if(!f||!/^image\//.test(f.type)){toast("Alege un fișier imagine");return;} const r=new FileReader(); r.onload=()=>loadSrc(r.result); r.readAsDataURL(f); }
+  function rotate(cw){ if(!work)return; const w=work.width,hh=work.height,c=document.createElement("canvas"); c.width=hh;c.height=w; const x=c.getContext("2d"); x.translate(c.width/2,c.height/2); x.rotate((cw?90:-90)*Math.PI/180); x.drawImage(work,-w/2,-hh/2); work=c; draw(); }
+  function flip(horiz){ if(!work)return; const w=work.width,hh=work.height,c=document.createElement("canvas"); c.width=w;c.height=hh; const x=c.getContext("2d"); if(horiz){x.translate(w,0);x.scale(-1,1);}else{x.translate(0,hh);x.scale(1,-1);} x.drawImage(work,0,0); work=c; draw(); }
+  function exportRawJpeg(){ const c=document.createElement("canvas"); c.width=work.width;c.height=work.height; c.getContext("2d").drawImage(work,0,0); return c.toDataURL("image/jpeg",0.95); }
+  function exportEdited(){ if(!work)return ""; const s=Math.min(1,MAXDIM/Math.max(work.width,work.height)); const ow=Math.round(work.width*s),oh=Math.round(work.height*s); const c=document.createElement("canvas"); c.width=ow;c.height=oh; const x=c.getContext("2d"); x.fillStyle="#fff"; x.fillRect(0,0,ow,oh); x.filter=curFilter(); x.drawImage(work,0,0,ow,oh); x.filter="none"; return c.toDataURL("image/jpeg",0.92); }
+  async function aiEnhance(){
+    if(!work){toast("Încarcă o poză întâi");return;}
+    const btn=$$('[data-act="ai"]'), old=btn.textContent; btn.disabled=true; btn.textContent="Se optimizează cu AI...";
+    try{ const r=await fetch("/api/ai-enhance",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({dataUrl:exportRawJpeg()})});
+      const d=await r.json().catch(()=>({}));
+      if(r.ok&&d.dataUrl){ loadSrc(d.dataUrl); toast("Poză optimizată cu AI — trage-o în galerie"); }
+      else toast("Optimizarea AI nu a reușit"+(d.error?(" ("+d.error+")"):""));
+    }catch(e){ toast("Optimizarea AI nu a reușit (server)"); }
+    finally{ btn.disabled=false; btn.textContent=old; }
+  }
+  // events
+  container.addEventListener("click",e=>{
+    const t=e.target.closest("[data-act],[data-preset]"); if(!t)return;
+    const act=t.dataset.act, pre=t.dataset.preset;
+    if(act==="pick"){ file.click(); return; }
+    if(act==="ai"){ aiEnhance(); return; }
+    if(act==="rotL"){ rotate(false); return; }
+    if(act==="rotR"){ rotate(true); return; }
+    if(act==="flipH"){ flip(true); return; }
+    if(act==="flipV"){ flip(false); return; }
+    if(act==="reset"){ adj={brightness:100,contrast:100,saturation:100,preset:"none"}; container.querySelectorAll(".de-range").forEach(r=>{r.value=100;}); container.querySelectorAll("[data-av]").forEach(s=>s.textContent="100"); container.querySelectorAll("[data-preset]").forEach(b=>b.classList.toggle("on",b.dataset.preset==="none")); draw(); return; }
+    if(act==="addMain"){ if(!work){toast("Editorul e gol");return;} addEditedToGallery(state.property._photos, x=>({photoName:x.url,imageAlt:x.alt||""}), exportEdited(), "Galerie principală"); return; }
+    if(pre!==undefined){ adj.preset=pre; container.querySelectorAll("[data-preset]").forEach(b=>b.classList.toggle("on",b.dataset.preset===pre)); draw(); return; }
+  });
+  container.addEventListener("input",e=>{ if(e.target.classList.contains("de-range")){ const k=e.target.dataset.adj; adj[k]=+e.target.value; container.querySelector('[data-av="'+k+'"]').textContent=e.target.value; draw(); } });
+  file.addEventListener("change",()=>{ if(file.files[0]) loadFile(file.files[0]); file.value=""; });
+  // drag IN (file or gallery thumb)
+  stage.addEventListener("dragover",e=>{ e.preventDefault(); stage.classList.add("over"); });
+  stage.addEventListener("dragleave",()=>stage.classList.remove("over"));
+  stage.addEventListener("drop",e=>{ e.preventDefault(); stage.classList.remove("over");
+    if(e.dataTransfer.files&&e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+    else if(galDragState&&galDragState.kind==="photo"&&galDragState.url) loadSrc(galDragState.url);
+  });
+  // drag OUT (edited result -> a gallery)
+  out.addEventListener("dragstart",e=>{ if(!work){ e.preventDefault(); return; } galDragState={kind:"edited",dataUrl:exportEdited()}; e.dataTransfer.effectAllowed="copy"; try{e.dataTransfer.setData("text/plain","editat");}catch(_){} });
+  out.addEventListener("dragend",()=>{ if(galDragState&&galDragState.kind==="edited") galDragState=null; });
+
+  draw();
+  return { load:loadSrc, hasImage:()=>!!work };
+}
+
+/* upload an edited dataURL and append it to a gallery array, then re-render */
+async function addEditedToGallery(arr, makeItem, dataUrl, label){
+  if(!dataUrl) return;
+  toast("Se adaugă în „"+label+"”...");
+  let item;
+  try{
+    const rr=await fetch("/api/upload",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({dataUrl})});
+    const d=await rr.json().catch(()=>({}));
+    item=makeItem((rr.ok&&d.url)?d:{url:dataUrl,thumb:dataUrl,alt:""});
+  }catch(e){ item=makeItem({url:dataUrl,thumb:dataUrl,alt:""}); }
+  arr.push(item); persist(); renderGalerie();
+  toast("Adăugată în „"+label+"”");
+}
+let dockEditor=null;
+function mountDock(){ const host=$("#galDock"); if(!host) return; if(!dockEditor) dockEditor=createDockEditor(host); }
+
 function galleryBlock(o){
   const arr=o.arr;
   const selCount=arr.filter(p=>galSel.has(p)).length;
@@ -1624,26 +1780,40 @@ function galleryBlock(o){
   }},"Șterge selectatele ("+selCount+")"):null;
 
   const grid=h("div",{class:"gal-grid"});
-  if(!arr.length){ grid.appendChild(h("div",{class:"gal-empty"},"Nicio poză încă. Apasă „Încarcă poze”.")); }
+  if(!arr.length){ grid.appendChild(h("div",{class:"gal-empty"},"Nicio poză încă. Apasă „Încarcă poze” sau trage o poză din editor.")); }
   arr.forEach((p,idx)=>{
     const chk=h("input",{type:"checkbox",class:"gal-chk"}); chk.checked=galSel.has(p);
     chk.onchange=()=>{ if(chk.checked)galSel.add(p); else galSel.delete(p); renderGalerie(); };
+    const img=h("img",{src:o.getThumb(p),alt:o.getAlt(p),loading:"lazy",draggable:"true",title:"Trage în editor"});
     const cell=h("div",{class:"gal-cell"+(galSel.has(p)?" on":"")},
-      h("img",{src:o.getThumb(p),alt:o.getAlt(p),loading:"lazy"}),
+      img,
       (o.heroFirst&&idx===0)?h("span",{class:"gal-hero-badge"},"HERO"):null,
       h("label",{class:"gal-pick"},chk),
-      h("button",{class:"gal-edit",type:"button",title:"Editează",onclick:()=>openPhotoEditor(o.getUrl(p),(u,meta)=>{o.setUrl(p,u);if(meta&&meta.alt&&!o.getAlt(p))o.setAlt(p,meta.alt);markDirty();renderGalerie();})},
+      h("button",{class:"gal-edit",type:"button",title:"Editează (crop, text...)",onclick:()=>openPhotoEditor(o.getUrl(p),(u,meta)=>{o.setUrl(p,u);if(meta&&meta.alt&&!o.getAlt(p))o.setAlt(p,meta.alt);markDirty();renderGalerie();})},
         h("span",{html:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>'})));
+    img.addEventListener("dragstart",e=>{ galDragState={kind:"photo",url:o.getUrl(p)}; e.dataTransfer.effectAllowed="copy"; try{e.dataTransfer.setData("text/plain",o.getUrl(p));}catch(_){ } cell.classList.add("dragging"); if(dockEditor) dockEditor.load(o.getUrl(p)); });
+    img.addEventListener("dragend",()=>{ cell.classList.remove("dragging"); if(galDragState&&galDragState.kind==="photo") galDragState=null; });
     grid.appendChild(cell);
   });
   const bar=h("div",{class:"gal-bar"}, upBtn, fileInput, selAll, delBtn);
   const head=h("div",{class:"gal-head"},
     h("div",{},h("b",{},o.title), o.tag?h("span",{class:"gal-tag"},o.tag):null),
     h("span",{class:"gal-count"}, arr.length+(arr.length===1?" poză":" poze")));
-  return h("section",{class:"gal-block"}, head, o.sub?h("p",{class:"gal-sub"},o.sub):null, bar, grid);
+  const block=h("section",{class:"gal-block"}, head, o.sub?h("p",{class:"gal-sub"},o.sub):null, bar, grid);
+  // drop target: edited result from the dock, photos copied from another gallery, or OS image files
+  block.addEventListener("dragover",e=>{ const hasFiles=e.dataTransfer&&e.dataTransfer.types&&[...e.dataTransfer.types].includes("Files"); if(galDragState||hasFiles){ e.preventDefault(); e.dataTransfer.dropEffect="copy"; block.classList.add("drop-on"); } });
+  block.addEventListener("dragleave",e=>{ if(!block.contains(e.relatedTarget)) block.classList.remove("drop-on"); });
+  block.addEventListener("drop",async e=>{
+    block.classList.remove("drop-on");
+    if(galDragState&&galDragState.kind==="edited"){ e.preventDefault(); const du=galDragState.dataUrl; galDragState=null; await addEditedToGallery(arr,o.makeItem,du,o.title); return; }
+    if(galDragState&&galDragState.kind==="photo"){ e.preventDefault(); const url=galDragState.url; galDragState=null; arr.push(o.makeItem({url,thumb:url,alt:""})); persist(); renderGalerie(); toast("Poză copiată în „"+o.title+"”"); return; }
+    if(e.dataTransfer.files&&e.dataTransfer.files.length){ e.preventDefault(); const files=[...e.dataTransfer.files].filter(f=>/^image\//.test(f.type)); for(const f of files){ const du=await fileToDataUrl(f); await addEditedToGallery(arr,o.makeItem,du,o.title); } return; }
+  });
+  return block;
 }
 function renderGalerie(){
   if(!state.galleries) state.galleries={};
+  mountDock();
   const host=$("#galerieBox"); if(!host) return;
   host.innerHTML="";
   if(!Array.isArray(state.property._photos)) state.property._photos=[];
