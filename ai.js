@@ -1,9 +1,10 @@
 // Photo AI helpers.
 //  - describeImage: alt-text + short description (Gemini text model)
-//  - analyzeForEnhance: per-photo vision analysis -> concrete correction brief (Gemini)
-//  - enhanceImage: returns an edited image. Uses OpenAI gpt-image-2 when OPENAI_API_KEY
-//      is set (high-fidelity edit + aspect-ratio-preserving size, like the LocalStay GPT
-//      editor); otherwise falls back to Gemini (gemini-2.5-flash-image), two-pass.
+//  - analyzePhoto: per-photo vision analysis -> concrete correction brief (OpenAI or Gemini)
+//  - enhanceImage: analyses the photo, then applies a STRONG, decisive correction
+//      (straighten verticals, brighten, boost colour) while keeping content authentic.
+//      Uses OpenAI gpt-image-2 when OPENAI_API_KEY is set (high fidelity + aspect-ratio
+//      preserving size); otherwise Gemini (gemini-2.5-flash-image).
 const TEXT_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 const IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image";
 const BASE = "https://generativelanguage.googleapis.com/v1beta/models/";
@@ -54,74 +55,105 @@ async function describeImage(base64, mime) {
   }
 }
 
-/* ---- Two-pass enhancement: analyse the photo, then apply a tailored, assertive
-   real-estate correction that keeps the scene 100% authentic (tone/colour/geometry only). ---- */
+/* ---- Strong, decisive enhancement. Always analyse the photo first (per-image),
+   then apply assertive geometry/light/colour corrections — while keeping the scene
+   100% authentic (never add/remove/replace real content). ---- */
 
-const ENHANCE_RULES =
-  "You are a professional real-estate & hospitality photo retoucher preparing a photo for a premium booking website. " +
-  "Make it look bright, clean, inviting and professionally shot — the kind of image that makes guests book — WITHOUT changing what the place actually looks like. " +
-  "ABSOLUTE RULES (never break): keep the SAME real room/exterior/property, fully recognisable and authentic; " +
-  "do NOT add, remove, move, replace, duplicate, redesign or reconstruct any object, furniture, wall, window, door, fixture, light, plant, view, person, sign, text or logo; " +
-  "no generative fill, no inpainting, no new sky/sunlight/lamps/shadows/reflections/decor, no HDR halos, no cartoonish or oversaturated look, no added watermark. " +
-  "Preserve real textures, materials and natural imperfections. The output must look like the SAME photo, professionally edited — not a different or AI-generated scene.";
+const STRONG_PROMPT =
+  "Transform this accommodation photograph into a striking, professionally-shot real-estate image for a premium booking website. " +
+  "Apply STRONG, decisive corrections so it looks clearly and noticeably better than the original — bright, crisp, vivid and inviting — while remaining the SAME real place. " +
+  "GEOMETRY — be decisive: straighten the image and firmly correct any tilt and any leaning or converging verticals so that walls, door and window frames and furniture edges are truly vertical and the horizon perfectly level; fix lens / perspective (keystone) distortion; crop minimally to hide rotation borders. Never leave it crooked, tilted or leaning. " +
+  "BRIGHTNESS — be decisive: make the space clearly bright and airy; substantially raise the overall exposure, strongly lift shadows to reveal detail in dark areas, recover blown highlights and even out harsh light. Leave no dim, dark or muddy areas. " +
+  "COLOUR — be decisive: set a clean, accurate white balance (remove any yellow/green/blue cast) and add noticeable saturation and vibrance so colours look rich and appealing — blue skies, green grass, warm wood, crisp white linens — vivid and lively but still believable, not neon. " +
+  "FINISH: add clarity, punchy-but-natural contrast and a crisp, polished, magazine-quality look; remove haze and reduce noise. " +
+  "ABSOLUTE LIMITS (never break): it must stay the SAME real room/exterior/property, fully recognisable. Do NOT add, remove, move, replace, duplicate, redesign or reconstruct any object, furniture, wall, window, door, fixture, light, plant, view, person, sign, text or logo; no generative fill, inpainting or object removal; no fake sky, sunlight, lamps, reflections or shadows. Keep all real textures, materials and the real layout. Same content, dramatically better editing. " +
+  "Return exactly one edited image, same framing and aspect ratio as the original.";
 
-const ENHANCE_GOALS =
-  "Apply these corrections confidently — as strongly as needed to reach a polished, professional result — but only tone, colour and geometry, never content: " +
-  "1) STRAIGHTEN & LEVEL: fix any tilt so the horizon is level; correct converging verticals / lens distortion so walls and lines look natural and upright; crop minimally to hide rotation borders. " +
-  "2) BRIGHTNESS & EXPOSURE: open the image up, lift dark shadows to reveal detail, recover blown highlights, balance exposure so the space looks light, airy and well-lit (never flat, dark or muddy). " +
-  "3) WHITE BALANCE & COLOUR: remove colour casts (yellow/green/blue); set a clean, natural balance so whites look white and wood/greenery look true; pleasant, realistic colour. " +
-  "4) CLARITY & POLISH: gentle contrast, local clarity and a crisp, clean, magazine-quality finish; reduce noise and haze; keep it fully photorealistic. " +
-  "Return exactly ONE edited image, same framing and aspect ratio as the original.";
+const ANALYZE_PROMPT =
+  "You are inspecting ONE accommodation/real-estate photo before it is STRONGLY auto-enhanced for a booking website. " +
+  "Report ONLY the technical corrections needed — do NOT describe the room or its contents. Look carefully and be decisive. " +
+  "Respond as compact JSON with keys: " +
+  '"tilt" (is the image tilted / horizon not level? which way and roughly how many degrees, else "level"), ' +
+  '"verticals" (are walls / door / window frames leaning or converging? do they need perspective/keystone correction? else "ok"), ' +
+  '"exposure" (is it dark / underexposed, or are highlights blown? which areas are too dark, and how much brighter is needed?), ' +
+  '"whiteBalance" (colour cast — warm/yellow, green, blue? else "neutral"), ' +
+  '"saturation" (are colours dull/flat and need more vibrance, or fine?), ' +
+  '"other" (noise, haze, low contrast... else "none"), ' +
+  '"brief" (2-3 imperative sentences telling the retoucher exactly and decisively what to fix on THIS photo: how to straighten it, how much to brighten, which colours to boost — to make it perfectly level, bright and appealing). ' +
+  "Be specific.";
 
-// Pass 1 — vision analysis: produce concrete, per-photo correction notes (not a room description).
-async function analyzeForEnhance(base64, mime) {
+function composeBrief(o) {
+  const skip = v => !v || /^(level|drept|straight|none|ok|neutral|no\b|n\/a|fine|good)/i.test(String(v).trim());
+  const parts = [];
+  if (!skip(o.tilt)) parts.push("Tilt: " + o.tilt);
+  if (!skip(o.verticals)) parts.push("Verticals: " + o.verticals);
+  if (!skip(o.perspective)) parts.push("Perspective: " + o.perspective);
+  if (!skip(o.exposure)) parts.push("Exposure: " + o.exposure);
+  if (!skip(o.whiteBalance)) parts.push("White balance: " + o.whiteBalance);
+  if (!skip(o.saturation)) parts.push("Saturation: " + o.saturation);
+  if (!skip(o.other)) parts.push("Other: " + o.other);
+  let brief = (o.brief || "").trim();
+  if (parts.length) brief += (brief ? " " : "") + parts.join("; ") + ".";
+  return brief.slice(0, 800);
+}
+
+// Vision analysis via Gemini
+async function analyzeGemini(base64, mime) {
   if (!process.env.GEMINI_API_KEY) return "";
-  const prompt =
-    "Inspect this single accommodation/real-estate photo that will be auto-enhanced for a booking website. " +
-    "Report ONLY the technical corrections it needs — do NOT describe the room or its contents. " +
-    "Respond with a compact JSON object with keys: " +
-    '"tilt" (is it tilted? which direction and roughly how many degrees, or "level"), ' +
-    '"perspective" (converging verticals or lens distortion? or "ok"), ' +
-    '"exposure" (under/over-exposed? which areas are too dark or blown out?), ' +
-    '"whiteBalance" (any colour cast, e.g. warm/yellow, green, blue? or "neutral"), ' +
-    '"other" (noise, dullness, low contrast, haze, flat colour... or "none"), ' +
-    '"brief" (one or two imperative sentences telling the retoucher exactly what to fix on THIS photo to make it bright, level and professional). ' +
-    "Be concise and specific.";
   try {
     const json = await call(TEXT_MODEL, {
-      contents: [{ parts: [{ inline_data: { mime_type: mime, data: base64 } }, { text: prompt }] }],
-      generationConfig: { temperature: 0.2, maxOutputTokens: 400, responseMimeType: "application/json" },
+      contents: [{ parts: [{ inline_data: { mime_type: mime, data: base64 } }, { text: ANALYZE_PROMPT }] }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 450, responseMimeType: "application/json" },
     });
     let txt = partsOf(json).map(p => p.text || "").join("").trim();
     txt = txt.replace(/^```json/i, "").replace(/^```/, "").replace(/```$/, "").trim();
     const mt = txt.match(/\{[\s\S]*\}/);
-    const o = JSON.parse(mt ? mt[0] : txt);
-    const skip = v => !v || /^(level|drept|straight|none|ok|neutral|no\b|n\/a)/i.test(String(v).trim());
-    const parts = [];
-    if (!skip(o.tilt)) parts.push("Tilt: " + o.tilt);
-    if (!skip(o.perspective)) parts.push("Perspective: " + o.perspective);
-    if (!skip(o.exposure)) parts.push("Exposure: " + o.exposure);
-    if (!skip(o.whiteBalance)) parts.push("White balance: " + o.whiteBalance);
-    if (!skip(o.other)) parts.push("Other: " + o.other);
-    let brief = (o.brief || "").trim();
-    if (parts.length) brief += (brief ? " " : "") + parts.join("; ") + ".";
-    return brief.slice(0, 700);
-  } catch (e) {
-    console.error("analyzeForEnhance failed:", e.message);
-    return "";
-  }
+    return composeBrief(JSON.parse(mt ? mt[0] : txt));
+  } catch (e) { console.error("analyzeGemini failed:", e.message); return ""; }
 }
+
+// Vision analysis via OpenAI (so analysis works even without a Gemini key)
+async function analyzeOpenAI(base64, mime) {
+  const key = process.env.OPENAI_API_KEY; if (!key) return "";
+  const model = process.env.OPENAI_VISION_MODEL || "gpt-4o-mini";
+  const dataUrl = "data:" + (mime || "image/jpeg") + ";base64," + base64;
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 60000);
+  try {
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: [{ type: "text", text: ANALYZE_PROMPT }, { type: "image_url", image_url: { url: dataUrl } }] }],
+        response_format: { type: "json_object" }, max_tokens: 450, temperature: 0.2,
+      }),
+      signal: ctrl.signal,
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error("OpenAI vision " + r.status + ": " + JSON.stringify(j).slice(0, 200));
+    const txt = (((j.choices || [])[0] || {}).message || {}).content || "";
+    const mt = String(txt).match(/\{[\s\S]*\}/);
+    return composeBrief(JSON.parse(mt ? mt[0] : txt));
+  } catch (e) { console.error("analyzeOpenAI failed:", e.message); return ""; }
+  finally { clearTimeout(t); }
+}
+
+// Pick the available vision provider for analysis (OpenAI preferred, Gemini fallback).
+async function analyzePhoto(base64, mime) {
+  if (process.env.OPENAI_API_KEY) { const b = await analyzeOpenAI(base64, mime); if (b) return b; }
+  if (process.env.GEMINI_API_KEY) return analyzeGemini(base64, mime);
+  return "";
+}
+// backward-compatible alias
+const analyzeForEnhance = analyzePhoto;
 
 async function enhanceImageGemini(base64, mime) {
   if (!process.env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY missing");
-  // Pass 1: analyse this specific photo
-  const brief = await analyzeForEnhance(base64, mime).catch(() => "");
-  // Pass 2: apply a tailored, assertive correction
-  const prompt = ENHANCE_RULES + " " + ENHANCE_GOALS +
-    (brief ? (" Specific issues to fix in THIS exact photo: " + brief) : "");
+  const brief = await analyzePhoto(base64, mime).catch(() => "");
+  const prompt = STRONG_PROMPT + (brief ? (" Issues found in THIS exact photo — fix them decisively: " + brief) : "");
   const json = await call(IMAGE_MODEL, {
     contents: [{ parts: [{ inline_data: { mime_type: mime, data: base64 } }, { text: prompt }] }],
-    generationConfig: { responseModalities: ["TEXT", "IMAGE"], temperature: 0.35 },
+    generationConfig: { responseModalities: ["TEXT", "IMAGE"], temperature: 0.4 },
   });
   for (const p of partsOf(json)) {
     const d = inlineOf(p);
@@ -175,24 +207,12 @@ function makeApiSize(width, height) {
   return tw + "x" + th;
 }
 
-// Same conservative, trusted "platform-ready" brief used by the GPT editor.
-const PLATFORM_READY_PROMPT =
-  "Edit this original accommodation photograph for a premium accommodation booking platform. " +
-  "Primary goal: a cleaner, brighter, professionally presented version of the SAME photograph, keeping the property fully authentic, recognisable and trustworthy. " +
-  "This is a conservative real-estate photo correction. The final image must remain the same real room/exterior/property, not a redesigned or reimagined version. " +
-  "Allowed edits only: correct orientation and straighten; correct lens distortion and perspective conservatively so walls, doors, windows, furniture and vertical lines look naturally aligned; " +
-  "improve framing only if required after perspective correction, with a minimal crop; improve exposure, brightness, contrast, shadows, highlights and white balance naturally; increase clarity, colour balance and vibrance to a clean professional look. " +
-  "Strict preservation: do NOT add, remove, move, hide, replace, redesign or reconstruct any object; do not change architecture, layout, dimensions, furniture, bedding, textiles, finishes, flooring, ceiling, doors, windows, radiators, lights, plants, artwork, vehicles, people, signage, logos or text; " +
-  "preserve all real textures and natural imperfections; no generative fill, inpainting, object removal, relighting, fake sunlight/lamps/reflections/shadows or cinematic sky; do not turn lights/windows on or off; no HDR-like, oversaturated, overly sharp, stylised or AI-generated look; do not crop aggressively, widen the room or alter proportions. " +
-  "Visual target: natural premium accommodation photography — straight, balanced, realistic, naturally bright, neutral colour balance, with visible detail in shadows and highlights. " +
-  "Return exactly one edited image, preserving the original aspect ratio as closely as possible.";
-
 async function enhanceImageOpenAI(base64, mime) {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error("OPENAI_API_KEY missing");
   const sharp = require("sharp");
   const inputBuf = Buffer.from(base64, "base64");
-  // read dimensions for the aspect-preserving output size (same as the GPT script)
+  // read dimensions for the aspect-preserving output size
   const meta = await sharp(inputBuf).metadata().catch(() => ({}));
   const size = makeApiSize(meta.width, meta.height);
   // send the image as-is (jpeg/png/webp supported by the API); re-encode only exotic formats
@@ -200,11 +220,14 @@ async function enhanceImageOpenAI(base64, mime) {
   if (!/^image\/(jpeg|png|webp)$/i.test(uploadType)) { uploadBuf = await sharp(inputBuf).jpeg({ quality: 95 }).toBuffer(); uploadType = "image/jpeg"; }
   else fname = "photo." + (uploadType.split("/")[1] === "jpeg" ? "jpg" : uploadType.split("/")[1]);
 
-  // single pass — identical to the LocalStay GPT editor (platform-ready prompt, verbatim)
+  // analyse this exact photo, then apply a strong, tailored correction
+  const brief = await analyzePhoto(base64, mime).catch(() => "");
+  const prompt = STRONG_PROMPT + (brief ? (" Issues found in THIS exact photo — fix them decisively: " + brief) : "");
+
   const fd = new FormData();
   fd.append("model", OPENAI_IMAGE_MODEL);
   fd.append("image", new Blob([uploadBuf], { type: uploadType }), fname);
-  fd.append("prompt", PLATFORM_READY_PROMPT);
+  fd.append("prompt", prompt);
   if (size) fd.append("size", size);
   fd.append("quality", process.env.OPENAI_IMAGE_QUALITY || "high");
   fd.append("output_format", "jpeg");
@@ -243,4 +266,4 @@ async function enhanceImage(base64, mime) {
   return enhanceImageGemini(base64, mime);
 }
 
-module.exports = { describeImage, enhanceImage, enhanceImageGemini, enhanceImageOpenAI, analyzeForEnhance, makeApiSize };
+module.exports = { describeImage, enhanceImage, enhanceImageGemini, enhanceImageOpenAI, analyzePhoto, analyzeForEnhance, analyzeOpenAI, analyzeGemini, makeApiSize };
