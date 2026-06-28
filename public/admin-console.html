@@ -38,7 +38,9 @@ input,select,button,textarea{font-family:inherit}
 .top{background:#fff;border-bottom:1px solid var(--line);padding:0 32px;height:64px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:20}
 .top h1{font-size:18px}
 .top .right{display:flex;align-items:center;gap:12px}
-.save-state{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:7px}
+.save-state{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:7px;user-select:none}
+.save-state.dirty{color:var(--amber,#c8861a);font-weight:600}
+.save-state.dirty:hover{text-decoration:underline}
 .save-state .dot{width:8px;height:8px;border-radius:50%;background:#3aa76d}
 .content{padding:26px 32px 70px;max-width:1080px}
 .content.wide{max-width:none}
@@ -639,8 +641,8 @@ function syncUnits(){
   state.units=state.units.filter(u=>state.pricing.rooms.find(r=>r.id===u.id));
 }
 function regenSite(){ try{ if(window.STAY) localStorage.setItem("stay_site_"+SLUG, JSON.stringify(STAY.masterToSite(state.property,state.pricing,state.galleries))); }catch(e){} }
-function persist(){ api.save(state); regenSite(); $("#saveState").innerHTML='<span class="dot"></span> Salvat'; }
-function markDirty(){ $("#saveState").innerHTML='<span class="dot" style="background:var(--amber)"></span> Modificări nesalvate'; }
+function persist(){ api.save(state); regenSite(); const s=$("#saveState"); s.classList.remove("dirty"); s.innerHTML='<span class="dot"></span> Salvat'; }
+function markDirty(){ const s=$("#saveState"); s.classList.add("dirty"); s.innerHTML='<span class="dot" style="background:var(--amber)"></span> Modificări nesalvate · salvează'; }
 
 /* ---- helpers ---- */
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
@@ -1419,6 +1421,7 @@ function renderContent(){
   }));
 }
 $("#saveContent").onclick=()=>{persist();toast("Conținut salvat");};
+(function(){const s=$("#saveState"); if(s){ s.style.cursor="pointer"; s.title="Click pentru a salva toate modificările"; s.onclick=()=>{persist();toast("Toate modificările au fost salvate");}; }})();
 $("#exportJson").onclick=()=>{const blob=new Blob([JSON.stringify(state.property,null,2)],{type:"application/json"});const a=h("a",{href:URL.createObjectURL(blob),download:SLUG+".json"});a.click();URL.revokeObjectURL(a.href);toast("JSON exportat — alimentează template-ul");};
 
 /* =================== PRICING =================== */
