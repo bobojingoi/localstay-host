@@ -55,8 +55,8 @@ header.nav.solid{position:fixed;background:rgba(27,39,66,.96);backdrop-filter:bl
 @keyframes drop{from{transform:translateY(-100%)}to{transform:translateY(0)}}
 
 /* HERO */
-.hero{position:relative;padding:0 16px 16px}
-.hero-img{position:relative;height:70vh;min-height:460px;max-height:760px;border-radius:34px;overflow:hidden;background-position:center;background-size:cover;background-color:var(--navy)}
+.hero{position:relative;padding:0}
+.hero-img{position:relative;height:70vh;min-height:460px;max-height:760px;border-radius:0 0 34px 34px;overflow:hidden;background-position:center;background-size:cover;background-color:var(--navy)}
 .hero-img.no-img{background:radial-gradient(120% 120% at 80% 10%,#2c3c6b 0%,#1c2746 45%,#161f3a 100%)}
 .hero-img::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(20,28,52,.45),rgba(20,28,52,.12) 35%,rgba(18,25,44,.85))}
 .hero-content{position:absolute;left:0;right:0;bottom:0;padding:44px clamp(28px,5vw,60px);z-index:2}
@@ -1298,8 +1298,8 @@ function rServices(){ return rGroupSec('servicii','La fața locului','Servicii',
 function render(){
   setTheme();
   document.getElementById('app').innerHTML = [
-    rNav(), rHero(), rStrip(), rOverview(), rSpaces(), rAmenities(), rHighlight(),
-    rGalleries(), rBooking(), rAvailability(), rReviews(), rLocation(),
+    rNav(), rHero(), rStrip(), rOverview(), rGalleries(), rSpaces(), rAmenities(), rHighlight(),
+    rBooking(), rAvailability(), rReviews(), rLocation(),
     rActivities(), rServices(), rRulesAbout(), rFaq(), rFooter()
   ].join('') + rStickyCTA();
   wire();
