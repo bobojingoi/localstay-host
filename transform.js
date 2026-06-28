@@ -114,7 +114,7 @@
     const _allVariantPhotos=[]; ((pricing&&pricing.rooms)||[]).forEach(r=>_roomPhotos(r.id).forEach(u=>_allVariantPhotos.push(u)));
     const _entireRoom=((pricing&&pricing.rooms)||[]).find(r=>r.isEntire);
     const _entirePhotos=_entireRoom?_roomPhotos(_entireRoom.id):[];
-    const _mainPool=(photos.length?photos:(_entirePhotos.length?_entirePhotos:_allVariantPhotos));
+    const _mainPool=[...new Set([].concat(photos,_entirePhotos,_allVariantPhotos))].filter(Boolean);
     const _hero=_mainPool[0]||"";
     const desc=P.description||(P.host&&P.host.hostUnitDescription)||"";
     const firstSentence=(desc.split(/(?<=[.!?])\s/)[0]||desc).slice(0,120);
