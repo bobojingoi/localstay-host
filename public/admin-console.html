@@ -1791,14 +1791,13 @@ function createDockEditor(container){
 async function addEditedToGallery(arr, makeItem, dataUrl, label){
   if(!dataUrl) return;
   toast("Se adaugă în „"+label+"”...");
-  let item;
   try{
     const rr=await fetch("/api/upload",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({dataUrl})});
     const d=await rr.json().catch(()=>({}));
-    item=makeItem((rr.ok&&d.url)?d:{url:dataUrl,thumb:dataUrl,alt:""});
-  }catch(e){ item=makeItem({url:dataUrl,thumb:dataUrl,alt:""}); }
-  arr.push(item); persist(); renderGalerie();
-  toast("Adăugată în „"+label+"”");
+    if(!rr.ok||!d.url){ toast("Upload eșuat: "+((d&&d.error)||("HTTP "+rr.status))+" — verifică R2"); return; }
+    arr.push(makeItem(d)); persist(); renderGalerie();
+    toast("Adăugată în „"+label+"”");
+  }catch(e){ toast("Eroare de rețea la upload"); }
 }
 let dockEditor=null;
 function mountDock(){ const host=$("#galDock"); if(!host) return; if(!dockEditor) dockEditor=createDockEditor(host); }
@@ -1813,17 +1812,24 @@ function galleryBlock(o){
     const files=[...fileInput.files]; fileInput.value="";
     if(!files.length) return;
     upBtn.disabled=true;
+    let ok=0, fail=0, lastErr="";
     for(let i=0;i<files.length;i++){
       upBtn.textContent="Se încarcă "+(i+1)+"/"+files.length+"...";
       try{
         const dataUrl=await fileToDataUrl(files[i]);
         const rr=await fetch("/api/upload",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({dataUrl})});
         const d=await rr.json().catch(()=>({}));
-        arr.push(o.makeItem((rr.ok&&d.url)?d:{url:dataUrl,thumb:dataUrl,alt:""}));
-      }catch(e){}
+        if(rr.ok&&d.url){ arr.push(o.makeItem(d)); ok++; }
+        else { fail++; lastErr=(d&&d.error)||("HTTP "+rr.status); }
+      }catch(e){ fail++; lastErr="rețea"; }
     }
-    upBtn.disabled=false; markDirty(); renderGalerie();
-    toast(files.length+(files.length===1?" poză adăugată la „":" poze adăugate la „")+o.title+"”");
+    upBtn.disabled=false; renderGalerie();
+    if(ok){ persist(); }
+    if(fail){ markDirty();
+      toast(ok ? (ok+" încărcate, "+fail+" eșuate ("+lastErr+")") : ("Upload eșuat: "+lastErr+" — verifică setările R2"));
+    } else {
+      toast(ok+(ok===1?" poză adăugată la „":" poze adăugate la „")+o.title+"”");
+    }
   };
   const allSel=arr.length&&arr.every(p=>galSel.has(p));
   const selAll=h("button",{class:"btn-ghost sm",type:"button",onclick:()=>{
