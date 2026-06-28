@@ -9,6 +9,11 @@ const pool = new Pool({
   connectionString: url,
   // Managed Postgres (Render/Neon/Supabase) needs SSL; local usually doesn't.
   ssl: url && !isLocal ? { rejectUnauthorized: false } : false,
+  // Fail fast when the DB is unreachable instead of hanging the request forever.
+  connectionTimeoutMillis: 6000,
+  idleTimeoutMillis: 30000,
+  query_timeout: 12000,
+  max: 10,
 });
 
 // Don't let a dropped idle DB connection crash the whole process.
