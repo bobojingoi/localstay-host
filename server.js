@@ -189,7 +189,13 @@ app.post("/api/upload", async (req, res) => {
     try { thumbUrl = await r2put("photos/" + id + "_t.webp", thumb, "image/webp"); } catch (e) {}
 
     let alt = "", description = "";
-    try { const ai = await describeImage(main.toString("base64"), "image/webp"); alt = ai.alt; description = ai.description; } catch (e) {}
+    try {
+      const ai = await Promise.race([
+        describeImage(main.toString("base64"), "image/webp"),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("describe timeout")), 6000)),
+      ]);
+      alt = ai.alt; description = ai.description;
+    } catch (e) {}
 
     res.json({ url, thumb: thumbUrl, alt, description });
   } catch (e) { res.status(500).json({ error: e.message }); }
