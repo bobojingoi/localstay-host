@@ -14,8 +14,51 @@
   function nm(x){return typeof x==="string"?x:(x&&x.name)||"";}
   function take(a,n){return (a||[]).slice(0,n);}
   function icon(name){const s=(name||"").toLowerCase();
-    const M=[["piscin","pool"],["saun","sauna"],["masaj","massage"],["spa","massage"],["semineu","fire"],["șemineu","fire"],["foc","fire"],["gratar","fire"],["grătar","fire"],["teras","terrace"],["balcon","terrace"],["gradin","garden"],["grădin","garden"],["curte","garden"],["parc","parking"],["wifi","wifi"],["internet","wifi"],["restaurant","restaurant"],["bar","restaurant"],["cafea","coffee"],["ceai","coffee"],["tv","lounge"],["lounge","lounge"],["joaca","playground"],["joacă","playground"],["copii","playground"],["jocuri","games"],["joc","games"],["schi","slope"],["partie","slope"],["pârtie","slope"],["spalat vase","dishwasher"],["spălat vase","dishwasher"],["spalat rufe","washer"],["spălat rufe","washer"],["sport","ball"],["tenis","ball"],["badminton","ball"],["pat","bed"],["dormitor","bed"],["check-in","checkin"],["fumat","smoke"],["animal","pet"],["liniste","quiet"],["liniște","quiet"],["petrecer","quiet"]];
-    for(const[k,v]of M)if(s.includes(k))return v; return "view";}
+    const M=[
+      ["piscin","pool"],["jacuzzi","jacuzzi"],["ciubăr","jacuzzi"],["ciubar","jacuzzi"],["cadă spa","jacuzzi"],["cada spa","jacuzzi"],["hot tub","jacuzzi"],["saun","sauna"],["masaj","massage"],["wellness","massage"],["spa","massage"],["fitness","fitness"],["sală de sport","fitness"],["sala de sport","fitness"],["sală de fitness","fitness"],
+      ["semineu","fire"],["șemineu","fire"],["foc de tabără","fire"],["grătar","bbq"],["gratar","bbq"],["barbecue","bbq"],["bbq","bbq"],
+      ["foișor","terrace"],["foisor","terrace"],["pavilion","terrace"],["teras","terrace"],["balcon","terrace"],["patio","terrace"],
+      ["grădin","garden"],["gradin","garden"],["curte","garden"],
+      ["parcare","parking"],["parc","parking"],
+      ["wifi","wifi"],["internet","wifi"],
+      ["aer condi","ac"],["climatiz","ac"],["aer condiţ","ac"],
+      ["încălzire","heat"],["incalzire","heat"],["căldură","heat"],["radiator","heat"],
+      ["lift","elevator"],["ascensor","elevator"],
+      ["transfer","transfer"],["aeroport","transfer"],["shuttle","transfer"],
+      ["mașină de spălat vase","dishwasher"],["maşină de spălat vase","dishwasher"],["spălat vase","dishwasher"],["spalat vase","dishwasher"],
+      ["uscător de haine","dryer"],["uscător de rufe","dryer"],["uscator de haine","dryer"],
+      ["mașină de spălat","washer"],["maşină de spălat","washer"],["spălat rufe","washer"],["spalat rufe","washer"],["mașină de spălat rufe","washer"],
+      ["uscător de păr","hairdryer"],["uscator de par","hairdryer"],
+      ["cuptor cu microunde","microwave"],["microunde","microwave"],["cuptor","oven"],
+      ["plită","stove"],["plita","stove"],["aragaz","stove"],["gătit","stove"],["gatit","stove"],
+      ["prăjitor","toaster"],["prajitor","toaster"],["toaster","toaster"],["toast","toaster"],
+      ["fierbător","kettle"],["fierbator","kettle"],["cană fierbător","kettle"],["ceainic","kettle"],
+      ["ustensile","utensils"],["tacâmuri","utensils"],["veselă","utensils"],["vesela","utensils"],["bucătărie","utensils"],["bucatarie","utensils"],["chicinetă","utensils"],["chicineta","utensils"],
+      ["frigider","fridge"],["minibar","minibar"],
+      ["mașină de cafea","coffee"],["maşină de cafea","coffee"],["aparat de cafea","coffee"],["aparat de preparat cafea","coffee"],["cafea","coffee"],["espressor","coffee"],["ceai","coffee"],
+      ["cadă sau duș","bath"],["cadă","bath"],["cada","bath"],["duș","shower"],["dus","shower"],
+      ["prosoape","towel"],["prosop","towel"],["lenjerie","towel"],
+      ["articole de toaletă","toiletries"],["articole de toaleta","toiletries"],["papuci","toiletries"],["halat","toiletries"],
+      ["toaletă suplim","bath"],["toaletă","bath"],["toaleta","bath"],["wc","bath"],["bideu","bath"],["baie","bath"],
+      ["produse de curățenie","cleaning"],["curățenie","cleaning"],["curatenie","cleaning"],["menaj","cleaning"],
+      ["scaun pentru copii","baby"],["scaun înalt","baby"],["scaun inalt","baby"],["bebel","baby"],["pătuț","baby"],["patut","baby"],
+      ["loc de joacă","playground"],["loc de joaca","playground"],["joacă","playground"],["joaca","playground"],["copii","kids"],
+      ["jocuri de societate","games"],["biliard","games"],["jocuri","games"],["joc","games"],
+      ["restaurant","restaurant"],["bar","restaurant"],["mic dejun","restaurant"],
+      ["televizor","tv"],["tv","tv"],["ecran plat","tv"],["smart tv","tv"],["netflix","tv"],
+      ["proiector","projector"],
+      ["recepț","key"],["recept","key"],["check-in","checkin"],["cheie","key"],
+      ["schi","slope"],["pârtie","slope"],["partie","slope"],
+      ["tenis","ball"],["badminton","ball"],["fotbal","ball"],["volei","ball"],["baschet","ball"],["sport","ball"],["teren de sport","ball"],
+      ["izolare fonică","quiet"],["izolare fonica","quiet"],["liniște","quiet"],["liniste","quiet"],["petrecer","quiet"],
+      ["fumat","smoke"],["nefumător","smoke"],["nefumator","smoke"],
+      ["animal","pet"],
+      ["pat","bed"],["dormitor","bed"],["canapea","lounge"],["living","lounge"],["zonă de zi","lounge"],["șezlong","lounge"],
+      ["masă de luat masa","table"],["masă","table"],["masa","table"],
+      ["vedere","view"],["priveliște","view"],["priveliste","view"],["vedere la munte","view"],["vedere la mare","view"],["vedere la lac","view"],
+      ["munte","view"],["plajă","view"],["plaja","view"]
+    ];
+    for(const[k,v]of M)if(s.includes(k))return v; return "check";}
 
   /* ---- normalize master -> admin 'property' shape ---- */
   function normFacilities(af){const o={};FAC_CATS.forEach(c=>{let v=af[c];if(!Array.isArray(v))v=[];o[c]=v;});return o;}
