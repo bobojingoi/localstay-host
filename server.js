@@ -194,6 +194,22 @@ function mergeAdminState(oldS, newS) {
   const np = (newS.property && newS.property._photos) || [];
   const op = (oldS.property && oldS.property._photos) || [];
   if (!np.length && op.length && newS.property) newS.property._photos = op;
+  // preserve host price edits (base rates, currency, min nights, seasonal periods, per-day prices)
+  const oldRooms = (oldS.pricing && oldS.pricing.rooms) || [];
+  ((newS.pricing && newS.pricing.rooms) || []).forEach(r => {
+    const o = oldRooms.find(x => x.id === r.id);
+    if (o) {
+      if (o.weekday != null) r.weekday = o.weekday;
+      if (o.weekend != null) r.weekend = o.weekend;
+      if (o.currency) r.currency = o.currency;
+      if (o.minNights != null) r.minNights = o.minNights;
+    }
+  });
+  if (oldS.pricing) {
+    newS.pricing = newS.pricing || {};
+    if (oldS.pricing.periods && oldS.pricing.periods.length) newS.pricing.periods = oldS.pricing.periods;
+    if (oldS.pricing.dayPrices && Object.keys(oldS.pricing.dayPrices).length) newS.pricing.dayPrices = oldS.pricing.dayPrices;
+  }
   return newS;
 }
 
@@ -204,7 +220,7 @@ app.post("/api/import", async (req, res) => {
     const slug = STAY.slugify(admin.property.basicInfo.name || "unitate");
     const existing = await getProp(slug);
     const merged = existing ? mergeAdminState(existing.admin_state, admin) : admin;
-    const site = STAY.masterToSite(merged.property, merged.pricing);
+    const site = STAY.masterToSite(merged.property, merged.pricing, merged.galleries);
     await pool.query(
       `insert into properties(slug, admin_state, site) values($1,$2,$3)
        on conflict(slug) do update set admin_state=excluded.admin_state, site=excluded.site, updated_at=now()`,
@@ -238,7 +254,7 @@ app.get("/api/host/:slug/state", async (req, res) => {
 app.put("/api/host/:slug/state", async (req, res) => {
   try {
     const adminState = req.body;
-    const site = STAY.masterToSite(adminState.property, adminState.pricing);
+    const site = STAY.masterToSite(adminState.property, adminState.pricing, adminState.galleries);
     const r = await pool.query(
       "update properties set admin_state=$2, site=$3, updated_at=now() where slug=$1 returning slug",
       [req.params.slug, adminState, site]
