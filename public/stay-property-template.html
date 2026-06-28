@@ -236,6 +236,54 @@ footer a:hover{color:#fff}
 .bk-options{display:flex;flex-direction:column;gap:12px}
 .bk-card{display:flex;flex-direction:column;gap:0;border:1px solid var(--line);border-radius:18px;padding:18px 20px;background:#fff;transition:border-color .15s,box-shadow .15s}
 
+/* ---- modern room cards (cover thumb + modal) ---- */
+.rmcard{flex-direction:row;align-items:stretch;gap:0;padding:0;overflow:hidden;border-radius:20px}
+.rmcard.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent) inset,0 18px 44px -30px rgba(20,28,52,.5)}
+.rmcard-thumb{position:relative;width:210px;flex:none;background:var(--navy) center/cover no-repeat;cursor:pointer;min-height:158px}
+.rmcard-thumb.rmcard-noimg{background:linear-gradient(135deg,#243152,#1b2742)}
+.rmcard-thumb::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 45%,rgba(0,0,0,.45));opacity:0;transition:.2s}
+.rmcard-thumb:hover::after{opacity:1}
+.rmcard-view{position:absolute;left:12px;bottom:12px;z-index:2;color:#fff;font-family:var(--font-head);font-weight:700;font-size:13.5px;opacity:0;transform:translateY(6px);transition:.2s;display:inline-flex;align-items:center;gap:6px}
+.rmcard-view::before{content:"";width:24px;height:24px;border-radius:50%;background:#fff;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2'%3E%3Cpath d='M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E") center/16px no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2'%3E%3Cpath d='M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E") center/16px no-repeat;flex:none}
+.rmcard-thumb:hover .rmcard-view{opacity:1;transform:none}
+.rmcard-count{position:absolute;right:10px;top:10px;z-index:2;display:inline-flex;align-items:center;gap:5px;background:rgba(20,28,52,.72);color:#fff;font-size:12px;font-weight:600;padding:4px 9px;border-radius:100px;backdrop-filter:blur(2px)}
+.rmcard-badge{position:absolute;left:10px;top:10px;z-index:2;background:var(--accent);color:#fff;font-family:var(--font-head);font-weight:700;font-size:11.5px;letter-spacing:.02em;padding:4px 10px;border-radius:100px}
+.rmcard-body{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between;gap:14px;padding:18px 20px}
+.rmcard-top{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.rmcard-name b{display:block;font-family:var(--font-head);font-weight:700;color:var(--navy);font-size:18px;line-height:1.25}
+.rmcard-name small{display:block;color:var(--muted);font-size:13.5px;margin-top:3px}
+.rmcard-name .rmcard-meta{color:var(--body);font-weight:500}
+.rmcard-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.rmcard-detail{background:none;border:0;padding:0;cursor:pointer;color:var(--accent);font-family:var(--font-head);font-weight:700;font-size:14.5px}
+.rmcard-detail:hover{text-decoration:underline}
+.rmcard .bk-sel{flex:none}
+@media(max-width:560px){.rmcard{flex-direction:column}.rmcard-thumb{width:100%;min-height:180px}}
+
+/* ---- room modal ---- */
+.room-ov{position:fixed;inset:0;background:rgba(16,22,38,.62);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;z-index:150;padding:18px}
+.room-ov.on{display:flex}
+.room-modal{position:relative;width:min(920px,100%);max-height:92vh;background:#fff;border-radius:24px;overflow:hidden;display:grid;grid-template-columns:1.15fr 1fr;box-shadow:0 40px 90px -40px rgba(0,0,0,.6)}
+.room-x{position:absolute;top:14px;right:14px;z-index:5;width:38px;height:38px;border-radius:50%;border:0;background:rgba(255,255,255,.92);color:var(--navy);font-size:24px;line-height:1;cursor:pointer;display:grid;place-items:center;box-shadow:0 4px 14px -4px rgba(0,0,0,.4)}
+.room-x:hover{background:#fff}
+.room-gal{position:relative;background:var(--navy);overflow:hidden;min-height:340px}
+.room-track{display:flex;height:100%;transition:transform .35s ease}
+.room-slide{min-width:100%;height:100%;background:var(--navy) center/cover no-repeat}
+.room-slide.room-empty{display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.6);font-size:14px;min-height:340px}
+.room-gnav{position:absolute;top:50%;transform:translateY(-50%);width:42px;height:42px;border-radius:50%;border:0;cursor:pointer;background:rgba(255,255,255,.92);color:var(--navy);font-size:22px;display:grid;place-items:center;z-index:3;box-shadow:0 6px 18px -8px rgba(0,0,0,.5)}
+.room-gprev{left:12px}.room-gnext{right:12px}
+.room-gcount{position:absolute;left:14px;bottom:14px;z-index:3;background:rgba(20,28,52,.7);color:#fff;font-size:12.5px;font-weight:600;padding:4px 11px;border-radius:100px}
+.room-info{padding:30px 28px;overflow-y:auto;display:flex;flex-direction:column}
+.room-info h3{font-family:var(--font-head);font-size:24px;color:var(--navy);margin-bottom:8px}
+.room-meta{color:var(--body);font-size:14.5px;margin-bottom:10px}
+.room-price{font-family:var(--font-head);color:var(--navy);font-size:15px;margin-bottom:16px}
+.room-price b{color:var(--accent);font-size:19px}
+.room-desc{color:var(--body);font-size:15px;line-height:1.6;margin:0 0 18px}
+.room-block{margin-bottom:16px}
+.room-block h4{font-family:var(--font-head);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 9px;font-weight:700}
+.room-chips{display:flex;flex-wrap:wrap;gap:7px}
+.room-chips span{background:var(--soft-2,#f4f6fa);border:1px solid var(--line);border-radius:100px;padding:6px 12px;font-size:12.5px;color:var(--body)}
+.room-select{margin-top:auto;width:100%}
+@media(max-width:720px){.room-modal{grid-template-columns:1fr;max-height:94vh;overflow-y:auto}.room-gal{min-height:240px}.room-slide,.room-slide.room-empty{min-height:240px}}
 
 .bk-thumbs{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
 .bk-thumb{position:relative;width:84px;height:64px;border-radius:10px;border:1px solid var(--line);background-size:cover;background-position:center;cursor:pointer;overflow:hidden;flex:none}
@@ -910,15 +958,24 @@ function rBooking(){
     const m=metaLine(opt);
     const id=rid||opt.id;
     const gal=(opt.gallery&&opt.gallery.length)?opt.gallery:[];
-    const thumbs=gal.length?`<div class="bk-thumbs" data-rid="${esc(id)}">${gal.slice(0,5).map((p,i)=>`<button type="button" class="bk-thumb" data-rid="${esc(id)}" data-i="${i}" style="background-image:url('${esc(p.thumb||p.url)}')">${(i===4&&gal.length>5)?`<span>+${gal.length-5}</span>`:''}</button>`).join('')}</div>`:'';
-    return `<div class="bk-card${rid==='__entire'?' bk-entire':''}" data-rid="${esc(id)}">
-      <div class="bk-card-head">
-        <div class="bk-card-name"><b>${esc(nameOv||opt.name)}</b>${(subOv||opt.sub)?`<small>${esc(subOv||opt.sub)}</small>`:''}${m?`<small class="bk-meta">${m}</small>`:''}</div>
-        ${priceTag(opt.weekday, opt.currency)}
-        <button type="button" class="bk-sel" data-rid="${esc(id)}">Selectează</button>
+    const cover=gal.length?(gal[0].thumb||gal[0].url):'';
+    const canDetail=gal.length||opt.description||(opt.facilities&&opt.facilities.length)||(opt.view&&opt.view.length);
+    return `<div class="bk-card rmcard${rid==='__entire'?' rmcard-entire':''}" data-rid="${esc(id)}">
+      <div class="rmcard-thumb${cover?'':' rmcard-noimg'}" ${cover?`style="background-image:url('${esc(cover)}')"`:''} ${canDetail?`data-room="${esc(id)}" role="button" tabindex="0" aria-label="Vezi camera"`:''}>
+        ${rid==='__entire'?'<span class="rmcard-badge">Toată proprietatea</span>':''}
+        ${gal.length>1?`<span class="rmcard-count"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>${gal.length}</span>`:''}
+        ${canDetail?'<span class="rmcard-view">Vezi camera</span>':''}
       </div>
-      ${thumbs}
-      ${detailsPanel(opt)}
+      <div class="rmcard-body">
+        <div class="rmcard-top">
+          <div class="rmcard-name"><b>${esc(nameOv||opt.name)}</b>${(subOv||opt.sub)?`<small>${esc(subOv||opt.sub)}</small>`:''}${m?`<small class="rmcard-meta">${m}</small>`:''}</div>
+          ${priceTag(opt.weekday, opt.currency)}
+        </div>
+        <div class="rmcard-actions">
+          ${canDetail?`<button type="button" class="rmcard-detail" data-room="${esc(id)}">Detalii & galerie</button>`:'<span></span>'}
+          <button type="button" class="bk-sel" data-rid="${esc(id)}">Selectează</button>
+        </div>
+      </div>
     </div>`;
   };
   const entireCard = entire ? card(entR||{weekday:isFinite(entW)?entW:'',currency:cur,capacity:PROPERTY.capacity},'__entire','Toată proprietatea','Închiriere integrală') : '';
@@ -954,6 +1011,24 @@ function rBooking(){
       <div class="lb-stage"><img id="lbImg" alt=""><div class="lb-counter" id="lbCount"></div></div>
       <button type="button" class="lb-nav lb-next" id="lbNext" aria-label="Următoarea">›</button>
     </div>
+    <div class="room-ov" id="roomOv"><div class="room-modal">
+      <button type="button" class="room-x" id="roomX" aria-label="Închide">&times;</button>
+      <div class="room-gal">
+        <div class="room-track" id="roomTrack"></div>
+        <button type="button" class="room-gnav room-gprev" id="roomPrev" aria-label="Anterioara">‹</button>
+        <button type="button" class="room-gnav room-gnext" id="roomNext" aria-label="Următoarea">›</button>
+        <span class="room-gcount" id="roomCount"></span>
+      </div>
+      <div class="room-info">
+        <h3 id="roomName"></h3>
+        <div class="room-meta" id="roomMeta"></div>
+        <div class="room-price" id="roomPrice"></div>
+        <p class="room-desc" id="roomDesc"></p>
+        <div class="room-block" id="roomViewWrap" hidden><h4>Priveliște</h4><div class="room-chips" id="roomView"></div></div>
+        <div class="room-block" id="roomFacWrap" hidden><h4>Facilități</h4><div class="room-chips" id="roomFac"></div></div>
+        <button type="button" class="btn btn-accent room-select" id="roomSelect">Selectează această cameră</button>
+      </div>
+    </div></div>
   </section>`;
 }
 
@@ -1038,6 +1113,42 @@ function initBooking(){
   $('#lbNext').onclick=()=>{ lbI=(lbI+1)%lbPhotos.length; lbShow(); };
   document.addEventListener('keydown',e=>{ if(!lb.classList.contains('on'))return; if(e.key==='Escape')lb.classList.remove('on'); if(e.key==='ArrowLeft')$('#lbPrev').click(); if(e.key==='ArrowRight')$('#lbNext').click(); });
   sec.querySelectorAll('.bk-thumb').forEach(t=>t.onclick=()=>openLightbox(galleryFor(t.dataset.rid),+t.dataset.i||0));
+
+  /* ---- per-room modal: cover thumbnail -> info + gallery ---- */
+  function roomMetaLine(o){ const p=[];
+    if(o.capacity) p.push(o.capacity+(o.children?('+'+o.children):'')+' oaspeți');
+    if(o.beds) p.push(o.beds);
+    if(o.surface) p.push(o.surface);
+    if(o.bathrooms) p.push(o.bathrooms+(o.bathrooms===1?' baie':' băi'));
+    return p.join(' · ');
+  }
+  const roomOv=$('#roomOv'); let curRoomId=null, roomGal=[], roomGalI=0;
+  function roomShow(){ $('#roomTrack').style.transform='translateX('+(-roomGalI*100)+'%)'; $('#roomCount').textContent=roomGal.length?((roomGalI+1)+' / '+roomGal.length):''; }
+  function openRoom(rid){
+    const o=optFor(rid); if(!o) return; curRoomId=rid;
+    roomGal=(rid==='__entire'?((entR&&entR.gallery)||[]):((byId[rid]&&byId[rid].gallery)||[]));
+    $('#roomTrack').innerHTML = roomGal.length
+      ? roomGal.map(p=>'<div class="room-slide" style="background-image:url(\''+(p.url||p.thumb)+'\')"></div>').join('')
+      : '<div class="room-slide room-empty">Fără poze pentru această cameră</div>';
+    roomGalI=0; roomShow();
+    $('#roomName').textContent = o.name + (rid==='__entire'?' · Închiriere integrală':'');
+    $('#roomMeta').textContent = roomMetaLine(o);
+    $('#roomPrice').innerHTML = 'de la <b>'+esc(String(o.weekday))+' '+esc(o.currency||cur)+'</b> / noapte';
+    const dsc=$('#roomDesc'); if(o.description){ dsc.textContent=o.description; dsc.hidden=false; } else dsc.hidden=true;
+    const vw=o.view||[], vWrap=$('#roomViewWrap'); if(vw.length){ $('#roomView').innerHTML=vw.map(v=>'<span>'+esc(v)+'</span>').join(''); vWrap.hidden=false; } else vWrap.hidden=true;
+    const fac=(o.facilities||[]).slice(0,40), fWrap=$('#roomFacWrap'); if(fac.length){ $('#roomFac').innerHTML=fac.map(v=>'<span>'+esc(v)+'</span>').join(''); fWrap.hidden=false; } else fWrap.hidden=true;
+    const on = rid==='__entire'?st.entire:st.rooms.has(rid);
+    $('#roomSelect').textContent = on?'Selectat ✓ — închide':'Selectează această cameră';
+    roomOv.classList.add('on'); document.body.style.overflow='hidden';
+  }
+  function closeRoom(){ roomOv.classList.remove('on'); document.body.style.overflow=''; }
+  sec.querySelectorAll('[data-room]').forEach(el=>{ el.onclick=()=>openRoom(el.dataset.room); el.onkeydown=e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); openRoom(el.dataset.room); } }; });
+  $('#roomX').onclick=closeRoom;
+  roomOv.onclick=e=>{ if(e.target===roomOv) closeRoom(); };
+  $('#roomPrev').onclick=()=>{ if(!roomGal.length)return; roomGalI=(roomGalI-1+roomGal.length)%roomGal.length; roomShow(); };
+  $('#roomNext').onclick=()=>{ if(!roomGal.length)return; roomGalI=(roomGalI+1)%roomGal.length; roomShow(); };
+  $('#roomSelect').onclick=()=>{ const b=sec.querySelector('.bk-sel[data-rid="'+(window.CSS&&CSS.escape?CSS.escape(curRoomId):curRoomId)+'"]'); if(b) b.click(); closeRoom(); };
+  document.addEventListener('keydown',e=>{ if(!roomOv.classList.contains('on'))return; if(e.key==='Escape')closeRoom(); if(e.key==='ArrowLeft')$('#roomPrev').click(); if(e.key==='ArrowRight')$('#roomNext').click(); });
   const ov=$('#calOv');
   $('#bkDates').onclick=()=>{ if(!selectedIds().length){ flash('Alege întâi o variantă'); return; } st.month=_som(st.ci?_piso(st.ci):new Date()); ov.classList.add('on'); drawCal(); };
   $('#calX').onclick=()=>ov.classList.remove('on');
@@ -1169,9 +1280,9 @@ function rServices(){ return rGroupSec('servicii','La fața locului','Servicii',
 function render(){
   setTheme();
   document.getElementById('app').innerHTML = [
-    rNav(), rHero(), rStrip(), rOverview(), rBooking(), rAvailability(), rHighlight(),
-    rGalleries(), rSpaces(), rAmenities(), rActivities(), rServices(), rReviews(), rRulesAbout(), rFaq(),
-    rLocation(), rFooter()
+    rNav(), rHero(), rStrip(), rOverview(), rHighlight(), rSpaces(), rAmenities(),
+    rGalleries(), rBooking(), rAvailability(), rReviews(), rLocation(),
+    rActivities(), rServices(), rRulesAbout(), rFaq(), rFooter()
   ].join('') + rStickyCTA();
   wire();
 }
