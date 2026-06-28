@@ -24,6 +24,23 @@ app.use((req, res, next) => {
   next();
 });
 
+// Diagnostic: shows DB + R2 status without exposing secrets. Visit /api/health.
+app.get("/api/health", async (req, res) => {
+  let db = false, dbErr = null;
+  try { await pool.query("select 1"); db = true; } catch (e) { dbErr = e.message; }
+  res.json({
+    db, dbErr,
+    r2: {
+      ready: r2ready(),
+      endpoint: process.env.R2_ENDPOINT || null,       // not secret — check for typos
+      bucket: process.env.R2_BUCKET || null,            // not secret
+      publicUrl: process.env.R2_PUBLIC_URL || null,     // not secret
+      hasAccessKey: !!process.env.R2_ACCESS_KEY_ID,
+      hasSecretKey: !!process.env.R2_SECRET_ACCESS_KEY,
+    },
+  });
+});
+
 const PUBLIC = path.join(__dirname, "public");
 const BASE_DOMAIN = (process.env.BASE_DOMAIN || "").toLowerCase(); // e.g. staypredeal.ro
 
