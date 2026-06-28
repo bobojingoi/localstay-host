@@ -1,6 +1,9 @@
-// Gemini helpers, all using the same GEMINI_API_KEY.
-//  - describeImage: alt-text + short description (text model)
-//  - enhanceImage: conservative photo correction that returns an edited image (Nano Banana)
+// Photo AI helpers.
+//  - describeImage: alt-text + short description (Gemini text model)
+//  - analyzeForEnhance: per-photo vision analysis -> concrete correction brief (Gemini)
+//  - enhanceImage: returns an edited image. Uses OpenAI gpt-image-2 when OPENAI_API_KEY
+//      is set (high-fidelity edit + aspect-ratio-preserving size, like the LocalStay GPT
+//      editor); otherwise falls back to Gemini (gemini-2.5-flash-image), two-pass.
 const TEXT_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 const IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image";
 const BASE = "https://generativelanguage.googleapis.com/v1beta/models/";
@@ -109,7 +112,7 @@ async function analyzeForEnhance(base64, mime) {
   }
 }
 
-async function enhanceImage(base64, mime) {
+async function enhanceImageGemini(base64, mime) {
   if (!process.env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY missing");
   // Pass 1: analyse this specific photo
   const brief = await analyzeForEnhance(base64, mime).catch(() => "");
@@ -126,8 +129,119 @@ async function enhanceImage(base64, mime) {
       return { image: d.data, mime: d.mime_type || d.mimeType };
     }
   }
-  console.error("enhanceImage: no image in response:", JSON.stringify(json).slice(0, 300));
+  console.error("enhanceImageGemini: no image in response:", JSON.stringify(json).slice(0, 300));
   return null;
 }
 
-module.exports = { describeImage, enhanceImage, analyzeForEnhance };
+/* =====================================================================
+   OpenAI gpt-image-2 path (matches the trusted LocalStay GPT editor):
+   high-fidelity edit + an explicit output size that preserves the
+   original aspect ratio. Used when OPENAI_API_KEY is set.
+   ===================================================================== */
+const OPENAI_IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || "gpt-image-2";
+// gpt-image-2 output constraints
+const MIN_OUTPUT_PIXELS = 655360, MAX_OUTPUT_PIXELS = 8294400, MAX_OUTPUT_EDGE = 3840;
+const MAX_OUTPUT_LONG_SIDE = +(process.env.OPENAI_MAX_LONG_SIDE || 3072);
+const MIN_API_ASPECT_RATIO = 1 / 3, MAX_API_ASPECT_RATIO = 3;
+const r16up = v => Math.max(16, Math.ceil(v / 16) * 16);
+const r16down = v => Math.max(16, Math.floor(v / 16) * 16);
+
+// Build a valid gpt-image-2 size string that keeps the input aspect ratio. Null if unsupported.
+function makeApiSize(width, height) {
+  if (!width || !height) return null;
+  const ratio = width / height;
+  if (ratio > MAX_API_ASPECT_RATIO || ratio < MIN_API_ASPECT_RATIO) return null; // wider than 3:1 — skip explicit size
+  const pixels = width * height, longSide = Math.max(width, height);
+  const maxScaleLong = Math.min(MAX_OUTPUT_LONG_SIDE, MAX_OUTPUT_EDGE) / longSide;
+  const maxScalePix = Math.sqrt(MAX_OUTPUT_PIXELS / pixels);
+  const maxScale = Math.min(maxScaleLong, maxScalePix);
+  const minScalePix = Math.sqrt(MIN_OUTPUT_PIXELS / pixels);
+  let scale = 1;
+  if (pixels < MIN_OUTPUT_PIXELS) scale = minScalePix;
+  else if (longSide > Math.min(MAX_OUTPUT_LONG_SIDE, MAX_OUTPUT_EDGE) || pixels > MAX_OUTPUT_PIXELS) scale = maxScale;
+  if (scale > maxScale + 1e-9) return null;
+  let tw = r16up(width * scale), th = r16up(height * scale);
+  let cp = tw * th, cl = Math.max(tw, th);
+  if (cp > MAX_OUTPUT_PIXELS || cl > Math.min(MAX_OUTPUT_LONG_SIDE, MAX_OUTPUT_EDGE)) {
+    const down = Math.min(Math.sqrt(MAX_OUTPUT_PIXELS / cp), Math.min(MAX_OUTPUT_LONG_SIDE, MAX_OUTPUT_EDGE) / cl);
+    tw = r16down(tw * down); th = r16down(th * down);
+  }
+  let guard = 0;
+  while (tw * th < MIN_OUTPUT_PIXELS && guard++ < 400) {
+    if (tw >= th) { tw += 16; th = r16up(tw / ratio); } else { th += 16; tw = r16up(th * ratio); }
+    if (Math.max(tw, th) > Math.min(MAX_OUTPUT_LONG_SIDE, MAX_OUTPUT_EDGE)) return null;
+  }
+  if (tw * th > MAX_OUTPUT_PIXELS) return null;
+  return tw + "x" + th;
+}
+
+// Same conservative, trusted "platform-ready" brief used by the GPT editor.
+const PLATFORM_READY_PROMPT =
+  "Edit this original accommodation photograph for a premium accommodation booking platform. " +
+  "Primary goal: a cleaner, brighter, professionally presented version of the SAME photograph, keeping the property fully authentic, recognisable and trustworthy. " +
+  "This is a conservative real-estate photo correction. The final image must remain the same real room/exterior/property, not a redesigned or reimagined version. " +
+  "Allowed edits only: correct orientation and straighten; correct lens distortion and perspective conservatively so walls, doors, windows, furniture and vertical lines look naturally aligned; " +
+  "improve framing only if required after perspective correction, with a minimal crop; improve exposure, brightness, contrast, shadows, highlights and white balance naturally; increase clarity, colour balance and vibrance to a clean professional look. " +
+  "Strict preservation: do NOT add, remove, move, hide, replace, redesign or reconstruct any object; do not change architecture, layout, dimensions, furniture, bedding, textiles, finishes, flooring, ceiling, doors, windows, radiators, lights, plants, artwork, vehicles, people, signage, logos or text; " +
+  "preserve all real textures and natural imperfections; no generative fill, inpainting, object removal, relighting, fake sunlight/lamps/reflections/shadows or cinematic sky; do not turn lights/windows on or off; no HDR-like, oversaturated, overly sharp, stylised or AI-generated look; do not crop aggressively, widen the room or alter proportions. " +
+  "Visual target: natural premium accommodation photography — straight, balanced, realistic, naturally bright, neutral colour balance, with visible detail in shadows and highlights. " +
+  "Return exactly one edited image, preserving the original aspect ratio as closely as possible.";
+
+async function enhanceImageOpenAI(base64, mime) {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) throw new Error("OPENAI_API_KEY missing");
+  const sharp = require("sharp");
+  const inputBuf = Buffer.from(base64, "base64");
+  // normalise to JPEG and read dimensions
+  const meta = await sharp(inputBuf).metadata().catch(() => ({}));
+  const jpegBuf = await sharp(inputBuf).rotate().jpeg({ quality: 95 }).toBuffer();
+  const size = makeApiSize(meta.width, meta.height);
+
+  // Optional per-photo analysis (only if a Gemini text key is available) to target the edit
+  let brief = "";
+  if (process.env.GEMINI_API_KEY) brief = await analyzeForEnhance(base64, mime).catch(() => "");
+  const prompt = PLATFORM_READY_PROMPT + (brief ? (" Specific issues to fix in THIS exact photo: " + brief) : "");
+
+  const fd = new FormData();
+  fd.append("model", OPENAI_IMAGE_MODEL);
+  fd.append("image", new Blob([jpegBuf], { type: "image/jpeg" }), "photo.jpg");
+  fd.append("prompt", prompt);
+  if (size) fd.append("size", size);
+  fd.append("quality", process.env.OPENAI_IMAGE_QUALITY || "high");
+  fd.append("output_format", "jpeg");
+  fd.append("output_compression", "95");
+  fd.append("n", "1");
+
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 240000);
+  let json;
+  try {
+    const r = await fetch("https://api.openai.com/v1/images/edits", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + key },
+      body: fd,
+      signal: ctrl.signal,
+    });
+    json = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error("OpenAI " + r.status + ": " + JSON.stringify(json).slice(0, 300));
+  } finally { clearTimeout(t); }
+
+  const b64 = json && json.data && json.data[0] && json.data[0].b64_json;
+  if (!b64) { console.error("enhanceImageOpenAI: no image in response:", JSON.stringify(json).slice(0, 300)); return null; }
+  return { image: b64, mime: "image/jpeg" };
+}
+
+// Provider dispatcher: prefer gpt-image-2 (the trusted GPT editor) when configured, else Gemini.
+async function enhanceImage(base64, mime) {
+  if (process.env.OPENAI_API_KEY) {
+    try { return await enhanceImageOpenAI(base64, mime); }
+    catch (e) {
+      console.error("enhanceImageOpenAI failed:", e.message);
+      if (process.env.GEMINI_API_KEY) return enhanceImageGemini(base64, mime); // graceful fallback
+      throw e;
+    }
+  }
+  return enhanceImageGemini(base64, mime);
+}
+
+module.exports = { describeImage, enhanceImage, enhanceImageGemini, enhanceImageOpenAI, analyzeForEnhance, makeApiSize };
