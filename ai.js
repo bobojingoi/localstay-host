@@ -192,20 +192,19 @@ async function enhanceImageOpenAI(base64, mime) {
   if (!key) throw new Error("OPENAI_API_KEY missing");
   const sharp = require("sharp");
   const inputBuf = Buffer.from(base64, "base64");
-  // normalise to JPEG and read dimensions
+  // read dimensions for the aspect-preserving output size (same as the GPT script)
   const meta = await sharp(inputBuf).metadata().catch(() => ({}));
-  const jpegBuf = await sharp(inputBuf).rotate().jpeg({ quality: 95 }).toBuffer();
   const size = makeApiSize(meta.width, meta.height);
+  // send the image as-is (jpeg/png/webp supported by the API); re-encode only exotic formats
+  let uploadBuf = inputBuf, uploadType = (mime || "image/jpeg"), fname = "photo.jpg";
+  if (!/^image\/(jpeg|png|webp)$/i.test(uploadType)) { uploadBuf = await sharp(inputBuf).jpeg({ quality: 95 }).toBuffer(); uploadType = "image/jpeg"; }
+  else fname = "photo." + (uploadType.split("/")[1] === "jpeg" ? "jpg" : uploadType.split("/")[1]);
 
-  // Optional per-photo analysis (only if a Gemini text key is available) to target the edit
-  let brief = "";
-  if (process.env.GEMINI_API_KEY) brief = await analyzeForEnhance(base64, mime).catch(() => "");
-  const prompt = PLATFORM_READY_PROMPT + (brief ? (" Specific issues to fix in THIS exact photo: " + brief) : "");
-
+  // single pass — identical to the LocalStay GPT editor (platform-ready prompt, verbatim)
   const fd = new FormData();
   fd.append("model", OPENAI_IMAGE_MODEL);
-  fd.append("image", new Blob([jpegBuf], { type: "image/jpeg" }), "photo.jpg");
-  fd.append("prompt", prompt);
+  fd.append("image", new Blob([uploadBuf], { type: uploadType }), fname);
+  fd.append("prompt", PLATFORM_READY_PROMPT);
   if (size) fd.append("size", size);
   fd.append("quality", process.env.OPENAI_IMAGE_QUALITY || "high");
   fd.append("output_format", "jpeg");
