@@ -181,6 +181,8 @@ textarea.inp{min-height:70px;resize:vertical;line-height:1.5}
 .room-head{display:flex;align-items:center;gap:8px;margin-bottom:12px}
 .room-head b{font-size:15px;color:var(--ink)}
 .room-tag{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--brand);background:var(--brand-soft);padding:3px 8px;border-radius:6px}
+.gal-hero-badge{position:absolute;bottom:7px;left:7px;background:var(--brand);color:#fff;font-size:9.5px;font-weight:700;letter-spacing:.05em;padding:3px 7px;border-radius:6px}
+.gal-sub{color:var(--muted);font-size:12.5px;margin:-4px 0 12px}
 .gal-block{border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px;background:#fff}
 .gal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
 .gal-head b{font-size:16px;color:var(--ink)}
@@ -310,7 +312,7 @@ textarea.inp{min-height:70px;resize:vertical;line-height:1.5}
         <div id="icalUnits"></div>
       </section>
       <section class="panel" id="panel-galerie">
-        <p class="intro">Galerie foto separată pentru fiecare variantă (toată unitatea și fiecare cameră). Încarcă mai multe poze deodată — fiecare e optimizată automat (WebP) și stocată pe CDN. Bifează pentru ștergere în masă.</p>
+        <p class="intro">Galeria principală a proprietății plus o galerie separată pentru fiecare variantă (toată unitatea și fiecare cameră). Încarcă mai multe poze deodată — fiecare e optimizată automat (WebP) și stocată pe CDN. Bifează pentru ștergere în masă.</p>
         <div id="galerieBox"></div>
       </section>
     </div>
@@ -1281,10 +1283,6 @@ function renderContent(){
     b.appendChild(h("div",{class:"fac-label",style:"margin-top:14px"},"Limbi vorbite"));
     facBlock(b,"",P.host.spokenLanguages,LANG_OPTS,"string");
   }));
-  box.appendChild(accordion("Fotografii","Pozele proprietății. Prima e principală (hero); restul intră în galerie și pe pagina publică.",b=>{
-    if(!Array.isArray(P._photos)) P._photos=[];
-    const host=h("div",{}); b.appendChild(host); renderPhotos(host,P._photos);
-  }));
   box.appendChild(accordion("Camere & detalii","Capacitate, paturi, suprafață, priveliște și facilități pentru fiecare variantă — apar pe pagina de rezervare",b=>{
     const host=h("div",{}); b.appendChild(host); renderRoomsDetail(host);
   }));
@@ -1522,69 +1520,86 @@ $("#propName").textContent=state.property.basicInfo.name;
 const galSel = new WeakSet();
 function fileToDataUrl(f){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(f); }); }
 
+function galleryBlock(o){
+  const arr=o.arr;
+  const selCount=arr.filter(p=>galSel.has(p)).length;
+  const fileInput=h("input",{type:"file",accept:"image/*",multiple:true,style:"display:none"});
+  const upBtn=h("button",{class:"btn btn-pri sm",type:"button",onclick:()=>fileInput.click()},
+    h("span",{html:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>'}),"Încarcă poze");
+  fileInput.onchange=async()=>{
+    const files=[...fileInput.files]; fileInput.value="";
+    if(!files.length) return;
+    upBtn.disabled=true;
+    for(let i=0;i<files.length;i++){
+      upBtn.textContent="Se încarcă "+(i+1)+"/"+files.length+"...";
+      try{
+        const dataUrl=await fileToDataUrl(files[i]);
+        const rr=await fetch("/api/upload",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({dataUrl})});
+        const d=await rr.json().catch(()=>({}));
+        arr.push(o.makeItem((rr.ok&&d.url)?d:{url:dataUrl,thumb:dataUrl,alt:""}));
+      }catch(e){}
+    }
+    upBtn.disabled=false; markDirty(); renderGalerie();
+    toast(files.length+(files.length===1?" poză adăugată la „":" poze adăugate la „")+o.title+"”");
+  };
+  const allSel=arr.length&&arr.every(p=>galSel.has(p));
+  const selAll=h("button",{class:"btn-ghost sm",type:"button",onclick:()=>{
+    if(allSel) arr.forEach(p=>galSel.delete(p)); else arr.forEach(p=>galSel.add(p));
+    renderGalerie();
+  }}, allSel?"Deselectează tot":"Selectează tot");
+  const delBtn=selCount?h("button",{class:"btn btn-out sm",type:"button",style:"color:var(--red);border-color:var(--red)",onclick:()=>{
+    if(!confirm("Ștergi "+selCount+" poze din „"+o.title+"”?")) return;
+    const kept=arr.filter(p=>!galSel.has(p));
+    arr.filter(p=>galSel.has(p)).forEach(p=>galSel.delete(p));
+    o.onChangeArr(kept);
+    markDirty(); renderGalerie(); toast(selCount+(selCount===1?" poză ștearsă":" poze șterse"));
+  }},"Șterge selectatele ("+selCount+")"):null;
+
+  const grid=h("div",{class:"gal-grid"});
+  if(!arr.length){ grid.appendChild(h("div",{class:"gal-empty"},"Nicio poză încă. Apasă „Încarcă poze”.")); }
+  arr.forEach((p,idx)=>{
+    const chk=h("input",{type:"checkbox",class:"gal-chk"}); chk.checked=galSel.has(p);
+    chk.onchange=()=>{ if(chk.checked)galSel.add(p); else galSel.delete(p); renderGalerie(); };
+    const cell=h("div",{class:"gal-cell"+(galSel.has(p)?" on":"")},
+      h("img",{src:o.getThumb(p),alt:o.getAlt(p),loading:"lazy"}),
+      (o.heroFirst&&idx===0)?h("span",{class:"gal-hero-badge"},"HERO"):null,
+      h("label",{class:"gal-pick"},chk),
+      h("button",{class:"gal-edit",type:"button",title:"Editează",onclick:()=>openPhotoEditor(o.getUrl(p),(u,meta)=>{o.setUrl(p,u);if(meta&&meta.alt&&!o.getAlt(p))o.setAlt(p,meta.alt);markDirty();renderGalerie();})},
+        h("span",{html:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>'})));
+    grid.appendChild(cell);
+  });
+  const bar=h("div",{class:"gal-bar"}, upBtn, fileInput, selAll, delBtn);
+  const head=h("div",{class:"gal-head"},
+    h("div",{},h("b",{},o.title), o.tag?h("span",{class:"gal-tag"},o.tag):null),
+    h("span",{class:"gal-count"}, arr.length+(arr.length===1?" poză":" poze")));
+  return h("section",{class:"gal-block"}, head, o.sub?h("p",{class:"gal-sub"},o.sub):null, bar, grid);
+}
 function renderGalerie(){
   if(!state.galleries) state.galleries={};
   const host=$("#galerieBox"); if(!host) return;
   host.innerHTML="";
+  if(!Array.isArray(state.property._photos)) state.property._photos=[];
+  host.appendChild(galleryBlock({
+    title:"Galerie principală", tag:"proprietate", heroFirst:true,
+    sub:"Pozele generale ale proprietății. Prima e foto principală (hero). Apar pe pagina publică ca galerie principală.",
+    arr:state.property._photos,
+    getUrl:p=>p.photoName||p.url||"", getThumb:p=>p.photoName||p.thumb||p.url||"", getAlt:p=>p.imageAlt||p.alt||"",
+    setUrl:(p,u)=>{p.photoName=u;}, setAlt:(p,a)=>{p.imageAlt=a;},
+    makeItem:d=>({photoName:d.url,imageAlt:d.alt||""}),
+    onChangeArr:n=>{ state.property._photos=n; }
+  }));
   const rooms=(state.pricing&&state.pricing.rooms)||[];
-  if(!rooms.length){ host.appendChild(h("p",{class:"intro"},"Adaugă întâi variante de unitate în tab-ul Prețuri, apoi revino pentru galerii.")); return; }
-
+  if(!rooms.length){ host.appendChild(h("p",{class:"intro",style:"margin-top:8px"},"Adaugă variante în tab-ul Prețuri pentru galerii pe cameră.")); return; }
   rooms.forEach(r=>{
     if(!Array.isArray(state.galleries[r.id])) state.galleries[r.id]=[];
-    const arr=state.galleries[r.id];
-    const selCount=arr.filter(p=>galSel.has(p)).length;
-
-    const fileInput=h("input",{type:"file",accept:"image/*",multiple:true,style:"display:none"});
-    const upBtn=h("button",{class:"btn btn-pri sm",type:"button",onclick:()=>fileInput.click()},
-      h("span",{html:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>'}),"Încarcă poze");
-    fileInput.onchange=async()=>{
-      const files=[...fileInput.files]; fileInput.value="";
-      if(!files.length) return;
-      upBtn.disabled=true;
-      for(let i=0;i<files.length;i++){
-        upBtn.textContent="Se încarcă "+(i+1)+"/"+files.length+"...";
-        try{
-          const dataUrl=await fileToDataUrl(files[i]);
-          const rr=await fetch("/api/upload",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({dataUrl})});
-          const d=await rr.json().catch(()=>({}));
-          if(rr.ok&&d.url) arr.push({url:d.url,thumb:d.thumb||d.url,alt:d.alt||""});
-          else arr.push({url:dataUrl,thumb:dataUrl,alt:""});
-        }catch(e){}
-      }
-      upBtn.disabled=false; markDirty(); renderGalerie();
-      toast(files.length+" poze adăugate la „"+r.name+"”");
-    };
-
-    const selAll=h("button",{class:"btn-ghost sm",type:"button",onclick:()=>{
-      const all=arr.length&&arr.every(p=>galSel.has(p));
-      if(all) arr.forEach(p=>galSel.delete(p)); else arr.forEach(p=>galSel.add(p));
-      renderGalerie();
-    }}, (arr.length&&arr.every(p=>galSel.has(p)))?"Deselectează tot":"Selectează tot");
-    const delBtn=selCount?h("button",{class:"btn btn-out sm",type:"button",style:"color:var(--red);border-color:var(--red)",onclick:()=>{
-      if(!confirm("Ștergi "+selCount+" poze din „"+r.name+"”?")) return;
-      state.galleries[r.id]=arr.filter(p=>!galSel.has(p));
-      arr.filter(p=>galSel.has(p)).forEach(p=>galSel.delete(p));
-      markDirty(); renderGalerie(); toast(selCount+" poze șterse");
-    }},"Șterge selectatele ("+selCount+")"):null;
-
-    const grid=h("div",{class:"gal-grid"});
-    if(!arr.length){ grid.appendChild(h("div",{class:"gal-empty"},"Nicio poză încă. Apasă „Încarcă poze”.")); }
-    arr.forEach(p=>{
-      const chk=h("input",{type:"checkbox",class:"gal-chk"}); chk.checked=galSel.has(p);
-      chk.onchange=()=>{ if(chk.checked)galSel.add(p); else galSel.delete(p); renderGalerie(); };
-      const cell=h("div",{class:"gal-cell"+(galSel.has(p)?" on":"")},
-        h("img",{src:p.thumb||p.url,alt:p.alt||"",loading:"lazy"}),
-        h("label",{class:"gal-pick"},chk),
-        h("button",{class:"gal-edit",type:"button",title:"Editează",onclick:()=>openPhotoEditor(p.url,(u,meta)=>{p.url=u;p.thumb=u;if(meta&&meta.alt&&!p.alt)p.alt=meta.alt;markDirty();renderGalerie();})},
-          h("span",{html:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>'})));
-      grid.appendChild(cell);
-    });
-
-    const bar=h("div",{class:"gal-bar"}, upBtn, fileInput, selAll, delBtn);
-    const head=h("div",{class:"gal-head"},
-      h("div",{},h("b",{},r.name), r.isEntire?h("span",{class:"gal-tag"},"toată unitatea"):null),
-      h("span",{class:"gal-count"}, arr.length+(arr.length===1?" poză":" poze")));
-    host.appendChild(h("section",{class:"gal-block"}, head, bar, grid));
+    host.appendChild(galleryBlock({
+      title:r.name||r.id, tag:r.isEntire?"toată unitatea":"",
+      arr:state.galleries[r.id],
+      getUrl:p=>p.url, getThumb:p=>p.thumb||p.url, getAlt:p=>p.alt||"",
+      setUrl:(p,u)=>{p.url=u;p.thumb=u;}, setAlt:(p,a)=>{p.alt=a;},
+      makeItem:d=>({url:d.url,thumb:d.thumb||d.url,alt:d.alt||""}),
+      onChangeArr:n=>{ state.galleries[r.id]=n; }
+    }));
   });
 }
 
