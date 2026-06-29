@@ -2,13 +2,15 @@
    Two roles:
      - admin : platform owner (us). Sees every property, imports, stats, manages hosts.
      - host  : a hotelier. Manages only the properties they own (properties.owner_id).
-   Stateless auth: a signed JWT stored in an httpOnly cookie. No session table needed. */
+   Stateless auth: a signed token stored in an httpOnly cookie. No session table needed.
 
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
+   Zero external dependencies — uses Node's built-in `crypto` (scrypt for password
+   hashing, HMAC-SHA256 for the token). This means it works without any `npm install`. */
+
+const crypto = require("crypto");
 
 const COOKIE = "stay_auth";
-const TOKEN_TTL = "7d";
+const TOKEN_TTL = 7 * 24 * 60 * 60; // 7 days, in seconds
 const SECRET =
   process.env.AUTH_SECRET ||
   // Fallback keeps local dev working, but logs a loud warning so it isn't shipped.
@@ -21,34 +23,75 @@ if (!process.env.AUTH_SECRET) {
   );
 }
 
-/* ---------- passwords ---------- */
-async function hashPassword(plain) {
-  return bcrypt.hash(String(plain), 12);
+/* ---------- passwords (scrypt) ---------- */
+// Stored format: "scrypt$<salt_hex>$<hash_hex>"
+function hashPassword(plain) {
+  return new Promise((resolve, reject) => {
+    const salt = crypto.randomBytes(16);
+    crypto.scrypt(String(plain), salt, 64, (err, dk) => {
+      if (err) return reject(err);
+      resolve("scrypt$" + salt.toString("hex") + "$" + dk.toString("hex"));
+    });
+  });
 }
-async function verifyPassword(plain, hash) {
-  if (!hash) return false;
-  try {
-    return await bcrypt.compare(String(plain), hash);
-  } catch {
-    return false;
-  }
+function verifyPassword(plain, stored) {
+  return new Promise((resolve) => {
+    try {
+      const parts = String(stored || "").split("$");
+      if (parts.length !== 3 || parts[0] !== "scrypt") return resolve(false);
+      const salt = Buffer.from(parts[1], "hex");
+      const expected = Buffer.from(parts[2], "hex");
+      crypto.scrypt(String(plain), salt, expected.length, (err, dk) => {
+        if (err) return resolve(false);
+        resolve(dk.length === expected.length && crypto.timingSafeEqual(dk, expected));
+      });
+    } catch {
+      resolve(false);
+    }
+  });
 }
 
-/* ---------- tokens / cookies ---------- */
+/* ---------- tokens (HMAC-signed, JWT-like) ---------- */
+function b64url(buf) {
+  return Buffer.from(buf).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function fromB64url(s) {
+  s = String(s).replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  return Buffer.from(s, "base64");
+}
+function sign(body) {
+  return b64url(crypto.createHmac("sha256", SECRET).update(body).digest());
+}
 function signToken(user) {
-  return jwt.sign(
-    { uid: user.id, role: user.role, email: user.email },
-    SECRET,
-    { expiresIn: TOKEN_TTL }
-  );
+  const payload = {
+    uid: user.id,
+    role: user.role,
+    email: user.email,
+    exp: Math.floor(Date.now() / 1000) + TOKEN_TTL,
+  };
+  const body = b64url(JSON.stringify(payload));
+  return body + "." + sign(body);
 }
 function verifyToken(token) {
   try {
-    return jwt.verify(token, SECRET);
+    const dot = String(token).indexOf(".");
+    if (dot < 1) return null;
+    const body = String(token).slice(0, dot);
+    const sig = String(token).slice(dot + 1);
+    const expected = sign(body);
+    const a = Buffer.from(sig);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+    const payload = JSON.parse(fromB64url(body).toString("utf8"));
+    if (payload.exp && Date.now() / 1000 > payload.exp) return null;
+    return payload;
   } catch {
     return null;
   }
 }
+
+/* ---------- cookies ---------- */
 function parseCookies(req) {
   const header = req.headers.cookie || "";
   const out = {};
@@ -75,19 +118,13 @@ function setAuthCookie(req, res, user) {
     "HttpOnly",
     "Path=/",
     "SameSite=Lax",
-    `Max-Age=${7 * 24 * 60 * 60}`,
+    `Max-Age=${TOKEN_TTL}`,
   ];
   if (isSecure(req)) parts.push("Secure");
   res.append("Set-Cookie", parts.join("; "));
 }
 function clearAuthCookie(req, res) {
-  const parts = [
-    `${COOKIE}=`,
-    "HttpOnly",
-    "Path=/",
-    "SameSite=Lax",
-    "Max-Age=0",
-  ];
+  const parts = [`${COOKIE}=`, "HttpOnly", "Path=/", "SameSite=Lax", "Max-Age=0"];
   if (isSecure(req)) parts.push("Secure");
   res.append("Set-Cookie", parts.join("; "));
 }
@@ -100,7 +137,6 @@ function attachUser(req, res, next) {
   req.user = payload ? { id: payload.uid, role: payload.role, email: payload.email } : null;
   next();
 }
-
 function requireAuth(req, res, next) {
   if (!req.user) return res.status(401).json({ error: "Autentificare necesară" });
   next();
