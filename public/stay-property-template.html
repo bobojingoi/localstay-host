@@ -429,11 +429,18 @@ footer a:hover{color:#fff}
 
 /* ---- visible availability calendar ---- */
 .av-wrap{margin-top:8px}
-.av-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}
-.av-chip{border:1.5px solid var(--line);background:#fff;color:var(--navy);font-weight:600;font-size:14px;border-radius:11px;padding:9px 16px;cursor:pointer;transition:.15s}
-.av-chip:hover{border-color:var(--accent)}
-.av-chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
-.av-cal{border:1px solid var(--line);border-radius:18px;background:#fff;width:100%;overflow:hidden;box-shadow:0 18px 50px -32px rgba(20,28,52,.4)}
+.rmcard-avail{display:inline-flex;align-items:center;gap:6px;margin-top:10px;background:none;border:0;color:var(--accent);font-weight:600;font-size:13.5px;cursor:pointer;padding:4px 0}
+.rmcard-avail svg{flex:none}
+.rmcard-avail:hover{text-decoration:underline}
+.av-ov{position:fixed;inset:0;background:rgba(16,22,38,.62);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;z-index:150;padding:18px}
+.av-ov.on{display:flex}
+.av-modal{position:relative;width:min(520px,100%);max-height:92vh;overflow-y:auto;background:#fff;border-radius:22px;box-shadow:0 40px 90px -40px rgba(0,0,0,.6)}
+.av-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:20px 22px 2px}
+.av-head h3{font-family:var(--font-head);font-size:20px;color:var(--navy);margin:0}
+.av-head small{color:var(--muted);font-size:13px}
+.av-x{width:36px;height:36px;border-radius:50%;border:0;background:#f1f3f8;color:var(--navy);font-size:23px;line-height:1;cursor:pointer;flex:none;display:grid;place-items:center}
+.av-x:hover{background:#e6e9f0}
+.av-select{margin:4px 16px 18px;width:calc(100% - 32px);justify-content:center}
 .av-nav{display:flex;align-items:center;justify-content:space-between;padding:16px 20px 8px}
 .av-nav span{font-family:var(--font-head);font-size:17px;color:var(--navy);text-transform:capitalize}
 .av-nav button{width:36px;height:36px;border:1px solid var(--line);background:#fff;border-radius:10px;font-size:20px;cursor:pointer;color:var(--navy);line-height:1}
@@ -799,7 +806,7 @@ function rNav(){
       <span><b>${esc(THEME.brandName)}</b>${THEME.brandSub?`<small>${esc(THEME.brandSub)}</small>`:''}</span>
     </a>
     <nav class="nav-links">
-      <a href="#vila">Vila</a>${has(PROPERTY.rentals)?'<a href="#rezervare">Rezervare</a><a href="#disponibilitate">Disponibilitate</a>':''}${facHref?`<a href="${facHref}">Facilități</a>`:''}
+      <a href="#vila">Vila</a>${has(PROPERTY.rentals)?'<a href="#rezervare">Rezervare</a>':''}${facHref?`<a href="${facHref}">Facilități</a>`:''}
       ${has(PROPERTY.galleries)?'<a href="#galerie">Galerie</a>':''}
       ${has(PROPERTY.reviews&&PROPERTY.reviews.items)?'<a href="#recenzii">Recenzii</a>':''}
       <a href="#contact">Contact</a>
@@ -809,7 +816,7 @@ function rNav(){
       <button class="burger" id="burger" aria-label="Meniu"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
     </div></div></header>
     <div class="mmenu" id="mmenu"><button class="x" id="mx">&times;</button>
-      <a href="#vila">Vila</a>${has(PROPERTY.rentals)?'<a href="#disponibilitate">Disponibilitate</a>':''}${has(PROPERTY.galleries)?'<a href="#galerie">Galerie</a>':''}
+      <a href="#vila">Vila</a>${has(PROPERTY.galleries)?'<a href="#galerie">Galerie</a>':''}
       ${has(PROPERTY.spaces)?'<a href="#camere">Camere</a>':''}
       ${has(PROPERTY.reviews&&PROPERTY.reviews.items)?'<a href="#recenzii">Recenzii</a>':''}
       <a href="#contact">Contact</a></div>`;
@@ -1061,6 +1068,7 @@ function rBooking(){
           ${canDetail?`<button type="button" class="rmcard-detail" data-room="${esc(id)}">Detalii & galerie</button>`:'<span></span>'}
           <button type="button" class="bk-sel" data-rid="${esc(id)}">Selectează</button>
         </div>
+        <button type="button" class="rmcard-avail" data-avail="${esc(id)}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> Vezi disponibilitatea</button>
       </div>
     </div>`;
   };
@@ -1393,49 +1401,47 @@ function initBooking(){
 /* ===== Visible availability calendar (live, per room + entire unit) ===== */
 function rAvailability(){
   const R=(PROPERTY.rentals||[]); if(!R.length) return '';
-  const entire=!!PROPERTY.entireUnitRental;
-  const entR=R.find(r=>r.isEntire);
-  const rooms=entire?R.filter(r=>!r.isEntire):R;
-  const chips=[];
-  if(entire) chips.push({id:'__entire',name:'Toată unitatea'});
-  rooms.forEach(r=>chips.push({id:r.id,name:r.name}));
-  if(!chips.length) return '';
-  const chipsHtml=chips.map((c,i)=>`<button type="button" class="av-chip${i===0?' on':''}" data-scope="${esc(c.id)}">${esc(c.name)}</button>`).join('');
-  return `<section class="sec tight" id="disponibilitate"><div class="wrap">
-    <div class="rv sec-head"><span class="eyebrow">Disponibilitate</span><h2>Verifică disponibilitatea</h2></div>
-    <p class="bk-intro rv">Vezi în timp real ce zile sunt libere și prețul pe noapte. Comută între unitatea integrală și fiecare cameră.</p>
-    <div class="av-wrap rv">
-      ${chips.length>1?`<div class="av-chips">${chipsHtml}</div>`:''}
-      <div class="av-cal">
-        <div class="av-nav"><button type="button" id="avPrev" aria-label="Luna anterioară">‹</button><span id="avTitle"></span><button type="button" id="avNext" aria-label="Luna următoare">›</button></div>
-        <div class="av-grid" id="avGrid"></div>
-        <div class="av-legend"><span><i class="av-lg av-free"></i>Liber</span><span><i class="av-lg av-occ"></i>Ocupat</span></div>
-        <div class="av-cap" id="avCap"></div>
-      </div>
-    </div>
-  </div></section>`;
+  return `<div class="av-ov" id="avOv"><div class="av-modal">
+    <div class="av-head"><div><h3 id="avRoomName">Disponibilitate</h3><small id="avRoomSub"></small></div><button type="button" class="av-x" id="avX" aria-label="Închide">&times;</button></div>
+    <div class="av-nav"><button type="button" id="avPrev" aria-label="Luna anterioară">‹</button><span id="avTitle"></span><button type="button" id="avNext" aria-label="Luna următoare">›</button></div>
+    <div class="av-grid" id="avGrid"></div>
+    <div class="av-legend"><span><i class="av-lg av-free"></i>Liber</span><span><i class="av-lg av-occ"></i>Ocupat</span></div>
+    <div class="av-cap" id="avCap"></div>
+    <button type="button" class="btn btn-accent av-select" id="avSelect">Selectează această variantă</button>
+  </div></div>`;
 }
 function initAvailability(){
-  const sec=document.getElementById('disponibilitate'); if(!sec) return;
+  const ov=document.getElementById('avOv'); if(!ov) return;
   const R=PROPERTY.rentals||[]; if(!R.length) return;
   const cur=(R[0]&&R[0].currency)||'RON';
   const slug=(window.STAY_SLUG||new URLSearchParams(location.search).get('slug')||'');
   const byId={}; R.forEach(r=>byId[r.id]=r);
   const entR=R.find(r=>r.isEntire)||null;
-  const $=s=>sec.querySelector(s);
-  const firstChip=sec.querySelector('.av-chip.on');
-  const stt={ scope:(firstChip&&firstChip.dataset.scope)|| (PROPERTY.entireUnitRental?'__entire':(R[0]&&R[0].id)), blocked:{}, month:_som(new Date()) };
+  const $=s=>ov.querySelector(s);
+  const stt={ scope:(PROPERTY.entireUnitRental?'__entire':(R[0]&&R[0].id)), blocked:{}, month:_som(new Date()) };
   function _wknd(ds){ const d=_piso(ds).getDay(); return d===5||d===6; }
   function keyId(id){ return id==='__entire'?(entR?entR.id:'__entire'):id; }
   function optFor(id){ if(id==='__entire'){ if(entR) return entR; const w=Math.min.apply(null,R.map(r=>r.weekday||Infinity)),we=Math.min.apply(null,R.map(r=>r.weekend||r.weekday||Infinity)); return {weekday:isFinite(w)?w:0,weekend:isFinite(we)?we:0,currency:cur}; } return byId[id]||{weekday:0,weekend:0,currency:cur}; }
+  function nameFor(id){ return id==='__entire'?'Toată proprietatea':((byId[id]&&byId[id].name)||'Cameră'); }
   function nightPrice(id,ds){ const opt=optFor(id); const PP=PROPERTY.pricing||{},dp=PP.dayPrices||{},periods=PP.periods||[],kid=keyId(id); if(dp[kid]&&dp[kid][ds]!=null) return +dp[kid][ds]; const we=_wknd(ds); let base=we?(opt.weekend||opt.weekday||0):(opt.weekday||0); for(const p of periods){ if((p.roomId==='all'||p.roomId===kid)&&p.start&&p.end&&ds>=p.start&&ds<=p.end){ base=we?(p.weekend||p.weekday||base):(p.weekday||base);} } return base; }
   function blockedFor(id){ if(id==='__entire'){ return new Set((entR?stt.blocked[entR.id]:stt.blocked.__all)||[]); } return new Set(stt.blocked[id]||[]); }
 
-  if(slug){ fetch('/api/availability/'+encodeURIComponent(slug)).then(r=>r.ok?r.json():null).then(d=>{ if(d&&d.units){ stt.blocked=d.units; draw(); } }).catch(()=>{}); }
+  if(slug){ fetch('/api/availability/'+encodeURIComponent(slug)).then(r=>r.ok?r.json():null).then(d=>{ if(d&&d.units){ stt.blocked=d.units; if(ov.classList.contains('on')) draw(); } }).catch(()=>{}); }
 
-  sec.querySelectorAll('.av-chip').forEach(b=>b.onclick=()=>{ stt.scope=b.dataset.scope; sec.querySelectorAll('.av-chip').forEach(x=>x.classList.toggle('on',x===b)); draw(); });
   $('#avPrev').onclick=()=>{ stt.month.setMonth(stt.month.getMonth()-1); draw(); };
   $('#avNext').onclick=()=>{ stt.month.setMonth(stt.month.getMonth()+1); draw(); };
+  $('#avX').onclick=closeAvail;
+  ov.onclick=e=>{ if(e.target===ov) closeAvail(); };
+  document.addEventListener('keydown',e=>{ if(ov.classList.contains('on')&&e.key==='Escape') closeAvail(); });
+  $('#avSelect').onclick=()=>{ const b=document.querySelector('.bk-sel[data-rid="'+(window.CSS&&CSS.escape?CSS.escape(stt.scope):stt.scope)+'"]'); if(b&&!/Selectat/.test(b.textContent)) b.click(); closeAvail(); const f=document.getElementById('bkSummary'); if(f&&f.scrollIntoView) f.scrollIntoView({behavior:'smooth',block:'center'}); };
+
+  function openAvail(scope){ stt.scope=scope||stt.scope; stt.month=_som(new Date());
+    $('#avRoomName').textContent='Disponibilitate'; $('#avRoomSub').textContent=nameFor(stt.scope);
+    ov.classList.add('on'); document.body.style.overflow='hidden'; draw(); }
+  function closeAvail(){ ov.classList.remove('on'); document.body.style.overflow=''; }
+
+  // wire the per-room "Vezi disponibilitatea" buttons (they live in the booking section)
+  document.querySelectorAll('[data-avail]').forEach(b=>b.onclick=()=>openAvail(b.dataset.avail));
 
   function draw(){
     const m=stt.month,y=m.getFullYear(),mo=m.getMonth(),today=_iso(new Date());
@@ -1452,9 +1458,8 @@ function initAvailability(){
     }
     $('#avGrid').innerHTML=html;
     const c=(optFor(stt.scope).currency)||cur;
-    $('#avCap').textContent='Prețuri orientative în '+c+' / noapte. Pentru rezervare, alege o variantă mai sus și trimite solicitarea.';
+    $('#avCap').textContent='Prețuri orientative în '+c+' / noapte.';
   }
-  draw();
 }
 
 /* ---- Activities + Services (grouped chips, real data only) ---- */
