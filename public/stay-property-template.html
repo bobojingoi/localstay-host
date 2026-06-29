@@ -854,7 +854,6 @@ function rOverview(){
     <div class="rv">
       ${o.heading?`<h2>${esc(o.heading)}</h2>`:''}
       ${o.description?`<p class="desc">${esc(o.description)}</p>`:''}
-      ${has(o.features)?`<div class="frows">${o.features.map(f=>`<div class="frow"><span class="ic">${icon(f.icon)}</span><span class="t">${esc(f.label)}</span></div>`).join('')}</div>`:''}
     </div></div></div></section>`;
 }
 
