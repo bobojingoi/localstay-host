@@ -50,7 +50,7 @@ app.get("/api/health", async (req, res) => {
 });
 
 const PUBLIC = path.join(__dirname, "public");
-const BASE_DOMAIN = (process.env.BASE_DOMAIN || "").toLowerCase(); // e.g. staypredeal.ro
+const BASE_DOMAIN = (process.env.BASE_DOMAIN || "").toLowerCase(); // e.g. localstay.ro
 
 /* ---------- helpers ---------- */
 async function getProp(slug) {
@@ -82,7 +82,7 @@ function effectiveBlocked(adminState, unitId) {
   return [...set].sort();
 }
 function buildICS(dates, label) {
-  const out = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//StayPredeal//RO","CALSCALE:GREGORIAN","METHOD:PUBLISH"];
+  const out = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//LocalStay//RO","CALSCALE:GREGORIAN","METHOD:PUBLISH"];
   const now = new Date();
   const stamp = now.getUTCFullYear()+pad(now.getUTCMonth()+1)+pad(now.getUTCDate())+"T"+pad(now.getUTCHours())+pad(now.getUTCMinutes())+"00Z";
   const d = [...dates].sort(); let i = 0;
@@ -92,7 +92,7 @@ function buildICS(dates, label) {
     let start = d[i], j = i;
     while (j+1 < d.length) { const nx = fromIso(d[j]); nx.setUTCDate(nx.getUTCDate()+1); if (iso(nx) === d[j+1]) j++; else break; }
     const end = fromIso(d[j]); end.setUTCDate(end.getUTCDate()+1);
-    out.push("BEGIN:VEVENT","UID:"+start+"-"+Math.random().toString(36).slice(2)+"@staypredeal",
+    out.push("BEGIN:VEVENT","UID:"+start+"-"+Math.random().toString(36).slice(2)+"@localstay",
       "DTSTAMP:"+stamp,"DTSTART;VALUE=DATE:"+start.replace(/-/g,""),"DTEND;VALUE=DATE:"+iso(end).replace(/-/g,""),
       "SUMMARY:"+(label||"Indisponibil"),"END:VEVENT");
     i = j+1;
@@ -127,7 +127,7 @@ function eventsToDates(ev){
 async function fetchText(url){
   const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),15000);
   try{
-    const r=await fetch(url,{signal:ctrl.signal,headers:{"User-Agent":"StayPredeal/1.0 (+ical-sync)"}});
+    const r=await fetch(url,{signal:ctrl.signal,headers:{"User-Agent":"LocalStay/1.0 (+ical-sync)"}});
     if(!r.ok) throw new Error("HTTP "+r.status);
     return await r.text();
   } finally { clearTimeout(t); }
@@ -410,7 +410,36 @@ app.post("/api/import", AUTH.requireAdmin, async (req, res) => {
        on conflict(slug) do update set admin_state=excluded.admin_state, site=excluded.site, updated_at=now()`,
       [slug, merged, site]
     );
-    res.json({ slug, name: merged.property.basicInfo.name || slug, merged: !!existing });
+
+    // Auto-provision a host account for this property. Default credentials:
+    //   email    = <slug>@<BASE_DOMAIN || localstay.ro>
+    //   password = <slug>            (the hotelier changes it after first login)
+    // Re-importing the same slug reuses the existing account (no duplicate, no
+    // password reset) and never steals a property already owned by someone else.
+    let host = null;
+    try {
+      const hostEmail = normEmail(slug + "@" + (BASE_DOMAIN || "localstay.ro"));
+      const found = await pool.query("select id from users where email=$1", [hostEmail]);
+      let hostId;
+      if (found.rows.length) {
+        hostId = found.rows[0].id;
+        host = { email: hostEmail, created: false };
+      } else {
+        const hash = await AUTH.hashPassword(slug);
+        const ins = await pool.query(
+          "insert into users(email,password_hash,role,name) values($1,$2,'host',$3) returning id",
+          [hostEmail, hash, merged.property.basicInfo.name || slug]
+        );
+        hostId = ins.rows[0].id;
+        host = { email: hostEmail, password: slug, created: true };
+      }
+      // Link the property to this host only if it isn't already owned.
+      await pool.query("update properties set owner_id=$1 where slug=$2 and owner_id is null", [hostId, slug]);
+    } catch (e) {
+      host = { error: e.message }; // never fail the import over host provisioning
+    }
+
+    res.json({ slug, name: merged.property.basicInfo.name || slug, merged: !!existing, host });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
@@ -619,7 +648,7 @@ process.on("unhandledRejection", (e) => console.error("Unhandled rejection (igno
 
 const PORT = process.env.PORT || 3000;
 // Listen FIRST so the port is open and health checks pass — no 502 if the DB is briefly unavailable.
-app.listen(PORT, () => console.log("StayPredeal running on port " + PORT));
+app.listen(PORT, () => console.log("LocalStay running on port " + PORT));
 
 let _icalStarted = false;
 function startIcalSync() {
@@ -629,7 +658,7 @@ function startIcalSync() {
 }
 function bootDb() {
   init()
-    .then(() => { console.log("StayPredeal DB ready."); startIcalSync(); return AUTH.seedAdmin(pool).catch((e)=>console.error("[auth] seedAdmin failed:", e && e.message)); })
+    .then(() => { console.log("LocalStay DB ready."); startIcalSync(); return AUTH.seedAdmin(pool).catch((e)=>console.error("[auth] seedAdmin failed:", e && e.message)); })
     .catch((e) => {
       console.error("DB not ready, server stays up; retrying in 30s:", e && e.message);
       setTimeout(bootDb, 30000); // recover automatically when the DB comes back
