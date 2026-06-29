@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>StayPredeal · Importă proprietate</title>
+<title>LocalStay · Importă proprietate</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -81,6 +81,18 @@ textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(-
 .kpi span{font-size:12.5px;color:var(--muted)}
 .qa{display:flex;gap:12px;flex-wrap:wrap}
 .hidden-hero{display:none}
+/* auto-created host credentials shown after import */
+.creds{border:1px solid var(--line);border-radius:13px;padding:14px 16px;margin:2px 0 18px;background:#fbfdfc}
+.creds .ct{display:flex;align-items:center;gap:8px;font-weight:700;color:var(--ink);font-size:14px;margin-bottom:3px}
+.creds .ct svg{width:16px;height:16px;color:var(--brand)}
+.creds .cn{font-size:12.5px;color:var(--muted);margin-bottom:11px}
+.creds .cgrid{display:grid;grid-template-columns:auto 1fr auto;gap:8px 12px;align-items:center}
+.creds .cl{font-size:12.5px;color:var(--muted)}
+.creds .cv{font-family:ui-monospace,monospace;font-size:13.5px;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:8px;padding:7px 10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.creds .ccopy{border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 11px;font:inherit;font-size:12.5px;font-weight:600;color:var(--ink);cursor:pointer}
+.creds .ccopy:hover{border-color:var(--brand);color:var(--brand)}
+.creds.exists{background:#f6f7fb}
+.creds .cnote{font-size:12.5px;color:var(--muted)}
 /* role-based copy visibility */
 body.is-host .admin-only{display:none}
 body:not(.is-host) .host-only{display:none}
@@ -98,7 +110,7 @@ body:not(.is-host) .host-only{display:none}
 </style>
 </head>
 <body>
-<div class="top"><div class="wrap"><span class="dot"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M3 10l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></span><span><b>StayPredeal</b><small>Administrare</small></span><div class="userbox" id="userbox"><span class="ub-email" id="ubEmail"></span><button class="ub-btn" id="btnAccount">Setări cont</button><button class="ub-btn ub-out" id="btnLogout">Deconectare</button></div></div></div>
+<div class="top"><div class="wrap"><span class="dot"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M3 10l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></span><span><b>LocalStay</b><small>Administrare</small></span><div class="userbox" id="userbox"><span class="ub-email" id="ubEmail"></span><button class="ub-btn" id="btnAccount">Setări cont</button><button class="ub-btn ub-out" id="btnLogout">Deconectare</button></div></div></div>
 <div class="shell">
   <aside class="sidebar"><nav class="nav" id="dashNav">
     <button class="navitem active" data-nav="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg><span>Panou</span></button>
@@ -144,6 +156,7 @@ body:not(.is-host) .host-only{display:none}
       <div class="hd"><h2>Generat cu succes</h2><p id="resultName">—</p></div>
       <div class="bd">
         <div class="summary" id="summary"></div>
+        <div id="resultCreds"></div>
         <div class="row" style="margin-top:0">
           <a class="btn btn-pri" id="openSite" target="_blank"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M7 7h10v10"/></svg> Deschide site-ul</a>
           <a class="btn btn-out" id="openAdmin" target="_blank"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg> Deschide adminul</a>
@@ -587,24 +600,53 @@ async function doImport(master){
   try{
     const res=await fetch("/api/import",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(master)});
     if(!res.ok){ const e=await res.json().catch(()=>({})); $("#err").textContent="Eroare: "+(e.error||res.status); $("#err").style.display="block"; return; }
-    const {slug,name}=await res.json();
+    const {slug,name,host}=await res.json();
     // fetch the generated pieces back for the summary
     const site=await fetch("/api/site/"+slug).then(r=>r.json());
     const admin=await fetch("/api/host/"+slug+"/state").then(r=>r.json());
-    showResult(slug,admin,site); await renderList(); toast("Proprietate generată");
+    showResult(slug,admin,site,host); await renderList(); toast("Proprietate generată");
   }catch(e){ $("#err").textContent="Eroare la procesare: "+e.message; $("#err").style.display="block"; }
 }
 function countFac(P){let n=0;["foodAndDrinks","generalFacilities","wellness","exterior","cleaningServices","businessFacilities","bathroom","kitchen","bedroom","comfort","commonAreas","livingArea","mediaTechnology","roomFacilities","shops"].forEach(c=>n+=(P.allFacilities[c]||[]).length);["skiing","entertainmentAndFamilyServices","sportsAndRecreation"].forEach(c=>n+=(P.activities[c]||[]).length);return n;}
-function showResult(slug,admin,site){
+function showResult(slug,admin,site,host){
   $("#resultCard").style.display="block";
   $("#resultName").textContent=admin.property.basicInfo.name+" · /"+slug;
   $("#summary").innerHTML=[
     [admin.pricing.rooms.length,"unități"],[countFac(admin.property),"facilități"],
     [site.amenities.length,"categorii"],[(site.reviews.items||[]).length,"recenzii"]
   ].map(([n,l])=>'<div class="s"><b>'+n+'</b><span>'+l+'</span></div>').join("");
+  renderCreds(host);
   $("#openSite").href="/s/"+slug;
   $("#openAdmin").href="/admin?slug="+slug;
   $("#resultCard").scrollIntoView({behavior:"smooth"});
+}
+function renderCreds(host){
+  const box=$("#resultCreds"); if(!box) return;
+  box.innerHTML="";
+  if(!host) return;
+  const E=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+  const keyIcon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.6 7.6a5 5 0 1 1-7 7 5 5 0 0 1 7-7zm0 0L15 8m0 0l3 3 3-3-3-3"/></svg>';
+  if(host.error){
+    box.innerHTML='<div class="creds exists"><div class="ct">'+keyIcon+'Cont hotelier</div><div class="cnote">Proprietatea a fost generată, dar contul nu a putut fi creat automat: '+E(host.error)+'. Îl poți crea manual din tabul Hotelieri.</div></div>';
+    return;
+  }
+  if(host.created===false){
+    box.innerHTML='<div class="creds exists"><div class="ct">'+keyIcon+'Cont hotelier existent</div>'+
+      '<div class="cnote">Există deja un cont pentru această proprietate: <b>'+E(host.email)+'</b>. Parola nu a fost modificată. O poți reseta din tabul Hotelieri.</div></div>';
+    return;
+  }
+  box.innerHTML='<div class="creds"><div class="ct">'+keyIcon+'Cont hotelier creat automat</div>'+
+    '<div class="cn">Trimite aceste date hotelierului. Le poate schimba după primul login din „Setări cont".</div>'+
+    '<div class="cgrid">'+
+      '<span class="cl">Email</span><span class="cv" id="credEmail">'+E(host.email)+'</span><button class="ccopy" data-copy="credEmail">Copiază</button>'+
+      '<span class="cl">Parolă</span><span class="cv" id="credPass">'+E(host.password)+'</span><button class="ccopy" data-copy="credPass">Copiază</button>'+
+    '</div></div>';
+  [].slice.call(box.querySelectorAll(".ccopy")).forEach(function(b){
+    b.onclick=function(){
+      var v=(document.getElementById(b.getAttribute("data-copy"))||{}).textContent||"";
+      try{ navigator.clipboard.writeText(v); toast("Copiat"); }catch(e){ toast("Copiere indisponibilă"); }
+    };
+  });
 }
 async function renderList(){
   const box=$("#list");
