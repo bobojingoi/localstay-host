@@ -946,7 +946,7 @@ function distList(host,label,arr){
       work = c; ctrls.empty.hidden=true; view.style.display="block"; layout();
     };
     img.onerror = ()=>{ ctrls.empty.hidden=false; view.style.display="none"; toast&&toast("Nu am putut încărca imaginea"); };
-    img.src = src;
+    img.src = /^https?:/i.test(src) ? (src + (src.includes("?")?"&":"?") + "cors=" + Date.now()) : src;
   }
   function loadFile(file){
     if(!file || !/^image\//.test(file.type)){ toast&&toast("Alege un fișier imagine"); return; }
@@ -1731,7 +1731,9 @@ function createDockEditor(container){
       else { original=snapshot(c); aiApplied=false; geomChanged=false; compareOn=false; adj={brightness:100,contrast:100,saturation:100,preset:"none"}; resetAdjUI(); }
       draw(); };
     img.onerror=()=>toast("Nu am putut încărca imaginea (CORS?)");
-    img.src=src;
+    // Cache-bust remote URLs: a thumbnail loaded earlier without CORS can poison the
+    // cache, making this crossOrigin request reuse a response with no CORS headers.
+    img.src = /^https?:/i.test(src) ? (src + (src.includes("?")?"&":"?") + "cors=" + Date.now()) : src;
   }
   function resetAdjUI(){ container.querySelectorAll(".de-range").forEach(r=>{r.value=100;}); container.querySelectorAll("[data-av]").forEach(s=>s.textContent="100"); container.querySelectorAll("[data-preset]").forEach(b=>b.classList.toggle("on",b.dataset.preset==="none")); }
   function loadFile(f){ if(!f||!/^image\//.test(f.type)){toast("Alege un fișier imagine");return;} const r=new FileReader(); r.onload=()=>loadSrc(r.result); r.readAsDataURL(f); }
