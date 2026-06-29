@@ -839,7 +839,7 @@ function rNav(){
     </div></div></header>
     <div class="mmenu" id="mmenu"><button class="x" id="mx">&times;</button>
       <a href="#vila">Vila</a>${has(PROPERTY.galleries)?'<a href="#galerie">Galerie</a>':''}
-      ${has(PROPERTY.spaces)?'<a href="#camere">Camere</a>':''}
+      ${has(PROPERTY.rentals)?'<a href="#rezervare">Camere</a>':''}
       ${has(PROPERTY.reviews&&PROPERTY.reviews.items)?'<a href="#recenzii">Recenzii</a>':''}
       <a href="#contact">Contact</a></div>`;
 }
@@ -1544,8 +1544,8 @@ function rIncludes(){
 function render(){
   setTheme();
   document.getElementById('app').innerHTML = [
-    rNav(), rHero(), rAbout(), rOverview(), rStrip(), rGalleries(), rSpaces(), rIncludes(),
-    rBooking(), rAvailability(), rReviews(), rLocation(),
+    rNav(), rHero(), rAbout(), rOverview(), rStrip(), rGalleries(),
+    rBooking(), rIncludes(), rAvailability(), rReviews(), rLocation(),
     rRulesAbout(), rFaq(), rFooter()
   ].join('');
   wire();
