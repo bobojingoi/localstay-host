@@ -7,6 +7,11 @@
    ============================================================ */
 (function(){
   const RO={foodAndDrinks:"Mâncare & băutură",generalFacilities:"Facilități generale",wellness:"Wellness",exterior:"Exterior",cleaningServices:"Curățenie",businessFacilities:"Business",bathroom:"Baie",kitchen:"Bucătărie",bedroom:"Dormitor",comfort:"Confort & accesibilitate",commonAreas:"Zone comune",livingArea:"Zonă de zi",mediaTechnology:"Media & tehnologie",roomFacilities:"Facilitățile camerei",shops:"Magazine",skiing:"Schi",entertainmentAndFamilyServices:"Divertisment & familie",sportsAndRecreation:"Sport & recreere",receptionServices:"Recepție",servicesExtra:"Servicii extra",safety:"Siguranță",generalServices:"Servicii generale"};
+  const LP_ENV={mountain:"Munte",ski_area:"Zonă de schi",forest:"Pădure",sea:"Mare",lake:"Lac",river:"Râu",city:"Oraș",countryside:"Zonă rurală",beach:"Plajă",thermal:"Zonă termală",vineyard:"Vie / podgorie",delta:"Deltă",salt_mine:"Salină"};
+  const LP_EXP={family_break:"Vacanță în familie",romantic:"Escapadă romantică",adventure:"Aventură",relaxation:"Relaxare",ski:"Vacanță la schi",business:"Business",group_getaway:"Escapadă în grup",wellness:"Wellness & spa",city_break:"City break",nature:"Natură & drumeții"};
+  const LP_COMFORT={budget:"Economic",comfort:"Confort",premium:"Premium",luxury:"Lux",standard:"Standard"};
+  const LP_SEG={families_with_young_children:"Familii cu copii mici",families_with_school_age_children:"Familii cu copii de școală",pet_owners:"Posesori de animale",friends_groups:"Grupuri de prieteni",ski_travelers:"Schiori",couples:"Cupluri",business_travelers:"Călători business",solo_travelers:"Călători singuri",seniors:"Seniori",remote_workers:"Nomazi digitali",large_groups:"Grupuri mari",multigenerational:"Familii multigeneraționale"};
+  const LP_CAP={group_2_4:"Grup 2–4 persoane",group_5_8:"Grup 5–8 persoane",group_9_12:"Grup 9–12 persoane",group_13_plus:"Grup 13+ persoane",couple:"Cuplu",solo:"O persoană",group_2_3:"Grup 2–3 persoane",group_4_6:"Grup 4–6 persoane",group_6_8:"Grup 6–8 persoane"};
   const FAC_CATS=["foodAndDrinks","generalFacilities","wellness","exterior","cleaningServices","businessFacilities","bathroom","kitchen","bedroom","comfort","commonAreas","livingArea","mediaTechnology","roomFacilities","shops"];
   const RULE_CATS={foodAndDrinks:1,generalFacilities:1,wellness:1,exterior:1,cleaningServices:1,businessFacilities:1};
 
@@ -104,7 +109,8 @@
       questionsAndAnswers:g.questionsAndAnswers||m.questionsAndAnswers||[],
       contact:m.contact||{name:bi.name||"",phone:"",email:"",website:""},
       _photos:(m.photos&&m.photos.generalPhotos)||[],
-      _reviews:m.reviews||[], _reviewSummary:m.reviewSummary||{}
+      _reviews:m.reviews||[], _reviewSummary:m.reviewSummary||{},
+      localstayProfile:g.localstayProfile||m.localstayProfile||null
     };
     return {property,pricing:{rooms,periods:[]},units};
   }
@@ -188,6 +194,13 @@
     if(_well.length)about.push({label:"Wellness",value:take(_well,3).join(", ")});
     if(city)about.push({label:"Localizare",value:[bi.locality,city].filter(Boolean).join(", ")});
     if(po.parkingPolicy)about.push({label:"Parcare",value:po.parkingPolicy});
+    const _lp=P.localstayProfile||{};
+    if(_lp.dominantExperience && LP_EXP[_lp.dominantExperience]) about.push({label:"Experiență",value:LP_EXP[_lp.dominantExperience]});
+    if(Array.isArray(_lp.environmentContext)&&_lp.environmentContext.length) about.push({label:"Cadru natural",value:_lp.environmentContext.map(e=>LP_ENV[e]||e).join(", ")});
+    if(_lp.comfortPositioning && LP_COMFORT[_lp.comfortPositioning]) about.push({label:"Categorie",value:LP_COMFORT[_lp.comfortPositioning]});
+    if(_lp.commercialCapacity && LP_CAP[_lp.commercialCapacity]) about.push({label:"Recomandat pentru",value:LP_CAP[_lp.commercialCapacity]});
+    const _segs=(_lp.touristSegments||[]).filter(s=>s&&(s.fitLevel==="primary")).sort((a,b)=>(b.fitScore||0)-(a.fitScore||0)).map(s=>LP_SEG[s.segmentId]||null).filter(Boolean);
+    if(_segs.length) about.push({label:"Potrivit pentru",value:_segs.join(", ")});
 
     // reviews
     const rs=P._reviewSummary||{}, ritems=(P._reviews||[]).map(r=>({name:(r.clientInfo&&(r.clientInfo.name||r.clientInfo.country))?("Oaspete · "+(r.clientInfo.country||r.clientInfo.name)):"Oaspete",meta:r.title||"",rating:Math.round(r.reviewRating||5),text:r.body||""})).filter(r=>r.text);
