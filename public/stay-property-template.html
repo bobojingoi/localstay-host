@@ -872,6 +872,14 @@ function rHighlight(){
       ${has(h.features)?`<div class="frows">${h.features.map(f=>`<div class="frow"><span class="ic">${icon(f.icon)}</span><span class="t">${esc(f.label)}</span></div>`).join('')}</div>`:''}
     </div></div></div></section>`;
 }
+function rWellness(){
+  const h=PROPERTY.highlight; if(!h||!has(h.features)) return '';
+  return `<section class="sec tight" id="wellness"><div class="wrap">
+    <div class="rv sec-head"><span class="eyebrow">${esc(h.eyebrow||'Pentru relaxare')}</span><h2>${esc(h.heading||'Spa & wellness')}</h2></div>
+    ${h.text?`<p class="bk-intro rv">${esc(h.text)}</p>`:''}
+    <div class="grp-wrap rv"><div class="grp"><div class="grp-chips">${h.features.map(f=>`<span>${esc(f.label)}</span>`).join('')}</div></div></div>
+  </div></section>`;
+}
 
 function rGalleries(){
   if(!has(PROPERTY.galleries)) return '';
@@ -1490,9 +1498,9 @@ function rServices(){ return rGroupSec('servicii','La fața locului','Servicii',
 function render(){
   setTheme();
   document.getElementById('app').innerHTML = [
-    rNav(), rHero(), rAbout(), rOverview(), rStrip(), rGalleries(), rSpaces(), rAmenities(), rHighlight(),
+    rNav(), rHero(), rAbout(), rOverview(), rStrip(), rGalleries(), rSpaces(), rAmenities(),
     rBooking(), rAvailability(), rReviews(), rLocation(),
-    rActivities(), rServices(), rRulesAbout(), rFaq(), rFooter()
+    rWellness(), rActivities(), rServices(), rRulesAbout(), rFaq(), rFooter()
   ].join('');
   wire();
 }
