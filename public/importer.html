@@ -94,8 +94,38 @@ textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(-
       <div class="hd"><h2>Proprietăți importate</h2><p>Toate folosesc același magazin de date local (în producție: API-ul tău).</p></div>
       <div class="bd"><div id="list"></div></div>
     </div>
+
+    <div class="card" id="statsCard">
+      <div class="hd"><h2>Statistici</h2><p>Cereri de rezervare și dezvăluiri de telefon din site-urile publice. <button id="statReload" class="lnkbtn">reîmprospătează</button></p></div>
+      <div class="bd">
+        <div class="stat-totals" id="statTotals"></div>
+        <div class="stat-cols">
+          <div class="stat-col"><h3>Cereri de rezervare <small>(cine a făcut cerere, cu date)</small></h3><div id="statRequests"></div></div>
+          <div class="stat-col"><h3>Dezvăluiri telefon <small>(anonim — proprietate &amp; moment)</small></h3><div id="statReveals"></div></div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
+<style>
+.stat-totals{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
+.stat-totals .s{background:#f6f7fb;border:1px solid #e6e9f0;border-radius:14px;padding:14px 12px;text-align:center}
+.stat-totals .s b{display:block;font-size:24px;color:#1a2238;font-weight:800}
+.stat-totals .s span{font-size:12px;color:#8a92a6}
+.stat-cols{display:grid;grid-template-columns:1.3fr 1fr;gap:20px}
+.stat-col h3{font-size:14px;color:#1a2238;margin:0 0 10px}
+.stat-col h3 small{font-weight:400;color:#8a92a6;font-size:12px}
+.ev{border:1px solid #e6e9f0;border-radius:12px;padding:11px 13px;margin-bottom:9px;background:#fff}
+.ev-sm{padding:9px 13px}
+.ev-top{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.ev-top b{color:#1a2238;font-size:14.5px}
+.ev-top span{color:#8a92a6;font-size:12px;white-space:nowrap}
+.ev-sub{color:#56607a;font-size:13px;margin-top:3px}
+.ev-sub2{color:#56607a;font-size:12.5px;margin-top:3px}
+.ev a{color:#1faa57;text-decoration:none}
+.lnkbtn{background:none;border:0;color:#1faa57;cursor:pointer;font-size:inherit;padding:0;text-decoration:underline}
+@media(max-width:760px){.stat-totals{grid-template-columns:repeat(2,1fr)}.stat-cols{grid-template-columns:1fr}}
+</style>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -306,7 +336,32 @@ function readFile(f){const r=new FileReader();r.onload=()=>{try{doImport(JSON.pa
 $("#importBtn").onclick=()=>{const t=$("#paste").value.trim();if(!t){toast("Lipește un JSON sau încarcă un fișier");return;}try{doImport(JSON.parse(t));}catch(e){$("#err").textContent="JSON invalid: "+e.message;$("#err").style.display="block";}};
 $("#demoBtn").onclick=()=>{ if(window.DEMO_MASTER){doImport(window.DEMO_MASTER);} else {toast("Exemplul nu este disponibil aici");} };
 
+async function renderStats(){
+  let d=null; try{ d=await fetch("/api/stats").then(r=>r.ok?r.json():null); }catch(e){}
+  const E=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+  if(!d){ $("#statTotals").innerHTML='<div class="empty" style="grid-column:1/-1">Statisticile necesită baza de date (verifică /api/health).</div>'; return; }
+  const t=d.totals||{};
+  $("#statTotals").innerHTML=[
+    [t.requests||0,"cereri total"],[t.requests7d||0,"cereri (7 zile)"],
+    [t.reveals||0,"dezvăluiri tel."],[t.reveals7d||0,"dezvăluiri (7 zile)"]
+  ].map(([n,l])=>'<div class="s"><b>'+n+'</b><span>'+l+'</span></div>').join("");
+  const fmtDT=x=>x?new Date(x).toLocaleString("ro-RO",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}):"";
+  const fmtD=x=>x?new Date(x).toLocaleDateString("ro-RO",{day:"numeric",month:"short"}):"—";
+  const rq=d.requests||[];
+  $("#statRequests").innerHTML = rq.length ? rq.map(r=>{
+    const g=[]; if(r.adults)g.push(r.adults+" ad."); if(r.children)g.push(r.children+" cop."); if(r.infants)g.push(r.infants+" beb."); if(r.pets)g.push(r.pets+" anim.");
+    const rooms=(Array.isArray(r.rooms)?r.rooms:[]).map(x=>(x.qty>1?x.qty+"× ":"")+(x.name||"")).join(", ");
+    return '<div class="ev"><div class="ev-top"><b>'+E(r.name||"—")+'</b><span>'+fmtDT(r.created_at)+'</span></div>'+
+      '<div class="ev-sub">'+E(r.property||r.slug)+' · '+fmtD(r.checkin)+' → '+fmtD(r.checkout)+(g.length?' · '+E(g.join(", ")):"")+'</div>'+
+      '<div class="ev-sub2">'+(r.phone?'<a href="tel:'+E(r.phone)+'">'+E(r.phone)+'</a>':"")+(r.email?' · '+E(r.email):"")+(rooms?' · '+E(rooms):"")+'</div></div>';
+  }).join("") : '<div class="empty">Nicio cerere încă.</div>';
+  const rv=d.reveals||[];
+  $("#statReveals").innerHTML = rv.length ? rv.map(r=>'<div class="ev ev-sm"><div class="ev-top"><b>'+E(r.property||r.slug)+'</b><span>'+fmtDT(r.created_at)+'</span></div></div>').join("") : '<div class="empty">Nicio dezvăluire încă.</div>';
+}
+const _sr=document.getElementById("statReload"); if(_sr) _sr.onclick=renderStats;
+
 renderList();
+renderStats();
 </script>
 </body>
 </html>
