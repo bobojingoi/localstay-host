@@ -58,7 +58,7 @@ header.nav.solid{position:fixed;background:rgba(27,39,66,.96);backdrop-filter:bl
 /* HERO */
 .hero{position:relative;padding:0}
 .hero>.wrap{padding-top:0}
-.hero-img{position:relative;height:clamp(500px,72vh,660px);min-height:0;max-height:none;border-radius:26px;overflow:hidden;background-position:center;background-size:cover;background-color:var(--navy)}
+.hero-img{position:relative;height:clamp(500px,72vh,660px);min-height:0;max-height:none;margin-top:16px;border-radius:26px;overflow:hidden;background-position:center;background-size:cover;background-color:var(--navy)}
 .hero-img.no-img{background:radial-gradient(120% 120% at 80% 10%,#2c3c6b 0%,#1c2746 45%,#161f3a 100%)}
 .hero-img::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(20,28,52,.45),rgba(20,28,52,.12) 35%,rgba(18,25,44,.85))}
 .hero-content{position:absolute;left:0;right:0;bottom:0;padding:44px clamp(28px,5vw,60px);z-index:2}
@@ -143,6 +143,10 @@ header.nav.solid{position:fixed;background:rgba(27,39,66,.96);backdrop-filter:bl
 .gal-th{aspect-ratio:4/3;border:0;border-radius:10px;background:#222 center/cover;cursor:pointer;transition:transform .15s,outline .15s;outline:2px solid transparent}
 .gal-th:hover{transform:scale(1.02);outline:2px solid var(--accent)}
 .gal-single{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:60px 22px;z-index:4}
+.gal-lb{position:fixed;inset:0;background:rgba(8,11,20,.95);display:none;align-items:center;justify-content:center;z-index:210;padding:60px 22px}
+.gal-lb.on{display:flex}
+.gal-lb img{max-width:92vw;max-height:84vh;border-radius:10px;object-fit:contain;box-shadow:0 30px 80px -30px rgba(0,0,0,.85)}
+.gal-counter{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,.85);font-size:14px;font-weight:600}
 .gal-single img{max-width:92vw;max-height:82vh;border-radius:10px;object-fit:contain;box-shadow:0 30px 80px -30px rgba(0,0,0,.8)}
 .gal-nav{position:fixed;top:50%;transform:translateY(-50%);width:50px;height:50px;border-radius:50%;border:0;background:rgba(255,255,255,.16);color:#fff;cursor:pointer;display:grid;place-items:center;z-index:6}
 .gal-nav:hover{background:rgba(255,255,255,.3)}
@@ -947,38 +951,47 @@ function rGalleries(){
     <div class="gal-head rv"><span class="eyebrow">Galerie</span><h2>${esc(head)}</h2></div>
     ${mosaic}
   </div>
-  <div class="gal-ov" id="galOv" aria-hidden="true">
-    <button class="gal-x" id="galX" aria-label="Închide">&times;</button>
+  <div class="gal-ov" id="galGridOv" aria-hidden="true">
+    <button class="gal-x" id="galGridX" aria-label="Închide">&times;</button>
     <div class="gal-grid" id="galGrid">
       ${all.map((s,idx)=>`<button type="button" class="gal-th" data-i="${idx}" data-src="${esc(s.img)}" style="background-image:url('${esc(s.img)}')" aria-label="Poza ${idx+1}"></button>`).join('')}
     </div>
-    <div class="gal-single" id="galSingle" hidden>
-      <button type="button" class="gal-back" id="galBack">‹ Toate pozele</button>
-      <button type="button" class="gal-nav gprev" id="galPrev" aria-label="Anterioara"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 18l-6-6 6-6"/></svg></button>
-      <img id="galImg" alt="">
-      <button type="button" class="gal-nav gnext" id="galNext" aria-label="Următoarea"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18l6-6-6-6"/></svg></button>
-    </div>
+  </div>
+  <div class="gal-lb" id="galLbOv" aria-hidden="true">
+    <button type="button" class="gal-x" id="galLbX" aria-label="Închide">&times;</button>
+    <button type="button" class="gal-nav gprev" id="galPrev" aria-label="Anterioara"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 18l-6-6 6-6"/></svg></button>
+    <img id="galImg" alt="">
+    <button type="button" class="gal-nav gnext" id="galNext" aria-label="Următoarea"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18l6-6-6-6"/></svg></button>
+    <div class="gal-counter" id="galCounter"></div>
   </div>
   </section>`;
 }
 function initGallery(){
-  const ov=document.getElementById('galOv'); if(!ov) return;
-  const thumbs=[...ov.querySelectorAll('.gal-th')]; if(!thumbs.length) return;
+  const gridOv=document.getElementById('galGridOv'); if(!gridOv) return;
+  const lbOv=document.getElementById('galLbOv');
+  const thumbs=[...gridOv.querySelectorAll('.gal-th')]; if(!thumbs.length) return;
   const imgs=thumbs.map(t=>t.dataset.src);
-  const grid=ov.querySelector('#galGrid'), single=ov.querySelector('#galSingle'), big=ov.querySelector('#galImg');
+  const big=lbOv.querySelector('#galImg'), counter=lbOv.querySelector('#galCounter');
   let cur=0;
-  function show(){ ov.classList.add('on'); ov.setAttribute('aria-hidden','false'); document.body.style.overflow='hidden'; }
-  function openGrid(){ show(); single.hidden=true; grid.hidden=false; ov.scrollTop=0; }
-  function openSingle(k){ show(); cur=(k+imgs.length)%imgs.length; big.src=imgs[cur]; grid.hidden=true; single.hidden=false; }
-  function close(){ ov.classList.remove('on'); ov.setAttribute('aria-hidden','true'); document.body.style.overflow=''; }
-  thumbs.forEach((t,idx)=>t.onclick=()=>openSingle(idx));
-  ov.querySelector('#galX').onclick=close;
-  ov.querySelector('#galBack').onclick=()=>{ single.hidden=true; grid.hidden=false; };
-  ov.querySelector('#galPrev').onclick=()=>openSingle(cur-1);
-  ov.querySelector('#galNext').onclick=()=>openSingle(cur+1);
-  ov.addEventListener('click',e=>{ if(e.target===ov||e.target===single) close(); });
-  document.addEventListener('keydown',e=>{ if(!ov.classList.contains('on'))return; if(e.key==='Escape')close(); else if(!single.hidden){ if(e.key==='ArrowLeft')openSingle(cur-1); else if(e.key==='ArrowRight')openSingle(cur+1); } });
-  document.querySelectorAll('[data-gallery]').forEach(el=>el.addEventListener('click',()=>{ const i=el.getAttribute('data-i'); if(i!=null&&i!=='') openSingle(+i); else openGrid(); }));
+  function lock(){ document.body.style.overflow='hidden'; }
+  function unlockIfClosed(){ if(!gridOv.classList.contains('on')&&!lbOv.classList.contains('on')) document.body.style.overflow=''; }
+  function openGrid(){ gridOv.classList.add('on'); gridOv.setAttribute('aria-hidden','false'); lock(); gridOv.scrollTop=0; }
+  function closeGrid(){ gridOv.classList.remove('on'); gridOv.setAttribute('aria-hidden','true'); unlockIfClosed(); }
+  function openLb(k){ cur=(k+imgs.length)%imgs.length; big.src=imgs[cur]; counter.textContent=(cur+1)+' / '+imgs.length; lbOv.classList.add('on'); lbOv.setAttribute('aria-hidden','false'); lock(); }
+  function closeLb(){ lbOv.classList.remove('on'); lbOv.setAttribute('aria-hidden','true'); unlockIfClosed(); }
+  thumbs.forEach((t,idx)=>t.onclick=()=>openLb(idx));
+  gridOv.querySelector('#galGridX').onclick=closeGrid;
+  lbOv.querySelector('#galLbX').onclick=closeLb;
+  lbOv.querySelector('#galPrev').onclick=()=>openLb(cur-1);
+  lbOv.querySelector('#galNext').onclick=()=>openLb(cur+1);
+  gridOv.addEventListener('click',e=>{ if(e.target===gridOv) closeGrid(); });
+  lbOv.addEventListener('click',e=>{ if(e.target===lbOv) closeLb(); });
+  document.addEventListener('keydown',e=>{
+    if(lbOv.classList.contains('on')){ if(e.key==='Escape')closeLb(); else if(e.key==='ArrowLeft')openLb(cur-1); else if(e.key==='ArrowRight')openLb(cur+1); }
+    else if(gridOv.classList.contains('on')&&e.key==='Escape') closeGrid();
+  });
+  // mosaic photos open the lightbox directly; "Vezi toate pozele" opens the scrollable grid
+  document.querySelectorAll('[data-gallery]').forEach(el=>el.addEventListener('click',()=>{ const i=el.getAttribute('data-i'); if(i!=null&&i!=='') openLb(+i); else openGrid(); }));
 }
 
 function rSpaces(){
@@ -1167,7 +1180,7 @@ function rBooking(){
   };
   const entireCard = entire ? card(entR||{weekday:isFinite(entW)?entW:'',currency:cur,capacity:PROPERTY.capacity},'__entire','Toată proprietatea','Închiriere integrală') : '';
   return `<section class="sec" id="rezervare"><div class="wrap">
-    <h2 class="rv">Camere • Prețuri • Disponibilitate</h2>
+    <h2 class="rv" style="margin-bottom:28px">Camere | Prețuri | Calendar</h2>
     <div class="bk-grid">
       <div class="bk-options rv">
         ${entireCard}
