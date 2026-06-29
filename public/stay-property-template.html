@@ -57,7 +57,8 @@ header.nav.solid{position:fixed;background:rgba(27,39,66,.96);backdrop-filter:bl
 
 /* HERO */
 .hero{position:relative;padding:0}
-.hero-img{position:relative;height:clamp(440px,62vh,600px);min-height:0;max-height:none;border-radius:0 0 34px 34px;overflow:hidden;background-position:center;background-size:cover;background-color:var(--navy)}
+.hero>.wrap{padding-top:0}
+.hero-img{position:relative;height:clamp(440px,60vh,580px);min-height:0;max-height:none;border-radius:26px;overflow:hidden;background-position:center;background-size:cover;background-color:var(--navy)}
 .hero-img.no-img{background:radial-gradient(120% 120% at 80% 10%,#2c3c6b 0%,#1c2746 45%,#161f3a 100%)}
 .hero-img::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(20,28,52,.45),rgba(20,28,52,.12) 35%,rgba(18,25,44,.85))}
 .hero-content{position:absolute;left:0;right:0;bottom:0;padding:44px clamp(28px,5vw,60px);z-index:2}
@@ -268,7 +269,7 @@ footer a:hover{color:#fff}
 }
 @media(max-width:620px){
   .wrap{padding:0 20px}.sec{padding:44px 0}.sec.tight{padding-top:44px}
-  .hero-img{height:100svh;min-height:480px}
+  .hero-img{height:clamp(420px,64vh,520px);min-height:0;border-radius:20px}
   .rules,.rev-grid,.f-grid,.specs{grid-template-columns:1fr}
   .am-cols{columns:1}
   .specs{grid-template-columns:1fr 1fr}
@@ -875,14 +876,14 @@ function rHero(){
   const L=PROPERTY.location||{}, locline=[L.area,L.county,L.note].filter(Boolean).join(' · ');
   const pr=PROPERTY.priceFrom;
   const heroImg=(PROPERTY.photos&&PROPERTY.photos.hero)||'';
-  return `<section class="hero"><div class="hero-img${heroImg?'':' no-img'}" style="background-image:url('${esc(heroImg)}')">
+  return `<section class="hero"><div class="wrap"><div class="hero-img${heroImg?'':' no-img'}" style="background-image:url('${esc(heroImg)}')">
     <div class="hero-content">
       ${locline?`<span class="hero-loc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>${esc(locline)}</span>`:''}
       <h1>${esc(PROPERTY.name||PROPERTY.tagline)}</h1>
       ${pr?`<div class="price">de la <b>${esc(pr.amount)} ${esc(pr.currency)}</b> / ${esc(pr.unit)}</div>`:''}
       <div class="hero-cta">
         <a class="btn btn-accent" href="#rezervare">Rezervă acum</a>
-      </div></div></div></section>`;
+      </div></div></div></div></section>`;
 }
 
 function rStrip(){
