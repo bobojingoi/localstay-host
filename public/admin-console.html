@@ -118,6 +118,11 @@ textarea.inp{min-height:70px;resize:vertical;line-height:1.5}
 .day.out,.day.out:hover{color:#c4cbd6;cursor:default;background:transparent;border-color:transparent}
 .day.past,.day.past:hover{color:#c4cbd6;cursor:not-allowed;background:#fafbfc;border-color:transparent}
 .day .pr{font-size:9px;color:var(--muted);font-weight:600;margin-top:1px}
+.day .day-price{width:90%;border:1px solid transparent;background:transparent;text-align:center;font-size:11px;color:var(--muted);font-weight:700;font-family:inherit;padding:1px 0;margin-top:1px;border-radius:5px;-moz-appearance:textfield;cursor:text}
+.day .day-price::-webkit-outer-spin-button,.day .day-price::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.day .day-price:hover{border-color:var(--line)}
+.day .day-price:focus{outline:none;border-color:var(--brand);background:#fff;color:var(--ink)}
+.day.custom .day-price{color:var(--brand)}
 .day.own{background:var(--red-soft);color:var(--red);border-color:#f1d3d3}.day.own .pr{color:var(--red)}
 .day.ical{color:#fff;border-color:transparent}.day.ical .pr{color:rgba(255,255,255,.85)}
 .day.overlap{background:repeating-linear-gradient(45deg,#fbf2e2,#fbf2e2 5px,#fff5e2 5px,#fff5e2 10px);color:var(--amber);border-color:#f0dfc0}.day.overlap .pr{color:var(--amber)}
@@ -128,6 +133,21 @@ textarea.inp{min-height:70px;resize:vertical;line-height:1.5}
 .side-card h4{font-size:13.5px;margin-bottom:12px}
 .stat{display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--line-2)}.stat:last-child{border:0}.stat b{color:var(--ink)}
 .range{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;box-shadow:var(--shadow);margin-top:16px}
+/* calendar modes + bulk editing */
+.cal-modes{display:inline-flex;gap:4px;background:#f1f3f8;border-radius:11px;padding:4px;margin:6px 0 14px}
+.cal-mode{display:inline-flex;align-items:center;gap:7px;border:0;background:none;border-radius:8px;padding:8px 16px;font-size:13.5px;font-weight:600;color:var(--muted);cursor:pointer}
+.cal-mode svg{width:15px;height:15px}
+.cal-mode.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(20,28,52,.12)}
+.day.sel{outline:2px solid var(--brand);outline-offset:-2px;background:var(--brand-soft)}
+.cal-selbar{display:flex;align-items:center;gap:10px;background:var(--brand-soft);border:1px solid var(--brand);border-radius:var(--r);padding:10px 14px;margin-top:12px;font-size:13.5px}
+.cal-selbar #calSelInfo{font-weight:600;color:var(--ink)}
+.cal-bulk{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:16px;box-shadow:var(--shadow);margin-top:14px}
+.cal-bulk-h{margin-bottom:12px}.cal-bulk-h b{font-size:14px;color:var(--ink)}
+.cal-bulk-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}.cal-bulk-row .field{flex:1;min-width:130px}
+.cal-dows{display:flex;gap:6px;flex-wrap:wrap}
+.dow-b{border:1px solid var(--line);background:#fff;border-radius:9px;width:42px;height:38px;font-size:13px;font-weight:600;color:var(--text);cursor:pointer}
+.dow-b.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+.cal-bulk-act{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:12px}
 /* feeds */
 .feed{display:flex;align-items:center;gap:12px;padding:13px 15px;border:1px solid var(--line);border-radius:11px;margin-bottom:10px;background:#fff}
 .feed .clr{width:9px;height:34px;border-radius:5px;flex:none}
@@ -334,19 +354,38 @@ textarea.inp{min-height:70px;resize:vertical;line-height:1.5}
       </section>
 
       <section class="panel" id="panel-calendar">
-        <p class="intro">Channel manager. Alege unitatea, apoi <b>dă click pe o zi</b> ca să-i setezi un <b>preț special</b> sau s-o blochezi. Blocarea <b>întregii vile</b> indisponibilizează automat camerele; o rezervare pe o cameră indisponibilizează vila întreagă (afișat hașurat). Zilele cu preț special au un punct colorat.</p>
+        <p class="intro">Channel manager. Alege unitatea și modul (<b>Prețuri</b> sau <b>Blocare</b>). Poți edita <b>o zi</b> (click pe ea), un <b>interval scurt</b> (trage cu mouse-ul peste zile) sau în <b>masă</b> (interval + zilele săptămânii) din panoul de jos.</p>
         <div class="units" id="unitChips"></div>
+        <div class="cal-modes" id="calModes">
+          <button class="cal-mode on" data-mode="price"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Prețuri</button>
+          <button class="cal-mode" data-mode="block"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M4.9 4.9l14.2 14.2"/></svg> Blocare</button>
+        </div>
         <div class="cal-wrap">
           <div>
             <div class="cal">
               <div class="cal-head"><h3 id="calTitle">—</h3><div class="cal-nav"><button id="calPrev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button><button id="calNext"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button></div></div>
               <div class="cal-grid" id="dow"></div><div class="cal-grid" id="calGrid" style="margin-top:4px"></div>
             </div>
-            <div class="range">
-              <div class="field"><label>Blochează interval — de la</label><input class="inp" type="date" id="rFrom"></div>
-              <div class="field"><label>Până la</label><input class="inp" type="date" id="rTo"></div>
-              <button class="btn btn-out" id="rBlock">Blochează</button>
-              <button class="btn btn-ghost" id="rUnblock">Deblochează</button>
+            <div class="cal-selbar" id="calSelBar" hidden>
+              <span id="calSelInfo"></span>
+              <input class="inp" type="number" id="selPrice" min="0" placeholder="Preț" style="display:none;max-width:110px">
+              <div style="flex:1"></div>
+              <button class="btn btn-out" id="selApply">Aplică</button>
+              <button class="btn btn-ghost" id="selCancel">Anulează</button>
+            </div>
+            <div class="cal-bulk">
+              <div class="cal-bulk-h"><b id="bulkTitle">Editare în masă — prețuri</b></div>
+              <div class="cal-bulk-row">
+                <div class="field"><label>De la</label><input class="inp" type="date" id="bkFrom"></div>
+                <div class="field"><label>Până la</label><input class="inp" type="date" id="bkTo"></div>
+              </div>
+              <div class="field"><label>Zilele săptămânii</label><div class="cal-dows" id="bkDows"></div></div>
+              <div class="cal-bulk-act">
+                <div class="field price-only" id="bkPriceWrap" style="flex:1;min-width:120px"><label>Preț / noapte</label><input class="inp" type="number" id="bkPrice" min="0" placeholder="ex. 350"></div>
+                <button class="btn btn-out" id="bkApply">Aplică</button>
+                <button class="btn btn-ghost price-only" id="bkResetPrice">Revino la tarif normal</button>
+                <button class="btn btn-ghost block-only" id="bkUnblock" style="display:none">Deblochează</button>
+              </div>
             </div>
           </div>
           <div>
@@ -392,25 +431,6 @@ textarea.inp{min-height:70px;resize:vertical;line-height:1.5}
     <div class="field"><label>Sau lipește conținutul .ics (test)</label><textarea class="inp" id="fPaste" style="min-height:110px;font-family:ui-monospace,monospace;font-size:12px" placeholder="BEGIN:VCALENDAR&#10;..."></textarea></div>
   </div>
   <div class="mf"><button class="btn btn-out" id="feedCancel">Anulează</button><button class="btn btn-pri" id="feedSave">Conectează</button></div>
-</div></div>
-<div class="overlay" id="dayOv"><div class="modal" style="max-width:420px">
-  <div class="mh"><div><h3 id="dayTitle">Zi</h3><small id="daySub" style="color:var(--muted);font-size:12.5px"></small></div><button class="x" id="dayClose">&times;</button></div>
-  <div class="mb">
-    <div id="dayExt" class="note" style="display:none"></div>
-    <div id="dayPriceBox">
-      <div class="field"><label>Preț special pentru această zi</label>
-        <div class="with-sfx"><input class="inp" type="number" min="0" id="dayPrice"><span class="sfx" id="dayPriceSfx">RON</span></div>
-      </div>
-      <div id="dayOverInfo" style="font-size:12.5px;color:var(--muted);margin-top:6px"></div>
-      <div style="display:flex;gap:10px;margin-top:12px">
-        <button class="btn btn-pri" id="daySave" style="flex:1">Salvează prețul</button>
-        <button class="btn btn-ghost" id="dayReset">Resetează la normal</button>
-      </div>
-    </div>
-    <div id="dayBlockBox" style="display:flex;margin-top:16px;padding-top:14px;border-top:1px solid var(--line-2)">
-      <button class="btn btn-out" id="dayBlockBtn" style="width:100%">Blochează ziua</button>
-    </div>
-  </div>
 </div></div>
 <div class="toast" id="toast"></div>
 
@@ -1499,8 +1519,23 @@ function renderCalendar(){
     if(st.s==="ical"){c.style.background=(state.units.find(u=>u.id===curUnit).feeds.find(f=>(f.blocks||[]).includes(ds))||{}).color||"#3b6fb0";c.appendChild(h("span",{class:"pr"},st.src));if(!past)ic++;}
     else if(st.s==="own"){c.appendChild(h("span",{class:"pr"},"blocat"));if(!past)own++;}
     else if(st.s==="overlap"){c.appendChild(h("span",{class:"pr"},st.src));if(!past)ov++;}
-    else{c.appendChild(h("span",{class:"pr"},String(basePrice(ds))));if(dayOverride(curUnit,ds)!=null)c.classList.add("custom");if(!past)free++;}
-    if(!past)c.onclick=()=>openDayEditor(ds);
+    else{
+      if(!past){
+        const ov=dayOverride(curUnit,ds);
+        const inp=h("input",{class:"day-price",type:"number",min:"0",value:String(basePrice(ds))});
+        inp.onmousedown=e=>e.stopPropagation();
+        inp.onclick=e=>{ e.stopPropagation(); inp.select&&inp.select(); };
+        inp.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); inp.blur(); } };
+        inp.onchange=()=>commitDayPrice(ds,inp.value,inp);
+        c.appendChild(inp);
+        if(ov!=null)c.classList.add("custom");
+        free++;
+      } else {
+        c.appendChild(h("span",{class:"pr"},String(basePrice(ds))));
+        if(dayOverride(curUnit,ds)!=null)c.classList.add("custom");
+      }
+    }
+    if(!past){ c.dataset.ds=ds; c.onmousedown=(e)=>dragDown(e,ds); c.onmouseenter=()=>dragOver(ds); }
     grid.appendChild(c);
   }
   const total=free+own+ic+ov;
@@ -1513,68 +1548,135 @@ function setDayBlock(ds,block){
   if(block&&i<0)u.blocks.push(ds);else if(!block&&i>=0)u.blocks.splice(i,1);
   persist();
 }
-let dayEditDs=null;
-function openDayEditor(ds){
-  dayEditDs=ds;
-  const st=effState(curUnit,ds);
-  const r=state.pricing.rooms.find(x=>x.id===curUnit)||{currency:"RON"};
-  const dt=fromIso(ds).toLocaleDateString("ro-RO",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
-  $("#dayTitle").textContent=dt;
-  $("#daySub").textContent=unitName(curUnit);
-  const ext=(st.s==="ical"||st.s==="overlap");
-  $("#dayExt").style.display=ext?"flex":"none";
-  $("#dayExt").textContent=ext?(st.s==="ical"?("Rezervare din "+st.src+" — gestionează din acea platformă."):("Indisponibil indirect (rezervare pe "+st.src+")")):"";
-  $("#dayPriceBox").style.display=ext?"none":"block";
-  $("#dayBlockBox").style.display=(st.s==="overlap"||st.s==="ical")?"none":"flex";
-  const ov=dayOverride(curUnit,ds);
-  $("#dayPrice").value = ov!=null?ov : basePrice(ds);
-  $("#dayPriceSfx").textContent=r.currency||"RON";
-  $("#dayReset").style.display = ov!=null?"inline-flex":"none";
-  $("#dayOverInfo").textContent = ov!=null?("Preț special activ: "+ov+" "+(r.currency||"RON")):("Tarif normal: "+basePrice(ds)+" "+(r.currency||"RON"));
-  const blocked=(state.units.find(x=>x.id===curUnit).blocks||[]).includes(ds);
-  $("#dayBlockBtn").textContent = blocked?"Deblochează ziua":"Blochează ziua";
-  $("#dayBlockBtn").className = "btn "+(blocked?"btn-ghost":"btn-out");
-  $("#dayOv").classList.add("on");
+// inline per-day price editing (committed from the editable cell input)
+function normalTariff(ds){const dd=fromIso(ds).getDay(),we=(dd===5||dd===6);const r=state.pricing.rooms.find(x=>x.id===curUnit)||state.pricing.rooms[0]||{};let wd=r.weekday,wk=r.weekend;state.pricing.periods.forEach(p=>{if((p.roomId==="all"||p.roomId===curUnit)&&p.start&&p.end&&ds>=p.start&&ds<=p.end){wd=p.weekday;wk=p.weekend;}});return we?wk:wd;}
+function commitDayPrice(ds,val,inpEl){
+  const v = (val===""||val==null) ? null : Math.max(0,+val||0);
+  state.pricing.dayPrices=state.pricing.dayPrices||{};
+  const dp=state.pricing.dayPrices[curUnit]=state.pricing.dayPrices[curUnit]||{};
+  if(v==null || v===normalTariff(ds)){ delete dp[ds]; } else { dp[ds]=v; }
+  if(!Object.keys(dp).length) delete state.pricing.dayPrices[curUnit];
+  persist();
+  if(inpEl){
+    const cell=inpEl.closest&&inpEl.closest(".day");
+    if(cell) cell.classList.toggle("custom", dayOverride(curUnit,ds)!=null);
+    if(v==null) inpEl.value=String(normalTariff(ds));
+  } else renderCalendar();
 }
-function closeDayEditor(){ $("#dayOv").classList.remove("on"); dayEditDs=null; }
 function renderLegend(){
   let html=`<div class="li"><span class="sw" style="background:#fff"></span> Disponibil (preț)</div><div class="li"><span class="sw" style="position:relative;background:#fff"><span style="position:absolute;top:1px;right:1px;width:6px;height:6px;border-radius:50%;background:var(--brand)"></span></span> Preț special</div><div class="li"><span class="sw" style="background:var(--red-soft);border-color:#f1d3d3"></span> Blocat de tine</div><div class="li"><span class="sw" style="background:repeating-linear-gradient(45deg,#fbf2e2,#fbf2e2 4px,#fff5e2 4px,#fff5e2 8px)"></span> Indisponibil indirect</div>`;
   const u=state.units.find(x=>x.id===curUnit);(u.feeds||[]).forEach(f=>html+=`<div class="li"><span class="sw" style="background:${f.color}"></span> ${f.source}</div>`);
   $("#legend").innerHTML=html;
 }
-$("#calPrev").onclick=()=>{view.setMonth(view.getMonth()-1);renderCalendar();};
-$("#calNext").onclick=()=>{view.setMonth(view.getMonth()+1);renderCalendar();};
-$("#dayClose").onclick=closeDayEditor;
-$("#dayOv").onclick=e=>{ if(e.target===$("#dayOv")) closeDayEditor(); };
-$("#daySave").onclick=()=>{
-  if(!dayEditDs)return;
-  const v=Math.max(0,+$("#dayPrice").value||0);
+$("#calPrev").onclick=()=>{view.setMonth(view.getMonth()-1);renderCalendar();if(typeof clearSel==="function")clearSel();};
+$("#calNext").onclick=()=>{view.setMonth(view.getMonth()+1);renderCalendar();if(typeof clearSel==="function")clearSel();};
+/* ===== modes + drag-select + bulk (price/block) ===== */
+let calMode="price";                 // 'price' | 'block'
+let bulkDows=new Set([0,1,2,3,4,5,6]); // JS getDay() values; default all on
+let calSel=null;                     // {from,to} after a drag
+let dragging=false, dragStart=null, dragEnd=null, dragMoved=false;
+
+function applyRange(from,to,dowSet,action){
+  if(!from||!to) return 0;
+  let s=fromIso(from), e=fromIso(to); if(e<s){const t=s;s=e;e=t;}
+  const u=state.units.find(x=>x.id===curUnit); if(!u) return 0;
+  u.blocks=u.blocks||[];
   state.pricing.dayPrices=state.pricing.dayPrices||{};
-  (state.pricing.dayPrices[curUnit]=state.pricing.dayPrices[curUnit]||{})[dayEditDs]=v;
-  persist();renderCalendar();closeDayEditor();toast("Preț salvat pentru această zi");
+  const dp=state.pricing.dayPrices[curUnit]=state.pricing.dayPrices[curUnit]||{};
+  let n=0;
+  for(let d=new Date(s); d<=e; d.setDate(d.getDate()+1)){
+    if(dowSet && !dowSet.has(d.getDay())) continue;
+    const ds=iso(d);
+    if(action.type==="price"){
+      if(action.value==null){ delete dp[ds]; } else { dp[ds]=action.value; }
+      n++;
+    } else if(action.type==="block"){
+      const i=u.blocks.indexOf(ds);
+      if(action.block && i<0){ u.blocks.push(ds); n++; }
+      else if(!action.block && i>=0){ u.blocks.splice(i,1); n++; }
+    }
+  }
+  if(action.type==="price" && !Object.keys(dp).length) delete state.pricing.dayPrices[curUnit];
+  persist(); renderCalendar();
+  return n;
+}
+
+/* ---- drag selection on the calendar ---- */
+function paintSel(){
+  const grid=$("#calGrid"); if(!grid) return;
+  let lo=dragStart, hi=dragEnd; if(lo&&hi&&hi<lo){const t=lo;lo=hi;hi=t;}
+  grid.querySelectorAll(".day").forEach(c=>{ const ds=c.dataset.ds; c.classList.toggle("sel", !!(ds&&lo&&hi&&ds>=lo&&ds<=hi)); });
+}
+function dragDown(e,ds){ e.preventDefault(); dragging=true; dragStart=ds; dragEnd=ds; dragMoved=false; $("#calSelBar").hidden=true; paintSel(); }
+function dragOver(ds){ if(!dragging) return; if(ds!==dragEnd) dragMoved=true; dragEnd=ds; paintSel(); }
+document.addEventListener("mouseup",()=>{
+  if(!dragging) return; dragging=false;
+  let lo=dragStart, hi=dragEnd; if(lo&&hi&&hi<lo){const t=lo;lo=hi;hi=t;}
+  if(!dragMoved){
+    // a plain click (no drag): in BLOCK mode treat as a 1-day selection so it can be blocked;
+    // in PRICE mode do nothing (the price is edited via the inline field in the cell)
+    if(calMode!=="block"){ $("#calGrid").querySelectorAll(".day.sel").forEach(c=>c.classList.remove("sel")); return; }
+  }
+  calSel={from:lo,to:hi};
+  showSelBar();
+});
+function showSelBar(){
+  const bar=$("#calSelBar"); if(!calSel){ bar.hidden=true; return; }
+  const cnt=Math.round((fromIso(calSel.to)-fromIso(calSel.from))/864e5)+1;
+  $("#calSelInfo").textContent = fromIso(calSel.from).toLocaleDateString("ro-RO",{day:"numeric",month:"short"})+" → "+fromIso(calSel.to).toLocaleDateString("ro-RO",{day:"numeric",month:"short"})+" · "+cnt+(cnt===1?" zi":" zile");
+  const pf=$("#selPrice"); pf.style.display = calMode==="price"?"inline-block":"none"; pf.value="";
+  $("#selApply").textContent = calMode==="price"?"Setează preț":"Blochează";
+  bar.hidden=false;
+}
+function clearSel(){ calSel=null; $("#calSelBar").hidden=true; $("#calGrid").querySelectorAll(".day.sel").forEach(c=>c.classList.remove("sel")); }
+$("#selCancel").onclick=clearSel;
+$("#selApply").onclick=()=>{
+  if(!calSel) return;
+  if(calMode==="price"){ const v=$("#selPrice").value; if(v==="" ){toast("Introdu un preț");return;} const n=applyRange(calSel.from,calSel.to,null,{type:"price",value:Math.max(0,+v||0)}); toast(n+" zile actualizate"); }
+  else { const n=applyRange(calSel.from,calSel.to,null,{type:"block",block:true}); toast(n+" zile blocate"); }
+  clearSel();
 };
-$("#dayReset").onclick=()=>{
-  if(!dayEditDs)return;
-  const dp=state.pricing.dayPrices||{};
-  if(dp[curUnit]){ delete dp[curUnit][dayEditDs]; if(!Object.keys(dp[curUnit]).length) delete dp[curUnit]; }
-  persist();renderCalendar();closeDayEditor();toast("Revenit la tariful normal");
+
+/* ---- mode toggle ---- */
+function setMode(m){
+  calMode=m;
+  $$(".cal-mode").forEach(b=>b.classList.toggle("on",b.dataset.mode===m));
+  $("#bulkTitle").textContent = m==="price"?"Editare în masă — prețuri":"Editare în masă — blocare";
+  $$(".price-only").forEach(el=>el.style.display = m==="price"?"":"none");
+  $$(".block-only").forEach(el=>el.style.display = m==="block"?"":"none");
+  $("#bkApply").textContent = m==="price"?"Aplică prețul":"Blochează";
+  clearSel();
+}
+$$(".cal-mode").forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
+
+/* ---- weekday toggles ---- */
+function renderDows(){
+  const box=$("#bkDows"); box.innerHTML="";
+  DOW.forEach((lbl,i)=>{ const js=(i+1)%7; // Lu->1 ... Du->0
+    const b=h("button",{class:"dow-b"+(bulkDows.has(js)?" on":""),onclick:()=>{ if(bulkDows.has(js))bulkDows.delete(js); else bulkDows.add(js); b.classList.toggle("on"); }}, lbl);
+    box.appendChild(b);
+  });
+}
+
+/* ---- bulk apply ---- */
+$("#bkApply").onclick=()=>{
+  const a=$("#bkFrom").value,b=$("#bkTo").value; if(!a||!b){toast("Alege intervalul (de la / până la)");return;}
+  if(!bulkDows.size){toast("Selectează cel puțin o zi a săptămânii");return;}
+  if(calMode==="price"){ const v=$("#bkPrice").value; if(v===""){toast("Introdu un preț");return;}
+    const n=applyRange(a,b,bulkDows,{type:"price",value:Math.max(0,+v||0)}); toast(n+" zile cu preț nou"); }
+  else { const n=applyRange(a,b,bulkDows,{type:"block",block:true}); toast(n+" zile blocate"); }
 };
-$("#dayBlockBtn").onclick=()=>{
-  if(!dayEditDs)return;
-  const blocked=(state.units.find(x=>x.id===curUnit).blocks||[]).includes(dayEditDs);
-  setDayBlock(dayEditDs,!blocked);renderCalendar();closeDayEditor();toast(!blocked?"Zi blocată":"Zi deblocată");
+$("#bkResetPrice").onclick=()=>{
+  const a=$("#bkFrom").value,b=$("#bkTo").value; if(!a||!b){toast("Alege intervalul");return;}
+  const n=applyRange(a,b,bulkDows,{type:"price",value:null}); toast(n+" zile revenite la tarif normal");
+};
+$("#bkUnblock").onclick=()=>{
+  const a=$("#bkFrom").value,b=$("#bkTo").value; if(!a||!b){toast("Alege intervalul");return;}
+  const n=applyRange(a,b,bulkDows,{type:"block",block:false}); toast(n+" zile deblocate");
 };
 $("#clearManual").onclick=()=>{const u=state.units.find(x=>x.id===curUnit);if(!u.blocks||!u.blocks.length){toast("Nimic de deblocat");return;}u.blocks=[];persist();renderCalendar();toast("Deblocat");};
-$("#rBlock").onclick=()=>rangeBlock(true);
-$("#rUnblock").onclick=()=>rangeBlock(false);
-function rangeBlock(block){
-  const a=$("#rFrom").value,b=$("#rTo").value;if(!a||!b){toast("Alege ambele date");return;}
-  const u=state.units.find(x=>x.id===curUnit);u.blocks=u.blocks||[];
-  let s=fromIso(a),e=fromIso(b);if(e<s){[s,e]=[e,s];}
-  for(let d=new Date(s);d<=e;d.setDate(d.getDate()+1)){const ds=iso(d);const i=u.blocks.indexOf(ds);
-    if(block&&i<0)u.blocks.push(ds);else if(!block&&i>=0)u.blocks.splice(i,1);}
-  persist();renderCalendar();toast(block?"Interval blocat":"Interval deblocat");
-}
+renderDows();
+setMode("price");
 
 /* =================== ICAL (per unit) =================== */
 function renderIcal(){
