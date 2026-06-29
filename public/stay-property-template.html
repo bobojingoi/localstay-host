@@ -399,6 +399,7 @@ footer a:hover{color:#fff}
   .bk-mbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:90;align-items:center;gap:12px;background:#fff;border-top:1px solid var(--line);box-shadow:0 -8px 24px -12px rgba(20,28,52,.3);padding:10px 16px;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
   .bk-mbar-info{flex:1;min-width:0}
   .bk-mbar-info b{display:block;font-family:var(--font-head);color:var(--navy);font-size:15px}
+  .bk-mbar-info b .mbar-unit{font-family:inherit;font-size:11px;font-weight:500;color:var(--muted)}
   .bk-mbar-info small{color:var(--muted);font-size:12.5px}
   .bk-mbar .btn{flex:none;padding:11px 20px}
   .sticky-cta{bottom:74px}
@@ -1220,7 +1221,11 @@ function initBooking(){
     });
     sel.innerHTML=rows;
     sel.querySelectorAll('.bk-qty').forEach(box=>{ const rid=box.dataset.rid;
-      box.querySelectorAll('.bk-stepb').forEach(b=>b.onclick=()=>{ st.qty[rid]=Math.max(1,(st.qty[rid]||1)+ (+b.dataset.q)); renderSummary(); });
+      box.querySelectorAll('.bk-stepb').forEach(b=>b.onclick=()=>{
+        const delta=+b.dataset.q, q=st.qty[rid]||1;
+        if(delta<0 && q<=1){ st.rooms.delete(rid); delete st.qty[rid]; refreshSel(); return; } // remove/deselect
+        st.qty[rid]=Math.max(1,q+delta); renderSummary();
+      });
     });
     tot.innerHTML = ds.length? ('<div class="bk-trow"><span>'+ds.length+(ds.length===1?' noapte':' nopți')+'</span><b>'+total+' '+cur+'</b></div>') : '<small>Alege datele pentru a vedea totalul</small>';
     updateMbar(total, ds.length);
@@ -1232,12 +1237,12 @@ function initBooking(){
     const rc=roomsCount();
     const roomsLbl = st.entire ? 'Toată proprietatea' : (rc+(rc===1?' cameră':' camere'));
     if(nN && total){
-      $('#bkMbarTitle').textContent = total+' '+cur;
+      $('#bkMbarTitle').innerHTML = total+' '+esc(cur);
       $('#bkMbarSub').textContent = roomsLbl+' · '+nN+(nN===1?' noapte':' nopți');
     } else {
       const from = ids.reduce((s,id)=>s+(+optFor(id).weekday||0)*qtyOf(id),0);
-      $('#bkMbarTitle').textContent = 'de la '+from+' '+cur;
-      $('#bkMbarSub').textContent = roomsLbl+' · /noapte';
+      $('#bkMbarTitle').innerHTML = 'de la '+from+' '+esc(cur)+' <span class="mbar-unit">/noapte</span>';
+      $('#bkMbarSub').textContent = roomsLbl;
     }
   }
 
