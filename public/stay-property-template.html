@@ -376,8 +376,10 @@ footer a:hover{color:#fff}
 .bk-stepb{width:30px;height:30px;border:1px solid var(--line);background:#fff;border-radius:8px;font-size:17px;line-height:1;color:var(--navy);cursor:pointer;display:grid;place-items:center}
 .bk-stepb:hover{border-color:var(--accent);color:var(--accent)}
 .bk-step span,.bk-gval{min-width:22px;text-align:center;font-weight:700;color:var(--navy);font-size:14.5px}
-.bk-srow{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:7px 0;font-size:14.5px;color:var(--navy)}
-.bk-srow-n{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.bk-srow{display:flex;flex-direction:column;gap:7px;padding:9px 0;font-size:14.5px;color:var(--navy);border-bottom:1px solid var(--line)}
+.bk-srow:last-child{border-bottom:0}
+.bk-srow-main{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.bk-srow-name{font-weight:600}
 .bk-srow b{font-weight:700;white-space:nowrap}
 .bk-qty{display:inline-flex;align-items:center;gap:3px}
 .bk-qty .bk-stepb{width:26px;height:26px;font-size:15px}
@@ -999,14 +1001,6 @@ function rFooter(){
   </div></div></footer>`;
 }
 
-function rStickyCTA(){
-  const pr=PROPERTY.priceFrom;
-  return `<div class="sticky-cta">
-    <div class="pr">${pr?`de la ${esc(pr.amount)} ${esc(pr.currency)}<small>/ ${esc(pr.unit)}</small>`:esc(PROPERTY.name)}</div>
-    <a class="btn btn-accent" href="${bookHref()}" ${THEME.booking.url?'':'target="_blank" rel="noopener"'}>Rezervă acum</a>
-  </div>`;
-}
-
 /* ---------- mount ---------- */
 function setTheme(){
   const c=THEME.colors||{}, r=document.documentElement.style;
@@ -1222,7 +1216,7 @@ function initBooking(){
     ids.forEach(id=>{ const o=optFor(id), q=qtyOf(id), p=ds.length?priceOf(id,o,ds)*q:0; total+=p;
       const stepper = id==='__entire' ? '' :
         '<div class="bk-qty" data-rid="'+esc(id)+'"><button type="button" class="bk-stepb" data-q="-1">−</button><span>'+q+'</span><button type="button" class="bk-stepb" data-q="1">+</button></div>';
-      rows+='<div class="bk-srow"><div class="bk-srow-n"><span>'+esc(o.name)+'</span>'+stepper+'</div><b>'+(ds.length?(p+' '+cur):'—')+'</b></div>';
+      rows+='<div class="bk-srow"><div class="bk-srow-main"><span class="bk-srow-name">'+esc(o.name)+'</span><b>'+(ds.length?(p+' '+cur):'—')+'</b></div>'+stepper+'</div>';
     });
     sel.innerHTML=rows;
     sel.querySelectorAll('.bk-qty').forEach(box=>{ const rid=box.dataset.rid;
@@ -1236,8 +1230,15 @@ function initBooking(){
     const ids=selectedIds(); if(!ids.length){ bar.hidden=true; return; }
     bar.hidden=false;
     const rc=roomsCount();
-    $('#bkMbarTitle').textContent = st.entire ? 'Toată proprietatea' : (rc+(rc===1?' cameră':' camere'));
-    $('#bkMbarSub').textContent = (nN&&total)? (nN+(nN===1?' noapte · ':' nopți · ')+total+' '+cur) : guestsText();
+    const roomsLbl = st.entire ? 'Toată proprietatea' : (rc+(rc===1?' cameră':' camere'));
+    if(nN && total){
+      $('#bkMbarTitle').textContent = total+' '+cur;
+      $('#bkMbarSub').textContent = roomsLbl+' · '+nN+(nN===1?' noapte':' nopți');
+    } else {
+      const from = ids.reduce((s,id)=>s+(+optFor(id).weekday||0)*qtyOf(id),0);
+      $('#bkMbarTitle').textContent = 'de la '+from+' '+cur;
+      $('#bkMbarSub').textContent = roomsLbl+' · /noapte';
+    }
   }
 
   sec.querySelectorAll('.bk-more').forEach(btn=>btn.onclick=()=>{ const d=btn.nextElementSibling; if(d){ const open=!d.hidden; d.hidden=open; btn.classList.toggle('open',!open); } });
@@ -1480,7 +1481,7 @@ function render(){
     rNav(), rHero(), rStrip(), rOverview(), rGalleries(), rSpaces(), rAmenities(), rHighlight(),
     rBooking(), rAvailability(), rReviews(), rLocation(),
     rActivities(), rServices(), rRulesAbout(), rFaq(), rFooter()
-  ].join('') + rStickyCTA();
+  ].join('');
   wire();
 }
 
