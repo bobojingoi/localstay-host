@@ -38,6 +38,8 @@ input,select,button,textarea{font-family:inherit}
 .top{background:#fff;border-bottom:1px solid var(--line);padding:0 32px;height:64px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:20}
 .top h1{font-size:18px}
 .top .right{display:flex;align-items:center;gap:12px}
+.tb-link{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:13.5px;font-weight:600;color:var(--muted);background:none;border:0;cursor:pointer;padding:7px 10px;border-radius:8px;text-decoration:none}
+.tb-link:hover{background:#f2f4f7;color:var(--ink)}
 .save-state{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:7px;user-select:none}
 .save-state.dirty{color:var(--amber,#c8861a);font-weight:600}
 .save-state.dirty:hover{text-decoration:underline}
@@ -337,7 +339,7 @@ textarea.inp{min-height:70px;resize:vertical;line-height:1.5}
   <div class="main">
     <div class="top">
       <div style="display:flex;align-items:center;gap:14px"><button class="menu-btn" id="menuBtn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button><h1 id="pageTitle">Conținut</h1></div>
-      <div class="right"><span class="save-state" id="saveState"><span class="dot"></span> Salvat</span></div>
+      <div class="right"><a href="/importer.html" class="tb-link" id="cBack"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg> Proprietăți</a><button class="tb-link" id="cLogout"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg> Ieși</button><span class="save-state" id="saveState"><span class="dot"></span> Salvat</span></div>
     </div>
     <div class="content">
       <section class="panel on" id="panel-continut">
@@ -2057,6 +2059,15 @@ function renderGalerie(){
 
 if(!state.galleries) state.galleries={};
 syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();renderCalendar();renderIcal();
+</script>
+<script>
+/* Auth: logout button + redirect to login if the session has expired. */
+(function(){
+  var lo=document.getElementById("cLogout");
+  if(lo) lo.onclick=async function(){ try{ await fetch("/api/auth/logout",{method:"POST"}); }catch(e){} location.href="/login"; };
+  // If the cookie expired while the page was open, send the user back to login.
+  fetch("/api/auth/me").then(function(r){ if(r.status===401) location.href="/login?next="+encodeURIComponent(location.pathname+location.search); }).catch(function(){});
+})();
 </script>
 </body>
 </html>
