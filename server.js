@@ -286,6 +286,45 @@ app.delete("/api/host/:slug", async (req, res) => {
   res.json({ ok: true });
 });
 
+/* ---------- booking requests (from the public booking form) ---------- */
+app.post("/api/booking-request", async (req, res) => {
+  try {
+    const b = req.body || {};
+    const g = b.guests || {};
+    const slug = String(b.slug || "").trim();
+    if (!slug) return res.status(400).json({ error: "slug lipsă" });
+    if (!b.name && !b.phone) return res.status(400).json({ error: "nume sau telefon obligatoriu" });
+    const toDate = (v) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+    const r = await pool.query(
+      `insert into booking_requests
+        (slug,name,phone,email,checkin,checkout,adults,children,infants,pets,rooms,message)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12) returning id`,
+      [
+        slug,
+        (b.name || "").slice(0, 200),
+        (b.phone || "").slice(0, 60),
+        (b.email || "").slice(0, 200),
+        toDate(b.checkin),
+        toDate(b.checkout),
+        +g.adults || 0, +g.children || 0, +g.infants || 0, +g.pets || 0,
+        JSON.stringify(Array.isArray(b.rooms) ? b.rooms.slice(0, 30) : []),
+        (b.message || "").slice(0, 4000),
+      ]
+    );
+    res.json({ ok: true, id: r.rows[0].id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/api/host/:slug/booking-requests", async (req, res) => {
+  try {
+    const r = await pool.query(
+      "select * from booking_requests where slug=$1 order by created_at desc limit 500",
+      [req.params.slug]
+    );
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get("/api/host/:slug/state", async (req, res) => {
   const p = await getProp(req.params.slug);
   if (!p) return res.status(404).json({ error: "not found" });
