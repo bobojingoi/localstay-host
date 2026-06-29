@@ -33,3 +33,14 @@ create table if not exists booking_requests (
   created_at  timestamptz default now()
 );
 create index if not exists booking_requests_slug_idx on booking_requests(slug, created_at desc);
+
+-- Lightweight event tracking (e.g. phone number reveals on the public site).
+create table if not exists site_events (
+  id         uuid primary key default gen_random_uuid(),
+  slug       text not null,
+  type       text not null,
+  meta       jsonb default '{}'::jsonb,
+  created_at timestamptz default now()
+);
+create index if not exists site_events_type_idx on site_events(type, created_at desc);
+create index if not exists site_events_slug_idx on site_events(slug, created_at desc);
