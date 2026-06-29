@@ -7,9 +7,12 @@ const { STAY } = require("./transform");
 const sharp = require("sharp");
 const { r2put, r2ready } = require("./r2");
 const { describeImage, enhanceImage } = require("./ai");
+const AUTH = require("./auth");
 
 const app = express();
+app.set("trust proxy", 1); // Render runs behind a proxy — needed for Secure cookies + req.secure
 app.use(express.json({ limit: "25mb" }));
+app.use(AUTH.attachUser); // sets req.user (or null) from the auth cookie on every request
 
 // Safety net: never let a request hang forever (e.g. if the DB is briefly down).
 // If a handler hasn't responded in time, return 503 instead of spinning.
@@ -171,7 +174,147 @@ app.use(async (req, res, next) => {
 });
 
 /* ---------- API ---------- */
-app.post("/api/ai-enhance", async (req, res) => {
+
+/* ====================== AUTH ====================== */
+function normEmail(e) { return String(e || "").trim().toLowerCase(); }
+
+// Log in. Sets the auth cookie. Returns the user's role.
+app.post("/api/auth/login", async (req, res) => {
+  try {
+    const email = normEmail(req.body && req.body.email);
+    const password = (req.body && req.body.password) || "";
+    if (!email || !password) return res.status(400).json({ error: "Email și parolă obligatorii" });
+    const r = await pool.query("select * from users where email=$1", [email]);
+    const u = r.rows[0];
+    if (!u || !(await AUTH.verifyPassword(password, u.password_hash)))
+      return res.status(401).json({ error: "Email sau parolă greșite" });
+    AUTH.setAuthCookie(req, res, u);
+    res.json({ ok: true, role: u.role, email: u.email, name: u.name || "" });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  AUTH.clearAuthCookie(req, res);
+  res.json({ ok: true });
+});
+
+// Who am I? Returns role + (for hosts) the slugs they own.
+app.get("/api/auth/me", async (req, res) => {
+  if (!req.user) return res.status(401).json({ error: "Neautentificat" });
+  try {
+    const u = await pool.query("select id,email,role,name from users where id=$1", [req.user.id]);
+    if (!u.rows.length) return res.status(401).json({ error: "Neautentificat" });
+    const me = u.rows[0];
+    let slugs = [];
+    if (me.role !== "admin") {
+      const ps = await pool.query("select slug from properties where owner_id=$1 order by updated_at desc", [me.id]);
+      slugs = ps.rows.map((r) => r.slug);
+    }
+    res.json({ id: me.id, email: me.email, role: me.role, name: me.name || "", slugs });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Change own email and/or password (any logged-in user). Requires current password.
+app.post("/api/auth/change-credentials", AUTH.requireAuth, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const cur = b.currentPassword || "";
+    const r = await pool.query("select * from users where id=$1", [req.user.id]);
+    const u = r.rows[0];
+    if (!u || !(await AUTH.verifyPassword(cur, u.password_hash)))
+      return res.status(401).json({ error: "Parola actuală este greșită" });
+    const newEmail = b.newEmail != null ? normEmail(b.newEmail) : null;
+    const newPassword = b.newPassword || null;
+    if (newEmail && newEmail !== u.email) {
+      const dup = await pool.query("select 1 from users where email=$1 and id<>$2", [newEmail, u.id]);
+      if (dup.rows.length) return res.status(409).json({ error: "Acest email este deja folosit" });
+    }
+    if (newPassword && String(newPassword).length < 8)
+      return res.status(400).json({ error: "Parola nouă trebuie să aibă minim 8 caractere" });
+    const email = newEmail || u.email;
+    const hash = newPassword ? await AUTH.hashPassword(newPassword) : u.password_hash;
+    await pool.query("update users set email=$1, password_hash=$2, updated_at=now() where id=$3", [email, hash, u.id]);
+    AUTH.setAuthCookie(req, res, { id: u.id, role: u.role, email }); // refresh token with new email
+    res.json({ ok: true, email });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ============== ADMIN: manage hotelier accounts ============== */
+
+// List host accounts + the slugs each owns.
+app.get("/api/admin/hosts", AUTH.requireAdmin, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `select u.id, u.email, u.name, u.created_at,
+              coalesce(json_agg(p.slug) filter (where p.slug is not null), '[]') as slugs
+       from users u
+       left join properties p on p.owner_id = u.id
+       where u.role='host'
+       group by u.id order by u.created_at desc`
+    );
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Create a hotelier account and (optionally) assign properties to it.
+app.post("/api/admin/hosts", AUTH.requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const email = normEmail(b.email);
+    const password = b.password || "";
+    const name = (b.name || "").trim() || null;
+    const slugs = Array.isArray(b.slugs) ? b.slugs : [];
+    if (!email || !password) return res.status(400).json({ error: "Email și parolă obligatorii" });
+    if (String(password).length < 8) return res.status(400).json({ error: "Parola trebuie să aibă minim 8 caractere" });
+    const dup = await pool.query("select 1 from users where email=$1", [email]);
+    if (dup.rows.length) return res.status(409).json({ error: "Acest email este deja folosit" });
+    const hash = await AUTH.hashPassword(password);
+    const ins = await pool.query(
+      "insert into users(email,password_hash,role,name) values($1,$2,'host',$3) returning id,email,name",
+      [email, hash, name]
+    );
+    const host = ins.rows[0];
+    if (slugs.length)
+      await pool.query("update properties set owner_id=$1 where slug = any($2::text[])", [host.id, slugs]);
+    res.json({ ok: true, host: { ...host, slugs } });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Replace the set of properties a host owns.
+app.post("/api/admin/hosts/:id/properties", AUTH.requireAdmin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const slugs = Array.isArray(req.body && req.body.slugs) ? req.body.slugs : [];
+    await pool.query("update properties set owner_id=null where owner_id=$1", [id]); // clear current
+    if (slugs.length)
+      await pool.query("update properties set owner_id=$1 where slug = any($2::text[])", [id, slugs]);
+    res.json({ ok: true, slugs });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Admin resets a host's password.
+app.post("/api/admin/hosts/:id/password", AUTH.requireAdmin, async (req, res) => {
+  try {
+    const pw = (req.body && req.body.password) || "";
+    if (String(pw).length < 8) return res.status(400).json({ error: "Parola trebuie să aibă minim 8 caractere" });
+    const hash = await AUTH.hashPassword(pw);
+    const r = await pool.query("update users set password_hash=$1, updated_at=now() where id=$2 and role='host' returning id", [hash, req.params.id]);
+    if (!r.rowCount) return res.status(404).json({ error: "Cont negăsit" });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Delete a host account (their properties become unassigned).
+app.delete("/api/admin/hosts/:id", AUTH.requireAdmin, async (req, res) => {
+  try {
+    await pool.query("delete from users where id=$1 and role='host'", [req.params.id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ====================== END AUTH ====================== */
+
+app.post("/api/ai-enhance", AUTH.requireAuth, async (req, res) => {
   try {
     let base64, mime;
     if (req.body.url) {
@@ -190,7 +333,7 @@ app.post("/api/ai-enhance", async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post("/api/upload", async (req, res) => {
+app.post("/api/upload", AUTH.requireAuth, async (req, res) => {
   try {
     if (!r2ready()) return res.status(503).json({ error: "R2 not configured" });
     const m = String(req.body.dataUrl || "").match(/^data:(image\/[\w+.-]+);base64,(.+)$/);
@@ -254,7 +397,7 @@ function mergeAdminState(oldS, newS) {
   return newS;
 }
 
-app.post("/api/import", async (req, res) => {
+app.post("/api/import", AUTH.requireAdmin, async (req, res) => {
   try {
     const master = req.body;
     const admin = STAY.deriveAdminState(master);
@@ -271,17 +414,21 @@ app.post("/api/import", async (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-app.get("/api/properties", async (req, res) => {
+app.get("/api/properties", AUTH.requireAuth, async (req, res) => {
+  const isAdmin = req.user.role === "admin";
   const r = await pool.query(
     `select slug,
             admin_state->'property'->'basicInfo'->>'name' as name,
             site->'photos'->>'hero' as hero
-     from properties order by updated_at desc`
+     from properties
+     ${isAdmin ? "" : "where owner_id = $1"}
+     order by updated_at desc`,
+    isAdmin ? [] : [req.user.id]
   );
   res.json(r.rows);
 });
 
-app.delete("/api/host/:slug", async (req, res) => {
+app.delete("/api/host/:slug", AUTH.requireAdmin, async (req, res) => {
   await pool.query("delete from properties where slug=$1", [req.params.slug]);
   res.json({ ok: true });
 });
@@ -315,7 +462,7 @@ app.post("/api/booking-request", async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get("/api/host/:slug/booking-requests", async (req, res) => {
+app.get("/api/host/:slug/booking-requests", AUTH.requireSlugAccess(pool), async (req, res) => {
   try {
     const r = await pool.query(
       "select * from booking_requests where slug=$1 order by created_at desc limit 500",
@@ -341,7 +488,7 @@ app.post("/api/track", async (req, res) => {
 });
 
 /* ---------- global stats for the importer dashboard ---------- */
-app.get("/api/stats", async (req, res) => {
+app.get("/api/stats", AUTH.requireAdmin, async (req, res) => {
   try {
     const names = await pool.query(
       "select slug, admin_state->'property'->'basicInfo'->>'name' as name from properties"
@@ -368,13 +515,13 @@ app.get("/api/stats", async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get("/api/host/:slug/state", async (req, res) => {
+app.get("/api/host/:slug/state", AUTH.requireSlugAccess(pool), async (req, res) => {
   const p = await getProp(req.params.slug);
   if (!p) return res.status(404).json({ error: "not found" });
   res.json(p.admin_state);
 });
 
-app.put("/api/host/:slug/state", async (req, res) => {
+app.put("/api/host/:slug/state", AUTH.requireSlugAccess(pool), async (req, res) => {
   try {
     const adminState = req.body;
     const site = STAY.masterToSite(adminState.property, adminState.pricing, adminState.galleries);
@@ -387,7 +534,7 @@ app.put("/api/host/:slug/state", async (req, res) => {
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
-app.post("/api/host/:slug/sync", async (req, res) => {
+app.post("/api/host/:slug/sync", AUTH.requireSlugAccess(pool), async (req, res) => {
   try {
     const r = await syncProperty(req.params.slug);
     if (r.error) return res.status(404).json(r);
@@ -418,9 +565,12 @@ app.get("/api/site/:slug", async (req, res) => {
 
 /* admin, with the property's data injected so it loads pre-filled */
 app.get("/admin", async (req, res) => {
+  if (!req.user) return res.redirect("/login?next=" + encodeURIComponent(req.originalUrl));
   const html = fs.readFileSync(path.join(PUBLIC, "admin-console.html"), "utf8");
   const slug = req.query.slug;
   if (!slug) return res.send(html);
+  const allowed = await AUTH.userCanAccessSlug(pool, req.user, slug);
+  if (!allowed) return res.status(403).send("Nu ai acces la această proprietate.");
   const p = await getProp(slug);
   if (!p) return res.status(404).send("Proprietate negăsită");
   res.send(inject(html, "window.__ADMIN_STATE=" + JSON.stringify(p.admin_state) + ";"));
@@ -444,8 +594,23 @@ app.get("/ical/:slug/:file", async (req, res) => {
 });
 
 /* ---------- static files + root ---------- */
+// Public login page.
+app.get("/login", (req, res) => res.sendFile(path.join(PUBLIC, "login.html")));
+
+// The importer is the admin/host hub — require login to load it.
+app.get("/importer.html", (req, res) => {
+  if (!req.user) return res.redirect("/login");
+  res.sendFile(path.join(PUBLIC, "importer.html"));
+});
+
+// Don't let the raw editor shell load without auth — funnel to the gated /admin route.
+app.get("/admin-console.html", (req, res) => {
+  if (!req.user) return res.redirect("/login");
+  res.redirect("/admin" + (req.query.slug ? "?slug=" + encodeURIComponent(req.query.slug) : ""));
+});
+
 app.use(express.static(PUBLIC));
-app.get("/", (req, res) => res.redirect("/importer.html"));
+app.get("/", (req, res) => res.redirect(req.user ? "/importer.html" : "/login"));
 
 /* ---------- start ---------- */
 // Keep the web service alive even through transient DB outages: a stray async
@@ -464,7 +629,7 @@ function startIcalSync() {
 }
 function bootDb() {
   init()
-    .then(() => { console.log("StayPredeal DB ready."); startIcalSync(); })
+    .then(() => { console.log("StayPredeal DB ready."); startIcalSync(); return AUTH.seedAdmin(pool).catch((e)=>console.error("[auth] seedAdmin failed:", e && e.message)); })
     .catch((e) => {
       console.error("DB not ready, server stays up; retrying in 30s:", e && e.message);
       setTimeout(bootDb, 30000); // recover automatically when the DB comes back
