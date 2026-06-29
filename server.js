@@ -325,6 +325,49 @@ app.get("/api/host/:slug/booking-requests", async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+/* ---------- lightweight event tracking (phone reveals, etc.) ---------- */
+app.post("/api/track", async (req, res) => {
+  try {
+    const b = req.body || {};
+    const slug = String(b.slug || "").slice(0, 120);
+    const type = String(b.type || "").slice(0, 60);
+    if (!slug || !type) return res.status(400).json({ error: "slug/type lipsă" });
+    await pool.query(
+      "insert into site_events (slug,type,meta) values ($1,$2,$3::jsonb)",
+      [slug, type, JSON.stringify(b.meta || {})]
+    );
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ---------- global stats for the importer dashboard ---------- */
+app.get("/api/stats", async (req, res) => {
+  try {
+    const names = await pool.query(
+      "select slug, admin_state->'property'->'basicInfo'->>'name' as name from properties"
+    );
+    const nameOf = {};
+    names.rows.forEach((r) => { nameOf[r.slug] = r.name || r.slug; });
+
+    const reqs = await pool.query("select * from booking_requests order by created_at desc limit 300");
+    const reveals = await pool.query(
+      "select slug, created_at, meta from site_events where type='phone_reveal' order by created_at desc limit 300"
+    );
+    const totals = await pool.query(`
+      select
+        (select count(*) from booking_requests) as requests,
+        (select count(*) from booking_requests where created_at > now() - interval '7 days') as requests7d,
+        (select count(*) from site_events where type='phone_reveal') as reveals,
+        (select count(*) from site_events where type='phone_reveal' and created_at > now() - interval '7 days') as reveals7d
+    `);
+    res.json({
+      totals: totals.rows[0],
+      requests: reqs.rows.map((r) => ({ ...r, property: nameOf[r.slug] || r.slug })),
+      reveals: reveals.rows.map((r) => ({ ...r, property: nameOf[r.slug] || r.slug })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get("/api/host/:slug/state", async (req, res) => {
   const p = await getProp(req.params.slug);
   if (!p) return res.status(404).json({ error: "not found" });
