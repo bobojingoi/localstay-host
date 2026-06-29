@@ -13,3 +13,23 @@ create table if not exists properties (
   created_at  timestamptz default now(),
   updated_at  timestamptz default now()
 );
+
+-- Reservation requests submitted from the public site's booking form.
+create table if not exists booking_requests (
+  id          uuid primary key default gen_random_uuid(),
+  slug        text not null,
+  name        text,
+  phone       text,
+  email       text,
+  checkin     date,
+  checkout    date,
+  adults      int default 0,
+  children    int default 0,
+  infants     int default 0,
+  pets        int default 0,
+  rooms       jsonb default '[]'::jsonb,
+  message     text,
+  status      text default 'nou',
+  created_at  timestamptz default now()
+);
+create index if not exists booking_requests_slug_idx on booking_requests(slug, created_at desc);
