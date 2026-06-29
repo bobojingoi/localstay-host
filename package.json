@@ -3,8 +3,12 @@
   "version": "1.0.0",
   "description": "StayPredeal — importer + admin + site, backed by Postgres",
   "main": "server.js",
-  "scripts": { "start": "node server.js" },
-  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.620.0",
     "dotenv": "^16.4.5",
