@@ -262,28 +262,43 @@ footer a:hover{color:#fff}
 /* ---- room modal ---- */
 .room-ov{position:fixed;inset:0;background:rgba(16,22,38,.62);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;z-index:150;padding:18px}
 .room-ov.on{display:flex}
-.room-modal{position:relative;width:min(920px,100%);max-height:92vh;background:#fff;border-radius:24px;overflow:hidden;display:grid;grid-template-columns:1.15fr 1fr;box-shadow:0 40px 90px -40px rgba(0,0,0,.6)}
-.room-x{position:absolute;top:14px;right:14px;z-index:5;width:38px;height:38px;border-radius:50%;border:0;background:rgba(255,255,255,.92);color:var(--navy);font-size:24px;line-height:1;cursor:pointer;display:grid;place-items:center;box-shadow:0 4px 14px -4px rgba(0,0,0,.4)}
-.room-x:hover{background:#fff}
-.room-gal{position:relative;background:var(--navy);overflow:hidden;min-height:340px}
+.room-modal{position:relative;width:min(960px,100%);max-height:92vh;background:#fff;border-radius:24px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 40px 90px -40px rgba(0,0,0,.6)}
+.room-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 26px;border-bottom:1px solid var(--line);flex:none}
+.room-head h3{font-family:var(--font-head);font-size:23px;color:var(--navy);margin:0;line-height:1.2}
+.room-x{width:38px;height:38px;border-radius:50%;border:0;background:#f1f3f8;color:var(--navy);font-size:24px;line-height:1;cursor:pointer;display:grid;place-items:center;flex:none}
+.room-x:hover{background:#e6e9f0}
+.room-body{display:grid;grid-template-columns:1.05fr 1fr;flex:1;min-height:0}
+.room-gal{position:relative;background:var(--navy);overflow:hidden;min-height:320px}
 .room-track{display:flex;height:100%;transition:transform .35s ease}
 .room-slide{min-width:100%;height:100%;background:var(--navy) center/cover no-repeat}
-.room-slide.room-empty{display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.6);font-size:14px;min-height:340px}
+.room-slide.room-empty{display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.6);font-size:14px;min-height:320px}
 .room-gnav{position:absolute;top:50%;transform:translateY(-50%);width:42px;height:42px;border-radius:50%;border:0;cursor:pointer;background:rgba(255,255,255,.92);color:var(--navy);font-size:22px;display:grid;place-items:center;z-index:3;box-shadow:0 6px 18px -8px rgba(0,0,0,.5)}
 .room-gprev{left:12px}.room-gnext{right:12px}
 .room-gcount{position:absolute;left:14px;bottom:14px;z-index:3;background:rgba(20,28,52,.7);color:#fff;font-size:12.5px;font-weight:600;padding:4px 11px;border-radius:100px}
-.room-info{padding:30px 28px;overflow-y:auto;display:flex;flex-direction:column}
-.room-info h3{font-family:var(--font-head);font-size:24px;color:var(--navy);margin-bottom:8px}
-.room-meta{color:var(--body);font-size:14.5px;margin-bottom:10px}
-.room-price{font-family:var(--font-head);color:var(--navy);font-size:15px;margin-bottom:16px}
-.room-price b{color:var(--accent);font-size:19px}
-.room-desc{color:var(--body);font-size:15px;line-height:1.6;margin:0 0 18px}
-.room-block{margin-bottom:16px}
-.room-block h4{font-family:var(--font-head);font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 9px;font-weight:700}
+.room-info{padding:24px 26px;overflow-y:auto}
+.room-sec{margin-bottom:24px}.room-sec:last-child{margin-bottom:0}
+.room-sec>h4{font-family:var(--font-head);font-size:19px;color:var(--navy);margin:0 0 13px}
+.room-specs{display:flex;gap:14px 28px;flex-wrap:wrap}
+.room-spec{display:flex;align-items:center;gap:9px;color:var(--navy);font-size:15px;font-weight:600}
+.room-spec svg{color:var(--muted);flex:none}
+.room-spaces{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.room-space{border:1px solid var(--line);border-radius:13px;padding:12px 15px}
+.room-space b{display:block;color:var(--navy);font-size:14.5px;font-weight:600}
+.room-space small{color:var(--muted);font-size:12.5px}
+.room-desc{color:var(--body);font-size:15px;line-height:1.65;margin:0}
 .room-chips{display:flex;flex-wrap:wrap;gap:7px}
 .room-chips span{background:var(--soft-2,#f4f6fa);border:1px solid var(--line);border-radius:100px;padding:6px 12px;font-size:12.5px;color:var(--body)}
-.room-select{margin-top:auto;width:100%}
-@media(max-width:720px){.room-modal{grid-template-columns:1fr;max-height:94vh;overflow-y:auto}.room-gal{min-height:240px}.room-slide,.room-slide.room-empty{min-height:240px}}
+.room-fgroup{margin-bottom:16px}.room-fgroup:last-child{margin-bottom:0}
+.room-fgroup-h{display:flex;align-items:center;gap:8px;font-weight:700;color:var(--navy);font-size:14.5px;margin-bottom:10px}
+.room-fgroup-h svg{color:var(--accent);flex:none}
+.room-flist{display:grid;grid-template-columns:1fr 1fr;gap:7px 20px}
+.room-fitem{display:flex;align-items:center;gap:8px;color:var(--body);font-size:13.5px}
+.room-fitem svg{color:#1faa57;flex:none}
+.room-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:15px 26px;border-top:1px solid var(--line);background:#f8f9fc;flex:none}
+.room-foot-price b{font-family:var(--font-head);font-size:23px;color:var(--navy)}
+.room-foot-price small{display:block;color:var(--muted);font-size:12.5px;margin-top:1px}
+.room-select{flex:none;padding:13px 30px}
+@media(max-width:720px){.room-modal{max-height:94vh}.room-body{grid-template-columns:1fr;overflow-y:auto}.room-gal{min-height:230px}.room-slide,.room-slide.room-empty{min-height:230px}.room-spaces,.room-flist{grid-template-columns:1fr}.room-head h3{font-size:20px}}
 
 .bk-thumbs{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
 .bk-thumb{position:relative;width:84px;height:64px;border-radius:10px;border:1px solid var(--line);background-size:cover;background-position:center;cursor:pointer;overflow:hidden;flex:none}
@@ -1097,21 +1112,27 @@ function rBooking(){
       <button type="button" class="lb-nav lb-next" id="lbNext" aria-label="Următoarea">›</button>
     </div>
     <div class="room-ov" id="roomOv"><div class="room-modal">
-      <button type="button" class="room-x" id="roomX" aria-label="Închide">&times;</button>
-      <div class="room-gal">
-        <div class="room-track" id="roomTrack"></div>
-        <button type="button" class="room-gnav room-gprev" id="roomPrev" aria-label="Anterioara">‹</button>
-        <button type="button" class="room-gnav room-gnext" id="roomNext" aria-label="Următoarea">›</button>
-        <span class="room-gcount" id="roomCount"></span>
-      </div>
-      <div class="room-info">
+      <div class="room-head">
         <h3 id="roomName"></h3>
-        <div class="room-meta" id="roomMeta"></div>
-        <div class="room-price" id="roomPrice"></div>
-        <p class="room-desc" id="roomDesc"></p>
-        <div class="room-block" id="roomViewWrap" hidden><h4>Priveliște</h4><div class="room-chips" id="roomView"></div></div>
-        <div class="room-block" id="roomFacWrap" hidden><h4>Facilități</h4><div class="room-chips" id="roomFac"></div></div>
-        <button type="button" class="btn btn-accent room-select" id="roomSelect">Selectează această cameră</button>
+        <button type="button" class="room-x" id="roomX" aria-label="Închide">&times;</button>
+      </div>
+      <div class="room-body">
+        <div class="room-gal">
+          <div class="room-track" id="roomTrack"></div>
+          <button type="button" class="room-gnav room-gprev" id="roomPrev" aria-label="Anterioara">‹</button>
+          <button type="button" class="room-gnav room-gnext" id="roomNext" aria-label="Următoarea">›</button>
+          <span class="room-gcount" id="roomCount"></span>
+        </div>
+        <div class="room-info">
+          <div class="room-sec" id="roomSpecsWrap"><h4>Specificații</h4><div class="room-specs" id="roomSpecs"></div></div>
+          <div class="room-sec" id="roomSpacesWrap" hidden><h4>Spații</h4><div class="room-spaces" id="roomSpaces"></div></div>
+          <div class="room-sec" id="roomDescWrap" hidden><h4>Descriere</h4><p class="room-desc" id="roomDesc"></p></div>
+          <div class="room-sec" id="roomFacWrap" hidden><h4>Facilități incluse</h4><div id="roomFacGroups"></div></div>
+        </div>
+      </div>
+      <div class="room-foot">
+        <div class="room-foot-price" id="roomPrice"></div>
+        <button type="button" class="btn btn-green room-select" id="roomSelect">Selectează</button>
       </div>
     </div></div>
   </section>`;
@@ -1136,7 +1157,7 @@ function initBooking(){
 
   function selectedIds(){ return st.entire?['__entire']:[...st.rooms]; }
   function entireOpt(){
-    if(entR) return {name:'Toată proprietatea',weekday:entR.weekday,weekend:entR.weekend||entR.weekday,currency:cur,minNights:entR.minNights||1};
+    if(entR) return Object.assign({}, entR, {name:'Toată proprietatea', weekday:entR.weekday, weekend:entR.weekend||entR.weekday, currency:entR.currency||cur, minNights:entR.minNights||1});
     const w=Math.min.apply(null,R.map(r=>r.weekday||Infinity)), we=Math.min.apply(null,R.map(r=>r.weekend||r.weekday||Infinity));
     return {name:'Toată proprietatea',weekday:isFinite(w)?w:0,weekend:isFinite(we)?we:0,currency:cur,minNights:1};
   }
@@ -1241,13 +1262,53 @@ function initBooking(){
       : '<div class="room-slide room-empty">Fără poze pentru această cameră</div>';
     roomGalI=0; roomShow();
     $('#roomName').textContent = o.name + (rid==='__entire'?' · Închiriere integrală':'');
-    $('#roomMeta').textContent = roomMetaLine(o);
-    $('#roomPrice').innerHTML = 'de la <b>'+esc(String(o.weekday))+' '+esc(o.currency||cur)+'</b> / noapte';
-    const dsc=$('#roomDesc'); if(o.description){ dsc.textContent=o.description; dsc.hidden=false; } else dsc.hidden=true;
-    const vw=o.view||[], vWrap=$('#roomViewWrap'); if(vw.length){ $('#roomView').innerHTML=vw.map(v=>'<span>'+esc(v)+'</span>').join(''); vWrap.hidden=false; } else vWrap.hidden=true;
-    const fac=(o.facilities||[]).slice(0,40), fWrap=$('#roomFacWrap'); if(fac.length){ $('#roomFac').innerHTML=fac.map(v=>'<span>'+esc(v)+'</span>').join(''); fWrap.hidden=false; } else fWrap.hidden=true;
+
+    // Specificații (icons + values)
+    const icoGuests='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.3"/><path d="M2.5 20.5c0-3.3 2.9-5.7 6.5-5.7s6.5 2.4 6.5 5.7M16.5 10.8a3 3 0 0 0 0-5.6M21.5 20.5c0-2.4-1.5-4.4-3.8-5.2"/></svg>';
+    const icoSurf='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 3L3 21M21 9V3h-6M3 15v6h6"/></svg>';
+    const icoBath='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h16v3a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4zM6 12V5a2 2 0 0 1 2-2 2 2 0 0 1 2 2"/></svg>';
+    const icoBed='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 19V7M2 12h20v7M22 12V9a2 2 0 0 0-2-2H9v5"/></svg>';
+    const specs=[];
+    if(o.capacity) specs.push([icoGuests, o.capacity+(o.children?('+'+o.children):'')+' '+(o.capacity===1?'adult':'adulți')]);
+    if(o.surface) specs.push([icoSurf, o.surface]);
+    if(o.bathrooms) specs.push([icoBath, o.bathrooms+(o.bathrooms===1?' baie':' băi')]);
+    if(o.bedrooms) specs.push([icoBed, o.bedrooms+(o.bedrooms===1?' dormitor':' dormitoare')]);
+    $('#roomSpecs').innerHTML = specs.map(s=>'<div class="room-spec">'+s[0]+'<span>'+esc(String(s[1]))+'</span></div>').join('');
+
+    // Spații
+    const spaces=o.spaces||[], spWrap=$('#roomSpacesWrap');
+    if(spaces.length){
+      $('#roomSpaces').innerHTML = spaces.map(sp=>{
+        const beds=(sp.beds||[]).map(b=>b.count+' x '+esc(b.type)).join(', ');
+        return '<div class="room-space"><b>'+esc(sp.name||'Spațiu')+'</b>'+(beds?'<small>'+beds+'</small>':'')+'</div>';
+      }).join('');
+      spWrap.hidden=false;
+    } else spWrap.hidden=true;
+
+    // Descriere
+    const dsc=$('#roomDesc'), dWrap=$('#roomDescWrap'); if(o.description){ dsc.textContent=o.description; dWrap.hidden=false; } else dWrap.hidden=true;
+
+    // Facilități incluse (grupate)
+    const check='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>';
+    const groups=o.facilityGroups||[], fWrap=$('#roomFacWrap');
+    if(groups.length){
+      $('#roomFacGroups').innerHTML = groups.map(g=>
+        '<div class="room-fgroup"><div class="room-fgroup-h">'+check+esc(g.label)+'</div><div class="room-flist">'+
+        (g.items||[]).map(it=>'<div class="room-fitem">'+check+'<span>'+esc(it)+'</span></div>').join('')+'</div></div>'
+      ).join('');
+      fWrap.hidden=false;
+    } else if((o.facilities||[]).length){
+      $('#roomFacGroups').innerHTML='<div class="room-flist">'+(o.facilities||[]).slice(0,40).map(it=>'<div class="room-fitem">'+check+'<span>'+esc(it)+'</span></div>').join('')+'</div>';
+      fWrap.hidden=false;
+    } else fWrap.hidden=true;
+
+    // Preț (pentru perioada aleasă, dacă există)
+    const ds=nights();
+    if(ds.length){ const total=priceOf(rid,o,ds); $('#roomPrice').innerHTML='<b>'+total+' '+esc(o.currency||cur)+'</b><small>pentru '+ds.length+(ds.length===1?' noapte':' nopți')+'</small>'; }
+    else { $('#roomPrice').innerHTML='<b>de la '+esc(String(o.weekday))+' '+esc(o.currency||cur)+'</b><small>/ noapte</small>'; }
+
     const on = rid==='__entire'?st.entire:st.rooms.has(rid);
-    $('#roomSelect').textContent = on?'Selectat ✓ — închide':'Selectează această cameră';
+    $('#roomSelect').textContent = on?'Selectat ✓':'Selectează';
     roomOv.classList.add('on'); document.body.style.overflow='hidden';
   }
   function closeRoom(){ roomOv.classList.remove('on'); document.body.style.overflow=''; }
