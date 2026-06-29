@@ -20,7 +20,7 @@ app.use((req, res, next) => {
   if (p.indexOf("/api/ai-enhance") === 0) ms = 250000;   // gpt-image-2 / Gemini image edit is slow
   else if (p.indexOf("/api/upload") === 0) ms = 60000;   // image processing + R2 upload
   const t = setTimeout(() => {
-    if (!res.headersSent) {
+    if (!res.headersSent && !res.writableEnded) {
       try { res.status(503).json({ error: "Serviciul este momentan ocupat. Reîncearcă în câteva momente." }); } catch (e) {}
     }
   }, ms);
