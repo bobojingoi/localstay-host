@@ -134,6 +134,9 @@ header.nav.solid{position:fixed;background:rgba(27,39,66,.96);backdrop-filter:bl
 .spec{border-bottom:1px solid var(--line);padding-bottom:14px}
 .spec b{display:block;font-family:var(--font-head);color:var(--navy);font-size:13px;font-weight:700;margin-bottom:4px;letter-spacing:.04em;text-transform:uppercase}
 .spec span{font-size:16px}
+.spec .spec-list{list-style:none;margin:0;padding:0;font-size:16px;color:var(--body)}
+.spec .spec-list li{position:relative;padding-left:16px;margin:2px 0;line-height:1.4}
+.spec .spec-list li:before{content:"";position:absolute;left:2px;top:9px;width:5px;height:5px;border-radius:50%;background:var(--accent)}
 
 /* REVIEWS */
 .rev-bar{background:var(--soft-2);border-radius:20px;padding:20px 28px;display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:28px}
@@ -948,17 +951,21 @@ function rReviews(){
     </div></div></section>`;
 }
 
+function rAbout(){
+  if(!has(PROPERTY.about)) return '';
+  return `<section class="sec tight" id="despre"><div class="wrap">
+    <div class="gal-head rv"><h2>Despre unitate</h2></div>
+    <div class="specs rv">${PROPERTY.about.map(a=>`<div class="spec"><b>${esc(a.label)}</b>${Array.isArray(a.items)&&a.items.length?`<ul class="spec-list">${a.items.map(it=>`<li>${esc(it)}</li>`).join('')}</ul>`:`<span>${esc(a.value)}</span>`}</div>`).join('')}</div>
+  </div></section>`;
+}
 function rRulesAbout(){
-  const hasRules=has(PROPERTY.rules), hasAbout=has(PROPERTY.about);
-  if(!hasRules&&!hasAbout) return '';
+  if(!has(PROPERTY.rules)) return '';
   return `<section class="sec tight"><div class="wrap">
-    ${hasRules?`<div class="gal-head rv" style="max-width:760px"><h2>Regulile casei</h2>
+    <div class="gal-head rv" style="max-width:760px"><h2>Regulile casei</h2>
       <p class="lead" style="margin-top:14px;color:var(--body)">Pentru ca fiecare sejur să fie confortabil și bine organizat, te rugăm să consulți principalele reguli înainte de sosire.</p></div>
       <div class="rules rv" style="margin-top:18px">
       ${PROPERTY.rules.map(r=>`<div class="rrow"><span class="ic">${icon(r.icon)}</span><span>${esc(r.label)}</span></div>`).join('')}
-      </div>`:''}
-    ${hasAbout?`<div class="gal-head rv" style="margin-top:${hasRules?'70px':'0'}"><h2>Despre unitate</h2></div>
-      <div class="specs rv">${PROPERTY.about.map(a=>`<div class="spec"><b>${esc(a.label)}</b><span>${esc(a.value)}</span></div>`).join('')}</div>`:''}
+      </div>
   </div></section>`;
 }
 
@@ -1483,7 +1490,7 @@ function rServices(){ return rGroupSec('servicii','La fața locului','Servicii',
 function render(){
   setTheme();
   document.getElementById('app').innerHTML = [
-    rNav(), rHero(), rStrip(), rOverview(), rGalleries(), rSpaces(), rAmenities(), rHighlight(),
+    rNav(), rHero(), rAbout(), rOverview(), rStrip(), rGalleries(), rSpaces(), rAmenities(), rHighlight(),
     rBooking(), rAvailability(), rReviews(), rLocation(),
     rActivities(), rServices(), rRulesAbout(), rFaq(), rFooter()
   ].join('');
