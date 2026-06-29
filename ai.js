@@ -5,7 +5,7 @@
 //      (straighten verticals, brighten, boost colour) while keeping content authentic.
 //      Uses OpenAI gpt-image-2 when OPENAI_API_KEY is set (high fidelity + aspect-ratio
 //      preserving size); otherwise Gemini (gemini-2.5-flash-image).
-const TEXT_MODEL = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+const TEXT_MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
 const IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image";
 const BASE = "https://generativelanguage.googleapis.com/v1beta/models/";
 
