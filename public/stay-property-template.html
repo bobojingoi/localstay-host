@@ -337,7 +337,56 @@ footer a:hover{color:#fff}
 .bk-total small{color:var(--muted);font-size:13px}
 .bk-send{width:100%;justify-content:center;margin-top:14px}
 .bk-note{text-align:center;color:var(--muted);font-size:12px;margin-top:9px}
-/* calendar modal */
+
+/* ---- booking form ---- */
+.btn-green{background:#1faa57;color:#fff;border:0}
+.btn-green:hover{background:#188c47}
+.bk-send.flash{background:var(--navy)}
+.bk-row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.bk-field{display:flex;flex-direction:column;gap:6px;margin-bottom:11px;position:relative}
+.bk-field>span{font-size:12.5px;font-weight:600;color:var(--navy)}
+.bk-field input{border:1px solid var(--line);background:#fafbff;border-radius:11px;padding:11px 13px;font-size:14.5px;color:var(--navy);font-family:inherit;width:100%}
+.bk-field input:focus{outline:none;border-color:var(--accent);background:#fff;box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 14%,transparent)}
+.bk-guests-btn{display:flex;align-items:center;gap:9px;width:100%;border:1px solid var(--line);background:#fafbff;border-radius:11px;padding:11px 13px;font-size:14.5px;color:var(--navy);cursor:pointer;font-weight:500;text-align:left}
+.bk-guests-btn svg:first-child{color:var(--accent);flex:none}
+.bk-guests-btn>span{flex:1}
+.bk-caret{color:var(--muted);transition:transform .2s}
+.bk-guests-btn.open .bk-caret{transform:rotate(180deg)}
+.bk-guests-pop{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:20;background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 20px 50px -16px rgba(20,28,52,.4);padding:8px}
+.bk-grow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 8px;border-bottom:1px solid var(--line)}
+.bk-grow:last-child{border-bottom:0}
+.bk-grow-t b{display:block;font-size:14.5px;color:var(--navy);font-weight:700}
+.bk-grow-t small{color:var(--muted);font-size:12px}
+.bk-step{display:flex;align-items:center;gap:4px;flex:none}
+.bk-stepb{width:30px;height:30px;border:1px solid var(--line);background:#fff;border-radius:8px;font-size:17px;line-height:1;color:var(--navy);cursor:pointer;display:grid;place-items:center}
+.bk-stepb:hover{border-color:var(--accent);color:var(--accent)}
+.bk-step span,.bk-gval{min-width:22px;text-align:center;font-weight:700;color:var(--navy);font-size:14.5px}
+.bk-srow{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:7px 0;font-size:14.5px;color:var(--navy)}
+.bk-srow-n{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.bk-srow b{font-weight:700;white-space:nowrap}
+.bk-qty{display:inline-flex;align-items:center;gap:3px}
+.bk-qty .bk-stepb{width:26px;height:26px;font-size:15px}
+.bk-qty span{min-width:18px;text-align:center;font-weight:700;font-size:13.5px}
+.bk-phone{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:8px;border:1.5px solid var(--line);background:#fff;border-radius:13px;padding:11px 14px;font-size:14.5px;font-weight:700;color:var(--navy);cursor:pointer;font-family:var(--font-head)}
+.bk-phone svg{color:#1faa57;flex:none}
+.bk-phone:hover{border-color:#1faa57}
+
+/* selected/total tweaks */
+.bk-selected{border-top:1px solid var(--line);padding-top:14px;min-height:24px;margin-top:6px}
+
+/* mobile bottom summary bar */
+.bk-mbar{display:none}
+@media(max-width:860px){
+  .bk-grid{grid-template-columns:1fr}
+  .bk-summary{position:static}
+  .bk-mbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:90;align-items:center;gap:12px;background:#fff;border-top:1px solid var(--line);box-shadow:0 -8px 24px -12px rgba(20,28,52,.3);padding:10px 16px;padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+  .bk-mbar-info{flex:1;min-width:0}
+  .bk-mbar-info b{display:block;font-family:var(--font-head);color:var(--navy);font-size:15px}
+  .bk-mbar-info small{color:var(--muted);font-size:12.5px}
+  .bk-mbar .btn{flex:none;padding:11px 20px}
+  .sticky-cta{bottom:74px}
+}
+/* calendar modal (legacy, unused) */
 .cal-overlay{position:fixed;inset:0;background:rgba(20,28,52,.55);display:none;align-items:center;justify-content:center;z-index:120;padding:16px;backdrop-filter:blur(2px)}
 .cal-overlay.on{display:flex}
 .cal-modal{background:#fff;border-radius:20px;width:100%;max-width:430px;overflow:hidden;box-shadow:0 30px 80px -20px rgba(0,0,0,.5)}
@@ -956,6 +1005,10 @@ function rBooking(){
   const rooms = entire ? R.filter(r=>!r.isEntire) : R;
   const entW = entR ? entR.weekday : Math.min.apply(null, R.map(r=>r.weekday||Infinity));
   const priceTag = (amt,c)=>`<div class="bk-price"><span>de la</span><b>${esc(String(amt))} ${esc(c||cur)}</b><small>/noapte</small></div>`;
+  const guestRow = (k,title,sub)=>`<div class="bk-grow" data-g="${k}">
+    <div class="bk-grow-t"><b>${title}</b><small>${sub}</small></div>
+    <div class="bk-step"><button type="button" class="bk-stepb" data-step="-1" aria-label="minus">−</button><span class="bk-gval" id="g_${k}">0</span><button type="button" class="bk-stepb" data-step="1" aria-label="plus">+</button></div>
+  </div>`;
   const metaLine = (opt)=>{ const p=[];
     if(opt.capacity) p.push(opt.capacity+(opt.children?('+'+opt.children):'')+' oaspeți');
     if(opt.beds) p.push(opt.beds);
@@ -1005,25 +1058,39 @@ function rBooking(){
         ${entireCard}
         ${rooms.map(o=>card(o)).join('')}
       </div>
-      <aside class="bk-summary rv">
+      <aside class="bk-summary rv" id="bkSummary">
         <h3>Rezervarea ta</h3>
-        <button type="button" class="bk-datebtn" id="bkDates">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-          <span id="bkDatesLbl">Alege datele</span>
-        </button>
-        <div class="bk-selected" id="bkSelected"><small>Nu ai selectat nicio variantă</small></div>
+        <div class="bk-row2">
+          <label class="bk-field"><span>Numele *</span><input id="fNume" type="text" placeholder="Numele" autocomplete="family-name"></label>
+          <label class="bk-field"><span>Prenume *</span><input id="fPrenume" type="text" placeholder="Prenume" autocomplete="given-name"></label>
+        </div>
+        <label class="bk-field"><span>Număr de telefon *</span><input id="fTel" type="tel" placeholder="+40 7xx xxx xxx" autocomplete="tel"></label>
+        <label class="bk-field"><span>Adresa electronică *</span><input id="fEmail" type="email" placeholder="email@exemplu.ro" autocomplete="email"></label>
+        <div class="bk-row2">
+          <label class="bk-field"><span>Check-in *</span><input id="fCi" type="date"></label>
+          <label class="bk-field"><span>Check-out *</span><input id="fCo" type="date"></label>
+        </div>
+        <div class="bk-field bk-guests-field">
+          <span>Număr de oaspeți *</span>
+          <button type="button" class="bk-guests-btn" id="bkGuestsBtn"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.3"/><path d="M2.5 20.5c0-3.3 2.9-5.7 6.5-5.7s6.5 2.4 6.5 5.7M16.5 10.8a3 3 0 0 0 0-5.6M21.5 20.5c0-2.4-1.5-4.4-3.8-5.2"/></svg><span id="bkGuestsLbl">2 adulți</span><svg class="bk-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+          <div class="bk-guests-pop" id="bkGuestsPop" hidden>
+            ${guestRow('adults','Adulți','Cu vârsta de cel puțin 13 ani')}
+            ${guestRow('children','Copii','Cu vârsta între 2 și 12 ani')}
+            ${guestRow('infants','Bebeluși','Sub 2 ani')}
+            ${guestRow('pets','Animale de companie','Animale acceptate')}
+          </div>
+        </div>
+        <div class="bk-selected" id="bkSelected"><small>Nu ai selectat nicio cameră</small></div>
         <div class="bk-total" id="bkTotal"></div>
-        <a class="btn btn-accent bk-send" id="bkSend" href="#">Trimite solicitarea</a>
+        <button type="button" class="btn btn-green bk-send" id="bkSend"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.3L2 22l4.8-1.5A10 10 0 1 0 12 2zm5.3 14.2c-.2.6-1.2 1.1-1.7 1.2-.4 0-1 .1-1.6-.1-.4-.1-.9-.3-1.5-.6-2.7-1.2-4.4-3.9-4.6-4.1-.1-.2-1-1.4-1-2.6s.6-1.8.9-2.1c.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.7 1.8c.1.1.1.3 0 .5l-.3.4-.4.4c-.1.1-.3.3-.1.5.1.3.6 1 1.3 1.6.9.8 1.6 1 1.9 1.2.2.1.4.1.5-.1l.6-.7c.2-.2.3-.2.6-.1l1.7.8c.3.1.4.2.5.3.1.2.1.7-.1 1.3z"/></svg> Trimite solicitarea</button>
+        <button type="button" class="bk-phone" id="bkPhone" hidden></button>
         <p class="bk-note">Nu vei fi taxat la etapa aceasta.</p>
       </aside>
     </div></div>
-    <div class="cal-overlay" id="calOv"><div class="cal-modal">
-      <div class="cal-head"><b>Alege perioada</b><button type="button" class="cal-x" id="calX">&times;</button></div>
-      <div class="cal-nav"><button type="button" id="calPrev" aria-label="Luna anterioară">‹</button><span id="calTitle"></span><button type="button" id="calNext" aria-label="Luna următoare">›</button></div>
-      <div class="cal-grid" id="calGrid"></div>
-      <div class="cal-legend"><span><i class="lg lg-free"></i>Liber</span><span><i class="lg lg-block"></i>Ocupat</span><span><i class="lg lg-sel"></i>Selectat</span></div>
-      <div class="cal-foot"><span id="calInfo"></span><div style="flex:1"></div><button type="button" class="btn btn-out" id="calClear">Șterge</button><button type="button" class="btn btn-accent" id="calOk">Confirmă</button></div>
-    </div></div>
+    <div class="bk-mbar" id="bkMbar" hidden>
+      <div class="bk-mbar-info"><b id="bkMbarTitle">Nicio cameră</b><small id="bkMbarSub">Alege o variantă</small></div>
+      <button type="button" class="btn btn-green" id="bkMbarBtn">Rezervă</button>
+    </div>
     <div class="lb-overlay" id="lbOv"><button type="button" class="lb-x" id="lbX">&times;</button>
       <button type="button" class="lb-nav lb-prev" id="lbPrev" aria-label="Anterioara">‹</button>
       <div class="lb-stage"><img id="lbImg" alt=""><div class="lb-counter" id="lbCount"></div></div>
@@ -1062,7 +1129,7 @@ function initBooking(){
   const slug = (window.STAY_SLUG||new URLSearchParams(location.search).get('slug')||'');
   const byId={}; R.forEach(r=>byId[r.id]=r);
   const entR = R.find(r=>r.isEntire)||null;
-  const st = { entire:false, rooms:new Set(), ci:null, co:null, blocked:{}, month:_som(new Date()) };
+  const st = { entire:false, rooms:new Set(), qty:{}, guests:{adults:2,children:0,infants:0,pets:0}, ci:null, co:null, blocked:{}, month:_som(new Date()) };
   const $ = s=>sec.querySelector(s);
 
   if(slug){ fetch('/api/availability/'+encodeURIComponent(slug)).then(r=>r.ok?r.json():null).then(d=>{ if(d&&d.units) st.blocked=d.units; }).catch(()=>{}); }
@@ -1097,9 +1164,10 @@ function initBooking(){
   sec.querySelectorAll('.bk-sel').forEach(btn=>btn.onclick=()=>{
     const rid=btn.dataset.rid;
     if(rid==='__entire'){ st.entire=!st.entire; if(st.entire) st.rooms.clear(); }
-    else { if(st.rooms.has(rid)) st.rooms.delete(rid); else { st.rooms.add(rid); st.entire=false; } }
+    else { if(st.rooms.has(rid)) st.rooms.delete(rid); else { st.rooms.add(rid); st.entire=false; if(!st.qty[rid]) st.qty[rid]=1; } }
     refreshSel();
   });
+  function qtyOf(id){ return id==='__entire'?1:(st.qty[id]||1); }
   function refreshSel(){
     sec.querySelectorAll('.bk-card').forEach(c=>{
       const rid=c.dataset.rid, on = rid==='__entire'?st.entire:st.rooms.has(rid);
@@ -1108,16 +1176,39 @@ function initBooking(){
     });
     renderSummary();
   }
+  function guestsText(){ const g=st.guests, p=[];
+    p.push(g.adults+(g.adults===1?' adult':' adulți'));
+    if(g.children) p.push(g.children+(g.children===1?' copil':' copii'));
+    if(g.infants) p.push(g.infants+(g.infants===1?' bebeluș':' bebeluși'));
+    if(g.pets) p.push(g.pets+(g.pets===1?' animal':' animale'));
+    return p.join(', ');
+  }
+  function roomsCount(){ return st.entire?1:[...st.rooms].reduce((s,id)=>s+qtyOf(id),0); }
   function renderSummary(){
     const ids=selectedIds();
-    $('#bkDatesLbl').textContent = (st.ci&&st.co)?(_fmtH(st.ci)+' → '+_fmtH(st.co)):'Alege datele';
+    const gl=$('#bkGuestsLbl'); if(gl) gl.textContent=guestsText();
     const sel=$('#bkSelected'), tot=$('#bkTotal');
-    if(!ids.length){ sel.innerHTML='<small>Nu ai selectat nicio variantă</small>'; tot.innerHTML=''; return; }
+    if(!ids.length){ sel.innerHTML='<small>Nu ai selectat nicio cameră</small>'; tot.innerHTML=''; updateMbar(); return; }
     const ds=nights(); let rows='', total=0;
-    ids.forEach(id=>{ const o=optFor(id), p=ds.length?priceOf(id,o,ds):0; total+=p;
-      rows+='<div class="bk-srow"><span>'+esc(o.name)+'</span><b>'+(ds.length?(p+' '+cur):'—')+'</b></div>'; });
+    ids.forEach(id=>{ const o=optFor(id), q=qtyOf(id), p=ds.length?priceOf(id,o,ds)*q:0; total+=p;
+      const stepper = id==='__entire' ? '' :
+        '<div class="bk-qty" data-rid="'+esc(id)+'"><button type="button" class="bk-stepb" data-q="-1">−</button><span>'+q+'</span><button type="button" class="bk-stepb" data-q="1">+</button></div>';
+      rows+='<div class="bk-srow"><div class="bk-srow-n"><span>'+esc(o.name)+'</span>'+stepper+'</div><b>'+(ds.length?(p+' '+cur):'—')+'</b></div>';
+    });
     sel.innerHTML=rows;
-    tot.innerHTML = ds.length? ('<div class="bk-trow"><span>'+ds.length+' nopți</span><b>'+total+' '+cur+'</b></div>') : '<small>Alege datele pentru a vedea totalul</small>';
+    sel.querySelectorAll('.bk-qty').forEach(box=>{ const rid=box.dataset.rid;
+      box.querySelectorAll('.bk-stepb').forEach(b=>b.onclick=()=>{ st.qty[rid]=Math.max(1,(st.qty[rid]||1)+ (+b.dataset.q)); renderSummary(); });
+    });
+    tot.innerHTML = ds.length? ('<div class="bk-trow"><span>'+ds.length+(ds.length===1?' noapte':' nopți')+'</span><b>'+total+' '+cur+'</b></div>') : '<small>Alege datele pentru a vedea totalul</small>';
+    updateMbar(total, ds.length);
+  }
+  function updateMbar(total,nN){
+    const bar=$('#bkMbar'); if(!bar) return;
+    const ids=selectedIds(); if(!ids.length){ bar.hidden=true; return; }
+    bar.hidden=false;
+    const rc=roomsCount();
+    $('#bkMbarTitle').textContent = st.entire ? 'Toată proprietatea' : (rc+(rc===1?' cameră':' camere'));
+    $('#bkMbarSub').textContent = (nN&&total)? (nN+(nN===1?' noapte · ':' nopți · ')+total+' '+cur) : guestsText();
   }
 
   sec.querySelectorAll('.bk-more').forEach(btn=>btn.onclick=()=>{ const d=btn.nextElementSibling; if(d){ const open=!d.hidden; d.hidden=open; btn.classList.toggle('open',!open); } });
@@ -1167,52 +1258,71 @@ function initBooking(){
   $('#roomNext').onclick=()=>{ if(!roomGal.length)return; roomGalI=(roomGalI+1)%roomGal.length; roomShow(); };
   $('#roomSelect').onclick=()=>{ const b=sec.querySelector('.bk-sel[data-rid="'+(window.CSS&&CSS.escape?CSS.escape(curRoomId):curRoomId)+'"]'); if(b) b.click(); closeRoom(); };
   document.addEventListener('keydown',e=>{ if(!roomOv.classList.contains('on'))return; if(e.key==='Escape')closeRoom(); if(e.key==='ArrowLeft')$('#roomPrev').click(); if(e.key==='ArrowRight')$('#roomNext').click(); });
-  const ov=$('#calOv');
-  $('#bkDates').onclick=()=>{ if(!selectedIds().length){ flash('Alege întâi o variantă'); return; } st.month=_som(st.ci?_piso(st.ci):new Date()); ov.classList.add('on'); drawCal(); };
-  $('#calX').onclick=()=>ov.classList.remove('on');
-  ov.onclick=e=>{ if(e.target===ov) ov.classList.remove('on'); };
-  $('#calPrev').onclick=()=>{ st.month.setMonth(st.month.getMonth()-1); drawCal(); };
-  $('#calNext').onclick=()=>{ st.month.setMonth(st.month.getMonth()+1); drawCal(); };
-  $('#calClear').onclick=()=>{ st.ci=null; st.co=null; $('#calInfo').textContent=''; drawCal(); };
-  $('#calOk').onclick=()=>{ ov.classList.remove('on'); renderSummary(); };
-  function drawCal(){
-    const blocked=activeBlocked(), m=st.month, y=m.getFullYear(), mo=m.getMonth();
-    $('#calTitle').textContent = m.toLocaleDateString('ro-RO',{month:'long',year:'numeric'});
-    const startDow=(new Date(y,mo,1).getDay()+6)%7, days=new Date(y,mo+1,0).getDate(), today=_iso(new Date());
-    let html=''; ['Lu','Ma','Mi','Jo','Vi','Sâ','Du'].forEach(x=>html+='<div class="cal-dow">'+x+'</div>');
-    for(let i=0;i<startDow;i++) html+='<div></div>';
-    for(let d=1;d<=days;d++){
-      const ds=_iso(new Date(y,mo,d)), past=ds<today, blk=blocked.has(ds);
-      const inR=st.ci&&st.co&&ds>st.ci&&ds<st.co, isCi=ds===st.ci, isCo=ds===st.co;
-      let cls='cal-day'; if(past||blk) cls+=' off'; if(blk) cls+=' blocked'; if(isCi||isCo) cls+=' sel'; if(inR) cls+=' range';
-      html+='<button type="button" class="'+cls+'" data-d="'+ds+'"'+((past||blk)?' disabled':'')+'>'+d+'</button>';
-    }
-    const g=$('#calGrid'); g.innerHTML=html;
-    g.querySelectorAll('.cal-day:not(.off)').forEach(b=>b.onclick=()=>pick(b.dataset.d));
+  /* ---- dates (native inputs) ---- */
+  const fCi=$('#fCi'), fCo=$('#fCo');
+  const todayISO=_iso(new Date());
+  if(fCi){ fCi.min=todayISO; fCi.onchange=()=>{ st.ci=fCi.value||null; if(st.ci){ fCo.min=st.ci; if(st.co&&st.co<=st.ci) st.co=null,fCo.value=''; } renderSummary(); }; }
+  if(fCo){ fCo.min=todayISO; fCo.onchange=()=>{ st.co=fCo.value||null; renderSummary(); }; }
+
+  /* ---- guests popover ---- */
+  const gPop=$('#bkGuestsPop'), gBtn=$('#bkGuestsBtn');
+  function syncGuests(){ ['adults','children','infants','pets'].forEach(k=>{ const el=$('#g_'+k); if(el) el.textContent=st.guests[k]; }); renderSummary(); }
+  if(gBtn){ gBtn.onclick=(e)=>{ e.stopPropagation(); gPop.hidden=!gPop.hidden; gBtn.classList.toggle('open',!gPop.hidden); }; }
+  if(gPop){
+    gPop.querySelectorAll('.bk-grow').forEach(row=>{ const k=row.dataset.g;
+      row.querySelectorAll('.bk-stepb').forEach(b=>b.onclick=(e)=>{ e.stopPropagation();
+        const min = k==='adults'?1:0; st.guests[k]=Math.max(min,(st.guests[k]||0)+(+b.dataset.step)); syncGuests(); });
+    });
+    gPop.onclick=e=>e.stopPropagation();
+    document.addEventListener('click',()=>{ if(!gPop.hidden){ gPop.hidden=true; gBtn.classList.remove('open'); } });
   }
-  function pick(ds){
-    if(!st.ci || (st.ci&&st.co) || ds<=st.ci){ st.ci=ds; st.co=null; $('#calInfo').textContent=''; }
-    else {
-      const blocked=activeBlocked(); let ok=true;
-      for(let d=_piso(st.ci); _iso(d)<ds; d.setDate(d.getDate()+1)){ const k=_iso(d); if(k!==st.ci && blocked.has(k)){ ok=false; break; } }
-      if(!ok){ $('#calInfo').textContent='Perioada conține zile ocupate'; st.ci=ds; st.co=null; }
-      else { st.co=ds; const n=nights().length; const minN=Math.max.apply(null, selectedIds().map(id=>optFor(id).minNights||1));
-        $('#calInfo').textContent = n<minN ? ('Minim '+minN+' nopți') : (n+' nopți selectate'); }
-    }
-    drawCal();
+
+  /* ---- masked host phone (reveal on click = trackable) ---- */
+  const hostPhone = (THEME.booking&&(THEME.booking.phone||THEME.booking.whatsapp))||'';
+  const phoneBtn=$('#bkPhone');
+  if(phoneBtn && hostPhone){
+    const digits=hostPhone.replace(/[^0-9+]/g,'');
+    const masked = digits.length>4 ? (digits.slice(0,digits.length-6).replace(/.$/, m=>m) + '••••••').slice(0, digits.length) : digits;
+    const maskedDisp = digits.length>6 ? digits.slice(0,4)+' ••• •••' : '••• •••';
+    let revealed=false;
+    const setLabel=(txt)=>{ phoneBtn.innerHTML='<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2 4.1 2 2 0 0 1 4 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.4 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7A2 2 0 0 1 22 16.9z"/></svg> <span>'+txt+'</span>'; };
+    phoneBtn.hidden=false; setLabel(maskedDisp);
+    phoneBtn.onclick=()=>{ if(!revealed){ revealed=true; setLabel(digits); /* tracking hook: phone reveal */ try{window.dataLayer&&window.dataLayer.push({event:'phone_reveal'});}catch(e){} }
+      else { window.location.href='tel:'+digits; } };
   }
-  $('#bkSend').onclick=e=>{
-    e.preventDefault();
-    const ids=selectedIds(); if(!ids.length){ flash('Alege o variantă'); return; }
-    const names=ids.map(id=>optFor(id).name).join(', ');
-    const dtx=(st.ci&&st.co)?(_fmtH(st.ci)+' → '+_fmtH(st.co)+' ('+nights().length+' nopți)'):'(date neselectate)';
-    const msg='Bună ziua! Aș dori o rezervare la '+PROPERTY.name+'.\nVariantă: '+names+'\nPerioadă: '+dtx;
+
+  /* ---- submit: save to server + open WhatsApp with a templated message ---- */
+  function roomsPayload(){ return selectedIds().map(id=>({ id, name:optFor(id).name, qty:qtyOf(id) })); }
+  function roomsPhrase(){
+    if(st.entire) return entR ? 'unitatea integral' : 'toată proprietatea';
+    return selectedIds().map(id=>qtyOf(id)+'× '+optFor(id).name).join(', ');
+  }
+  $('#bkSend').onclick=async ()=>{
+    const ids=selectedIds();
+    const nume=($('#fNume').value||'').trim(), prenume=($('#fPrenume').value||'').trim();
+    const tel=($('#fTel').value||'').trim(), email=($('#fEmail').value||'').trim();
+    if(!ids.length){ flash('Alege o cameră / varianta integrală'); return; }
+    if(!nume || !prenume){ flash('Completează numele și prenumele'); return; }
+    if(!tel){ flash('Completează numărul de telefon'); return; }
+    if(!st.ci || !st.co){ flash('Alege datele de check-in și check-out'); return; }
+    const who=(prenume+' '+nume).trim();
+    const period='în perioada '+_fmtH(st.ci)+' – '+_fmtH(st.co)+' ('+nights().length+(nights().length===1?' noapte':' nopți')+')';
+    let msg='Bună ziua, mă numesc '+who+' și aș dori să rezerv '+roomsPhrase()+' '+period+' pentru '+guestsText()+'.';
+    if(email) msg+=' Email: '+email+'.';
+    msg+=' Telefon: '+tel+'.';
+    // 1) save the request to our backend (visible in admin)
+    if(slug){ try{ await fetch('/api/booking-request',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ slug, name:who, phone:tel, email, checkin:st.ci, checkout:st.co, guests:st.guests, rooms:roomsPayload(), message:msg })}); }catch(e){} }
+    // 2) open WhatsApp to the host with the templated message
     const B=THEME.booking||{};
-    if(B.url) window.open(B.url,'_blank');
-    else if(B.whatsapp) window.open('https://wa.me/'+B.whatsapp+'?text='+encodeURIComponent(msg),'_blank');
+    if(B.whatsapp) window.open('https://wa.me/'+B.whatsapp+'?text='+encodeURIComponent(msg),'_blank');
     else if(B.phone) window.location.href='tel:'+B.phone;
+    flash('Solicitarea a fost trimisă ✓');
   };
-  function flash(t){ const i=$('#bkDatesLbl'); i.textContent=t; setTimeout(()=>renderSummary(),1400); }
+  $('#bkMbarBtn').onclick=()=>{ const s=document.getElementById('bkSummary'); if(s) s.scrollIntoView({behavior:'smooth',block:'center'}); const n=$('#fNume'); if(n) setTimeout(()=>n.focus(),350); };
+
+  function flash(t){ const b=$('#bkSend'); if(!b) return; const o=b.dataset._o||b.innerHTML; b.dataset._o=o; b.textContent=t; b.classList.add('flash'); setTimeout(()=>{ b.innerHTML=o; b.classList.remove('flash'); },1800); }
+  syncGuests();
   refreshSel();
 }
 
