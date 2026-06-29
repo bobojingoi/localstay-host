@@ -13,12 +13,17 @@ app.use(express.json({ limit: "25mb" }));
 
 // Safety net: never let a request hang forever (e.g. if the DB is briefly down).
 // If a handler hasn't responded in time, return 503 instead of spinning.
+// AI image editing and uploads are legitimately slow, so they get longer budgets.
 app.use((req, res, next) => {
+  const p = req.path || "";
+  let ms = 12000;
+  if (p.indexOf("/api/ai-enhance") === 0) ms = 250000;   // gpt-image-2 / Gemini image edit is slow
+  else if (p.indexOf("/api/upload") === 0) ms = 60000;   // image processing + R2 upload
   const t = setTimeout(() => {
     if (!res.headersSent) {
       try { res.status(503).json({ error: "Serviciul este momentan ocupat. Reîncearcă în câteva momente." }); } catch (e) {}
     }
-  }, 12000);
+  }, ms);
   res.on("finish", () => clearTimeout(t));
   res.on("close", () => clearTimeout(t));
   next();
