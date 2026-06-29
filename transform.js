@@ -227,6 +227,13 @@
         return {id:r.id,name:r.name,sub:r.sub||"",weekday:+r.weekday||0,weekend:+r.weekend||+r.weekday||0,currency:r.currency||"RON",minNights:+r.minNights||1,isEntire:isEnt,
           capacity:d.adultsRoomCapacity||null,children:+d.childrenRoomCapacity||0,surface:d.surface||"",bathrooms:d.bathroomsNumber||null,
           bedrooms:((d.spaces||[]).length||d.spacesNumber||null),beds:bedsTxt,view:d.view||[],description:d.roomDescription||"",
+          spaces:(d.spaces||[]).map(sp=>({name:(sp.spaceType&&sp.spaceType.name)||"",beds:((sp.spaceType&&sp.spaceType.beds)||[]).map(b=>({type:b.type||"pat",count:+b.count||1}))})).filter(s=>s.name||s.beds.length),
+          facilityGroups:[
+            {label:"Principale",items:(d.keyFacilities||[])},
+            {label:"În cameră",items:(d.unitFacilities||[])},
+            {label:"Baie",items:(d.bathroomFacilities||[])},
+            {label:"Bucătărie",items:(d.kitchenFacilities||[])}
+          ].filter(g=>g.items&&g.items.length),
           facilities:[].concat(d.keyFacilities||[],d.unitFacilities||[],d.bathroomFacilities||[],d.kitchenFacilities||[]),
           gallery:(_gv[r.id]||[]).map(p=>({url:p.url,thumb:p.thumb||p.url,alt:p.alt||""})).filter(p=>p.url)};
       }); })(),
