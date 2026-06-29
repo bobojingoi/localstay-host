@@ -5,6 +5,17 @@
 
 create extension if not exists pgcrypto;
 
+-- Login accounts. role = 'admin' (platform owner) or 'host' (hotelier).
+create table if not exists users (
+  id            uuid primary key default gen_random_uuid(),
+  email         text unique not null,
+  password_hash text not null,
+  role          text not null default 'host',
+  name          text,
+  created_at    timestamptz default now(),
+  updated_at    timestamptz default now()
+);
+
 create table if not exists properties (
   id          uuid primary key default gen_random_uuid(),
   slug        text unique not null,
@@ -13,6 +24,11 @@ create table if not exists properties (
   created_at  timestamptz default now(),
   updated_at  timestamptz default now()
 );
+
+-- Which host owns each property (null = unassigned, admin-only). Added via ALTER so
+-- it applies to existing databases too.
+alter table properties add column if not exists owner_id uuid references users(id) on delete set null;
+create index if not exists properties_owner_idx on properties(owner_id);
 
 -- Reservation requests submitted from the public site's booking form.
 create table if not exists booking_requests (
