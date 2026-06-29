@@ -44,6 +44,7 @@ h2{font-size:clamp(23px,2.6vw,32px)}
 header.nav{position:absolute;top:0;left:0;right:0;z-index:60}
 .nav-bar{display:flex;align-items:center;justify-content:space-between;gap:24px;max-width:1180px;margin:0 auto;padding:22px 28px}
 .brand{display:flex;align-items:center;gap:11px;color:#fff}
+.brand b,.brand small{display:none}
 .brand .mk{width:38px;height:38px}
 .brand b{font-family:var(--font-head);font-weight:800;font-size:19px;letter-spacing:.02em;line-height:1;color:#fff}
 .brand small{display:block;font-size:10px;letter-spacing:.3em;text-transform:uppercase;color:rgba(255,255,255,.7);margin-top:4px}
@@ -277,7 +278,6 @@ footer a:hover{color:#fff}
   .wrap{padding:0 20px}.sec{padding:44px 0}.sec.tight{padding-top:44px}
   .hero>.wrap{padding:0 14px}
   .hero-img{height:clamp(420px,64vh,520px);min-height:0;border-radius:20px;margin-top:14px}
-  .brand b,.brand small{display:none}
   .nav-right .btn-ghost{display:none}
   .hero-contact{display:inline-flex}
   .hero-cta .btn{padding:11px 20px;font-size:14px}
@@ -894,7 +894,7 @@ function rHero(){
       ${pr?`<div class="price">de la <b>${esc(pr.amount)} ${esc(pr.currency)}</b> / ${esc(pr.unit)}</div>`:''}
       <div class="hero-cta">
         <a class="btn btn-accent" href="#rezervare">Rezervă acum</a>
-        <a class="btn btn-ghost hero-contact" href="tel:${esc(THEME.booking.phone)}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2 4.1 2 2 0 0 1 4 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.4 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7A2 2 0 0 1 22 16.9z"/></svg> Contactează-ne</a>
+        <a class="btn btn-ghost hero-contact" href="tel:${esc(THEME.booking.phone)}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2 4.1 2 2 0 0 1 4 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.4 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7A2 2 0 0 1 22 16.9z"/></svg> Contact</a>
       </div></div></div></div></section>`;
 }
 
