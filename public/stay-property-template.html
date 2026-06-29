@@ -27,7 +27,8 @@ img{display:block;max-width:100%}
 .wrap{max-width:1180px;margin:0 auto;padding:0 28px}
 .eyebrow{font-family:var(--font-head);font-size:14px;font-weight:700;color:var(--accent);margin-bottom:14px}
 .lead{font-size:19px;line-height:1.65}
-.h2{font-size:clamp(28px,4.2vw,48px);letter-spacing:-.025em}
+h2{font-size:clamp(27px,3.4vw,40px)}
+.h2{letter-spacing:-.025em}
 
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:9px;font-family:var(--font-head);font-weight:700;font-size:16px;border-radius:100px;padding:15px 30px;cursor:pointer;border:1.5px solid transparent;transition:.22s;white-space:nowrap}
 .btn-accent{background:var(--accent);color:#fff}
@@ -56,7 +57,7 @@ header.nav.solid{position:fixed;background:rgba(27,39,66,.96);backdrop-filter:bl
 
 /* HERO */
 .hero{position:relative;padding:0}
-.hero-img{position:relative;height:100vh;height:100dvh;min-height:560px;max-height:none;border-radius:0 0 34px 34px;overflow:hidden;background-position:center;background-size:cover;background-color:var(--navy)}
+.hero-img{position:relative;height:clamp(440px,62vh,600px);min-height:0;max-height:none;border-radius:0 0 34px 34px;overflow:hidden;background-position:center;background-size:cover;background-color:var(--navy)}
 .hero-img.no-img{background:radial-gradient(120% 120% at 80% 10%,#2c3c6b 0%,#1c2746 45%,#161f3a 100%)}
 .hero-img::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(20,28,52,.45),rgba(20,28,52,.12) 35%,rgba(18,25,44,.85))}
 .hero-content{position:absolute;left:0;right:0;bottom:0;padding:44px clamp(28px,5vw,60px);z-index:2}
@@ -69,8 +70,8 @@ header.nav.solid{position:fixed;background:rgba(27,39,66,.96);backdrop-filter:bl
 .hero-cta{display:flex;gap:13px;flex-wrap:wrap}
 
 /* SECTION */
-.sec{padding:90px 0}
-.sec.tight{padding-top:24px}
+.sec{padding:60px 0}
+.sec.tight{padding-top:60px}
 
 /* PHOTO STRIP */
 .strip{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(280px,1fr);gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;padding:4px 28px;margin:0 auto;max-width:1180px;scrollbar-width:none}
@@ -80,7 +81,7 @@ header.nav.solid{position:fixed;background:rgba(27,39,66,.96);backdrop-filter:bl
 /* SPLIT overview */
 .split{display:grid;grid-template-columns:1fr 1fr;gap:60px;align-items:center}
 .split .media{border-radius:var(--radius);overflow:hidden;aspect-ratio:1/1;background:var(--navy) center/cover}
-.split h2{font-size:clamp(28px,3.8vw,44px)}
+.split h2{}
 .split .desc{margin:20px 0 6px;font-size:18px}
 .frows{margin-top:16px}
 .frow{display:flex;align-items:center;gap:16px;padding:18px 0;border-bottom:1px solid var(--line)}
@@ -94,7 +95,7 @@ header.nav.solid{position:fixed;background:rgba(27,39,66,.96);backdrop-filter:bl
 .fcard{background:var(--soft);border-radius:34px;padding:26px;display:grid;grid-template-columns:1.05fr .95fr;gap:42px;align-items:center}
 .fcard .media{border-radius:24px;overflow:hidden;aspect-ratio:4/3;background:#cdd2ee center/cover;min-height:300px}
 .fcard .body{padding:18px 28px 18px 8px}
-.fcard h2{font-size:clamp(26px,3.4vw,40px)}
+.fcard h2{}
 .fcard p{margin:18px 0;font-size:17px}
 .fcard .frow{border-color:#dfe2f4}
 
@@ -110,7 +111,7 @@ header.nav.solid{position:fixed;background:rgba(27,39,66,.96);backdrop-filter:bl
 
 /* GALLERY carousel */
 .gal-head{margin-bottom:26px}
-.gal-head h2{font-size:clamp(24px,3.2vw,38px)}
+.gal-head h2{}
 .carousel{position:relative;border-radius:var(--radius);overflow:hidden;background:#e8eaf2}
 .car-track{display:flex;transition:transform .5s cubic-bezier(.4,0,.2,1)}
 .car-slide{min-width:100%;aspect-ratio:16/9;background:var(--navy) center/cover;position:relative}
@@ -266,7 +267,7 @@ footer a:hover{color:#fff}
   body{padding-bottom:72px}
 }
 @media(max-width:620px){
-  .wrap{padding:0 20px}.sec{padding:60px 0}
+  .wrap{padding:0 20px}.sec{padding:44px 0}.sec.tight{padding-top:44px}
   .hero-img{height:100svh;min-height:480px}
   .rules,.rev-grid,.f-grid,.specs{grid-template-columns:1fr}
   .am-cols{columns:1}
@@ -1005,7 +1006,7 @@ function rAmenities(){
   const ck='<span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12l5 5L20 6"/></svg></span>';
   const showLegend = a.legend!==false && cats.some(c=>c.items.some(i=>i.extra||i.offsite));
   return `<section class="sec tight" id="facilitati"><div class="wrap">
-    <div class="am-head rv"><h2 class="h2" style="font-size:clamp(26px,3.6vw,42px)">Facilități</h2>
+    <div class="am-head rv"><h2 class="h2">Facilități</h2>
     ${showLegend?`<div class="am-legend">
       <span class="lg"><span class="am-tag-x" style="margin:0">$</span> Cost suplimentar</span>
       <span class="lg"><span class="am-tag-l" style="margin:0">loc</span> În afara locației</span>
@@ -1065,7 +1066,7 @@ function rFaq(){
 function rLocation(){
   const L=PROPERTY.location; if(!L||L.lat==null) return '';
   return `<section class="sec tight" id="contact"><div class="wrap"><div class="loc-grid">
-    <div class="rv"><span class="eyebrow">Locație</span><h2 class="h2" style="font-size:clamp(26px,3.6vw,42px)">Unde ne aflăm</h2>
+    <div class="rv"><span class="eyebrow">Locație</span><h2 class="h2">Unde ne aflăm</h2>
       ${L.address?`<p class="lead" style="margin-top:16px;color:var(--body)">${esc(PROPERTY.name)} este situat în ${esc([L.area,L.note].filter(Boolean).join(', '))}.</p>
       <p style="margin-top:12px;font-weight:600;color:var(--navy)">${esc(L.address)}</p>`:''}
       </div>
