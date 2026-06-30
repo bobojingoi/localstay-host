@@ -225,7 +225,9 @@ body:not(.is-host) .host-only{display:none}
     <div id="hmCreateFields">
       <label>Nume</label><input id="hmName" type="text" placeholder="Ex: Ioana Popescu">
       <label>Email <span class="req">*</span></label><input id="hmEmail" type="email" autocomplete="off">
+      <div id="hmPassField">
       <label>Parolă inițială <span class="req">*</span> <small>(min. 8 caractere)</small></label><input id="hmPass" type="text" autocomplete="off" placeholder="Hotelierul o poate schimba după login">
+      </div>
     </div>
     <label style="margin-top:16px">Proprietăți alocate</label>
     <div class="prop-picker" id="hmProps"></div>
@@ -374,7 +376,7 @@ body.is-host .del{display:none}
   function openHostCreate(){
     editingHost=null;
     $("#hmTitle").textContent="Cont nou de hotelier";
-    show($("#hmCreateFields"),true); show($("#hmEditExtra"),false); show($("#hmDelete"),false);
+    show($("#hmCreateFields"),true); show($("#hmPassField"),true); show($("#hmEditExtra"),false); show($("#hmDelete"),false);
     $("#hmName").value="";$("#hmEmail").value="";$("#hmPass").value="";$("#hmErr").style.display="none";
     $("#hmSave").textContent="Creează cont";
     propPicker([]);
@@ -383,9 +385,10 @@ body.is-host .del{display:none}
   function openHostEdit(h){
     editingHost=h;
     $("#hmTitle").textContent="Hotelier · "+(h.name||h.email);
-    show($("#hmCreateFields"),false); show($("#hmEditExtra"),true); show($("#hmDelete"),true);
+    show($("#hmCreateFields"),true); show($("#hmPassField"),false); show($("#hmEditExtra"),true); show($("#hmDelete"),true);
+    $("#hmName").value=h.name||"";$("#hmEmail").value=h.email||"";
     $("#hmResetPass").value="";$("#hmErr").style.display="none";
-    $("#hmSave").textContent="Salvează proprietățile";
+    $("#hmSave").textContent="Salvează";
     propPicker((h.slugs||[]).filter(Boolean));
     openModal("hostModal");
   }
@@ -400,10 +403,15 @@ body.is-host .del{display:none}
       if(!r.ok){ err.textContent=d.error||"Eroare."; err.style.display="block"; return; }
       closeModal($("#hostModal")); note("Cont creat"); renderHosts();
     } else {
+      var newEmail=$("#hmEmail").value.trim(), newName=$("#hmName").value.trim();
+      if(!newEmail){ err.textContent="Email obligatoriu."; err.style.display="block"; return; }
+      var ru=await api("/api/admin/hosts/"+editingHost.id,{method:"POST",body:JSON.stringify({email:newEmail,name:newName})});
+      var du=await ru.json().catch(function(){return{};});
+      if(!ru.ok){ err.textContent=du.error||"Eroare la actualizarea contului."; err.style.display="block"; return; }
       var r2=await api("/api/admin/hosts/"+editingHost.id+"/properties",{method:"POST",body:JSON.stringify({slugs:pickedProps()})});
       var d2=await r2.json().catch(function(){return{};});
       if(!r2.ok){ err.textContent=d2.error||"Eroare."; err.style.display="block"; return; }
-      closeModal($("#hostModal")); note("Proprietăți actualizate"); renderHosts(); loadProps();
+      closeModal($("#hostModal")); note("Cont actualizat"); renderHosts(); loadProps();
     }
   };
   $("#hmResetBtn").onclick=async function(){
@@ -422,6 +430,8 @@ body.is-host .del{display:none}
   };
 
   /* ---- boot ---- */
+  // Allow the tab controller / import flow to refresh the Hotelieri list on demand.
+  window.__refreshHosts = async function(){ try{ await loadProps(); await renderHosts(); }catch(e){} };
   (async function boot(){
     var r;
     try{ r=await api("/api/auth/me"); }catch(e){ location.href="/login"; return; }
@@ -608,7 +618,7 @@ async function doImport(master){
     // fetch the generated pieces back for the summary
     const site=await fetch("/api/site/"+slug).then(r=>r.json());
     const admin=await fetch("/api/host/"+slug+"/state").then(r=>r.json());
-    showResult(slug,admin,site,host,url); await renderList(); toast("Proprietate generată");
+    showResult(slug,admin,site,host,url); await renderList(); if(window.__refreshHosts) window.__refreshHosts(); toast("Proprietate generată");
   }catch(e){ $("#err").textContent="Eroare la procesare: "+e.message; $("#err").style.display="block"; }
 }
 function countFac(P){let n=0;["foodAndDrinks","generalFacilities","wellness","exterior","cleaningServices","businessFacilities","bathroom","kitchen","bedroom","comfort","commonAreas","livingArea","mediaTechnology","roomFacilities","shops"].forEach(c=>n+=(P.allFacilities[c]||[]).length);["skiing","entertainmentAndFamilyServices","sportsAndRecreation"].forEach(c=>n+=(P.activities[c]||[]).length);return n;}
@@ -728,6 +738,7 @@ const _sr=document.getElementById("statReload"); if(_sr) _sr.onclick=renderStats
     navs.forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-nav')===name); });
     panes.forEach(function(p){ p.classList.toggle('active', p.getAttribute('data-pane')===name); });
     if(name==='stats'  && typeof renderStats==='function') renderStats();
+    if(name==='hosts'  && window.__refreshHosts) window.__refreshHosts();
     if(name==='dashboard') renderDash();
     try{ window.scrollTo({top:0,behavior:'smooth'}); }catch(e){}
   }
