@@ -37,6 +37,12 @@ alter table properties add column if not exists approval jsonb;
 -- Offers / deals the hotelier creates (interval discounts, last-minute, perks, etc.).
 -- Array of {id, type, title, active, ...type-specific fields...}
 alter table properties add column if not exists deals jsonb default '[]'::jsonb;
+-- The hotelier must agree that offers are published on the LocalStay platform.
+alter table properties add column if not exists deals_consent boolean default false;
+
+-- Password recovery: a short-lived reset token per user.
+alter table users add column if not exists reset_token text;
+alter table users add column if not exists reset_expires timestamptz;
 
 -- Reservation requests submitted from the public site's booking form.
 create table if not exists booking_requests (
