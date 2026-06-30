@@ -983,13 +983,11 @@ const _sr=document.getElementById("statReload"); if(_sr) _sr.onclick=renderStats
     var o=null; try{ o=await fetch('/api/host/overview?days='+days).then(function(r){return r.ok?r.json():null;}); }catch(e){}
     if(!o){ if(kb) kb.innerHTML='<div class="dempty">Nu am putut încărca datele.</div>'; if(hostBox) hostBox.innerHTML=''; return; }
 
-    // KPI tiles
+    // KPI tiles — master admin: platform metrics only (occupancy/revenue are per-hotelier, shown in each unit's console)
     if(kb) kb.innerHTML =
-      ((o.properties>1) ? tile(ICONS.bed, o.properties, 'proprietăți') : '')
-      + tile(ICONS.gauge, o.occupancy+'%', 'grad de ocupare · următoarele '+days+' zile')
-      + tile(ICONS.money, money(o.estRevenue,o.currency), 'venit estimat · următoarele '+days+' zile')
-      + tile(ICONS.inbox, o.requests, 'cereri de rezervare · ultimele '+days+' zile')
+      tile(ICONS.bed, o.properties, 'proprietăți')
       + tile(ICONS.eye, o.views, 'vizualizări · ultimele '+days+' zile')
+      + tile(ICONS.inbox, o.requests, 'cereri de rezervare · ultimele '+days+' zile')
       + tile(ICONS.phone, o.reveals, 'dezvăluiri telefon · ultimele '+days+' zile');
 
     if(!hostBox) return;
@@ -1017,8 +1015,8 @@ const _sr=document.getElementById("statReload"); if(_sr) _sr.onclick=renderStats
 
     // per-property table
     var pp=(o.perProperty||[]);
-    var ppHtml = pp.length ? '<table class="dtable"><thead><tr><th>Proprietate</th><th>Ocupare</th><th>Venit estimat</th></tr></thead><tbody>'+
-      pp.map(function(p){ return '<tr><td><b>'+esc(p.name)+'</b></td><td><span class="occbar"><span style="width:'+p.occupancy+'%"></span></span>'+p.occupancy+'%</td><td>'+money(p.estRevenue,p.currency)+'</td></tr>'; }).join('')+
+    var ppHtml = pp.length ? '<table class="dtable"><thead><tr><th>Proprietate</th><th>Vizualizări</th><th>Cereri</th></tr></thead><tbody>'+
+      pp.map(function(p){ return '<tr><td><b>'+esc(p.name)+'</b></td><td>'+(p.views||0)+'</td><td>'+(p.requests||0)+'</td></tr>'; }).join('')+
       '</tbody></table>' : '<div class="dempty">Nicio proprietate.</div>';
 
     hostBox.innerHTML =
@@ -1035,13 +1033,13 @@ const _sr=document.getElementById("statReload"); if(_sr) _sr.onclick=renderStats
         '<div class="dcard"><h3>Check-out-uri ce urmează</h3><p class="sub">următoarele '+days+' zile</p><div class="stays">'+depHtml+'</div></div>'+
       '</div>'+
       (function(){ var ss=o.sources||[]; if(!ss.length) return '<div class="dcard" style="margin-bottom:16px"><h3>Surse de trafic</h3><div class="dempty">Niciun trafic \u00eenc\u0103.</div></div>'; var mx=Math.max.apply(null,ss.map(function(s){return s.count;}).concat([1])); return '<div class="dcard" style="margin-bottom:16px"><h3>Surse de trafic</h3><p class="sub">de unde au venit \u00b7 ultimele '+days+' zile</p><div class="funnel">'+ss.slice(0,8).map(function(s){ return '<div class="frow"><span class="fl">'+esc(s.source)+'</span><div class="fbar"><span style="width:'+Math.round(s.count/mx*100)+'%"></span></div><span class="fv">'+s.count+'</span></div>'; }).join('')+'</div></div>'; })()+
-      (pp.length>1 ? '<div class="dcard" style="margin-bottom:16px"><h3>Pe proprietate</h3><p class="sub">ocupare în următoarele '+days+' zile</p>'+ppHtml+'</div>' : '')+
+      (pp.length>1 ? '<div class="dcard" style="margin-bottom:16px"><h3>Pe proprietate</h3><p class="sub">trafic și cereri · ultimele '+days+' zile</p>'+ppHtml+'</div>' : '')+
       ('<div class="dcard" style="margin-bottom:16px"><h3>Date de contact (lead-uri)</h3><p class="sub">utilizatori care au lăsat datele · cele mai recente</p>'+
         ((o.leads&&o.leads.length) ? '<table class="dtable"><thead><tr><th>Nume</th><th>Contact</th><th>Proprietate</th><th>Perioadă</th><th>Status</th></tr></thead><tbody>'+
           o.leads.slice(0,12).map(function(l){ var per=(l.checkin||'')+(l.checkout?(' \u2192 '+l.checkout):''); var contact=[l.phone,l.email].filter(Boolean).join(' \u00b7 ')||'\u2014'; return '<tr><td><b>'+esc(l.name)+'</b></td><td>'+esc(contact)+'</td><td>'+esc(l.property)+'</td><td>'+esc(per||'\u2014')+'</td><td>'+esc(l.status)+'</td></tr>'; }).join('')+
           '</tbody></table>' : '<div class="dempty">Niciun lead \u00eenc\u0103.</div>')+
       '</div>')+
-      '<div class="estnote">Gradul de ocupare și venitul estimat se calculează din calendarul de disponibilitate (blocări manuale + sincronizări Booking/Airbnb) și din prețurile setate. Venitul este o <b>estimare</b> a nopților ocupate × tarif — platforma nu procesează plăți. Traficul se înregistrează din momentul activării.</div>';
+      '<div class="estnote">Vedere de platformă: număr de proprietăți, trafic, cereri de rezervare și lead-uri. Gradul de ocupare și venitul estimat se văd în consola fiecărui hotelier. Traficul se înregistrează din momentul activării.</div>';
   }
 
   // period selector
