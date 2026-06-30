@@ -2152,7 +2152,7 @@ function galleryBlock(o){
   arr.forEach((p,idx)=>{
     const chk=h("input",{type:"checkbox",class:"gal-chk"}); chk.checked=galSel.has(p);
     chk.onchange=()=>{ if(chk.checked)galSel.add(p); else galSel.delete(p); renderGalerie(); };
-    const img=h("img",{src:o.getThumb(p),alt:o.getAlt(p),loading:"lazy",draggable:"true",title:"Trage în editor"});
+    const img=h("img",{src:o.getThumb(p),alt:o.getAlt(p),loading:"lazy",draggable:"true",title:"Trage în optimizator AI"});
     const cell=h("div",{class:"gal-cell"+(galSel.has(p)?" on":"")},
       img,
       (o.heroFirst&&idx===0)?h("span",{class:"gal-hero-badge"},"HERO"):null,
@@ -2163,7 +2163,12 @@ function galleryBlock(o){
     img.addEventListener("dragend",()=>{ cell.classList.remove("dragging"); if(galDragState&&galDragState.kind==="photo") galDragState=null; });
     grid.appendChild(cell);
   });
-  const bar=h("div",{class:"gal-bar"}, upBtn, fileInput, selAll, delBtn);
+  const optBtn=selCount?h("button",{class:"btn btn-out sm",type:"button",onclick:()=>{
+    const urls=arr.filter(p=>galSel.has(p)).map(p=>o.getUrl(p)).filter(Boolean);
+    if(window.__pzAdd) window.__pzAdd(urls);
+    arr.filter(p=>galSel.has(p)).forEach(p=>galSel.delete(p)); renderGalerie();
+  }},"→ Optimizator AI ("+selCount+")"):null;
+  const bar=h("div",{class:"gal-bar"}, upBtn, fileInput, selAll, optBtn, delBtn);
   const head=h("div",{class:"gal-head"},
     h("div",{},h("b",{},o.title), o.tag?h("span",{class:"gal-tag"},o.tag):null),
     h("span",{class:"gal-count"}, arr.length+(arr.length===1?" poză":" poze")));
@@ -2401,6 +2406,12 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
         var r=new FileReader(); r.onload=function(){ PZ.push({dataUrl:r.result,name:f.name,status:"wait"}); render(); }; r.readAsDataURL(f);
       });
     }
+    function addUrls(urls){
+      (urls||[]).filter(Boolean).forEach(function(u){ PZ.push({dataUrl:u, name:(String(u).split("/").pop()||"poză"), status:"wait", fromGallery:true}); });
+      render();
+    }
+    // let the galleries push selected photos into the optimizer
+    window.__pzAdd=function(urls){ addUrls(urls); var msg=(urls&&urls.length||0)+" poze trimise în optimizator"; if(window.note) note(msg); };
     async function run(){
       if(running||!PZ.length) return; running=true; render();
       var enhance=byId("pzEnhance").checked;
@@ -2412,7 +2423,8 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
         p.status="run"; render();
         txt.textContent="Se procesează "+(done+1)+"/"+todo+"…";
         try{
-          var res=await fetch("/api/ai-optimize",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({dataUrl:p.dataUrl,enhance:enhance})});
+          var payload = /^https?:/i.test(p.dataUrl) ? {url:p.dataUrl, enhance:enhance} : {dataUrl:p.dataUrl, enhance:enhance};
+          var res=await fetch("/api/ai-optimize",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify(payload)});
           var d=await res.json().catch(function(){ return {}; });
           if(!res.ok){ p.status="err"; p.err=d.error||("HTTP "+res.status); }
           else {
@@ -2433,7 +2445,11 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
       drop.onclick=function(){ file.click(); };
       drop.ondragover=function(e){ e.preventDefault(); drop.style.borderColor="var(--brand)"; };
       drop.ondragleave=function(){ drop.style.borderColor=""; };
-      drop.ondrop=function(e){ e.preventDefault(); drop.style.borderColor=""; addFiles(e.dataTransfer.files); };
+      drop.ondrop=function(e){
+        e.preventDefault(); drop.style.borderColor="";
+        if(e.dataTransfer.files&&e.dataTransfer.files.length){ addFiles(e.dataTransfer.files); }
+        else if(typeof galDragState!=="undefined" && galDragState && galDragState.kind==="photo" && galDragState.url){ addUrls([galDragState.url]); galDragState=null; }
+      };
       file.onchange=function(){ addFiles(file.files); file.value=""; };
       byId("pzRun").onclick=run;
       byId("pzClear").onclick=function(){ if(running) return; PZ=[]; session=0; byId("pzSession").textContent="0 lei"; byId("pzProgWrap").style.display="none"; render(); };
