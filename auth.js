@@ -64,13 +64,14 @@ function fromB64url(s) {
 function sign(body) {
   return b64url(crypto.createHmac("sha256", SECRET).update(body).digest());
 }
-function signToken(user, ttl) {
+function signToken(user, ttl, imp) {
   const payload = {
     uid: user.id,
     role: user.role,
     email: user.email,
     exp: Math.floor(Date.now() / 1000) + (ttl || TOKEN_TTL),
   };
+  if (imp) payload.imp = imp; // original admin uid, when impersonating a host
   const body = b64url(JSON.stringify(payload));
   return body + "." + sign(body);
 }
@@ -112,9 +113,9 @@ function isSecure(req) {
     (req.headers["x-forwarded-proto"] || "").split(",")[0].trim() === "https"
   );
 }
-function setAuthCookie(req, res, user, remember) {
+function setAuthCookie(req, res, user, remember, imp) {
   const ttl = remember ? REMEMBER_TTL : TOKEN_TTL;
-  const token = signToken(user, ttl);
+  const token = signToken(user, ttl, imp);
   const parts = [
     `${COOKIE}=${encodeURIComponent(token)}`,
     "HttpOnly",
@@ -137,7 +138,7 @@ function clearAuthCookie(req, res) {
 function attachUser(req, res, next) {
   const token = parseCookies(req)[COOKIE];
   const payload = token ? verifyToken(token) : null;
-  req.user = payload ? { id: payload.uid, role: payload.role, email: payload.email } : null;
+  req.user = payload ? { id: payload.uid, role: payload.role, email: payload.email, imp: payload.imp || null } : null;
   next();
 }
 function requireAuth(req, res, next) {
