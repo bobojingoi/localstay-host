@@ -1,58 +1,42 @@
-// Photo AI helpers.
-//  - describeImage: alt-text + short description (Gemini text model)
-//  - analyzePhoto: per-photo vision analysis -> concrete correction brief (OpenAI or Gemini)
+// Photo AI helpers — OpenAI only (Gemini removed).
+//  - describeImage: alt-text + short description (OpenAI vision model)
+//  - analyzePhoto: per-photo vision analysis -> concrete correction brief (OpenAI)
 //  - enhanceImage: analyses the photo, then applies a STRONG, decisive correction
-//      (straighten verticals, brighten, boost colour) while keeping content authentic.
-//      Uses OpenAI gpt-image-2 when OPENAI_API_KEY is set (high fidelity + aspect-ratio
-//      preserving size); otherwise Gemini (gemini-2.5-flash-image).
-const TEXT_MODEL = process.env.GEMINI_MODEL || "gemini-flash-latest";
-const IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image";
-const BASE = "https://generativelanguage.googleapis.com/v1beta/models/";
-
-function call(model, body) {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) return Promise.reject(new Error("GEMINI_API_KEY missing"));
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 60000);
-  return fetch(BASE + model + ":generateContent?key=" + key, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    signal: ctrl.signal,
-  }).then(async r => {
-    clearTimeout(t);
-    const json = await r.json().catch(() => ({}));
-    if (!r.ok) { const e = new Error("Gemini " + r.status + ": " + JSON.stringify(json).slice(0, 300)); e.status = r.status; throw e; }
-    return json;
-  }, e => { clearTimeout(t); throw e; });
-}
-
-// pull all parts out of a response, regardless of camel/snake casing
-function partsOf(json) {
-  return ((((json.candidates || [])[0] || {}).content || {}).parts) || [];
-}
-function inlineOf(part) { return part.inline_data || part.inlineData || null; }
+//      (straighten verticals, brighten, boost colour) while keeping content authentic,
+//      using OpenAI gpt-image-2 (high fidelity + aspect-ratio preserving size).
+//      Requires OPENAI_API_KEY; no Gemini fallback.
 
 async function describeImage(base64, mime) {
-  if (!process.env.GEMINI_API_KEY) return { alt: "", description: "" };
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) return { alt: "", description: "" };
+  const model = process.env.OPENAI_VISION_MODEL || "gpt-4o-mini";
+  const dataUrl = "data:" + (mime || "image/jpeg") + ";base64," + base64;
   const prompt =
-    "Ești asistent pentru un site de cazări turistice din România. Privește imaginea și răspunde cu JSON, în limba română: " +
+    "Ești asistent pentru un site de cazări turistice din România. Privește imaginea și răspunde DOAR cu JSON, în limba română: " +
     'cheia "alt" = descriere scurtă și factuală a imaginii (max 120 caractere, pentru atributul alt / SEO); ' +
     'cheia "description" = 1-2 propoziții de prezentare, atrăgătoare dar oneste, fără a inventa detalii care nu se văd.';
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 60000);
   try {
-    const json = await call(TEXT_MODEL, {
-      contents: [{ parts: [{ inline_data: { mime_type: mime, data: base64 } }, { text: prompt }] }],
-      generationConfig: { temperature: 0.4, maxOutputTokens: 300, responseMimeType: "application/json" },
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: dataUrl } }] }],
+        response_format: { type: "json_object" }, max_tokens: 300, temperature: 0.4,
+      }),
+      signal: ctrl.signal,
     });
-    let txt = partsOf(json).map(p => p.text || "").join("").trim();
-    txt = txt.replace(/^```json/i, "").replace(/^```/, "").replace(/```$/, "").trim();
-    const mt = txt.match(/\{[\s\S]*\}/);
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error("OpenAI describe " + r.status + ": " + JSON.stringify(j).slice(0, 200));
+    const txt = (((j.choices || [])[0] || {}).message || {}).content || "";
+    const mt = String(txt).match(/\{[\s\S]*\}/);
     const o = JSON.parse(mt ? mt[0] : txt);
     return { alt: (o.alt || "").slice(0, 140), description: (o.description || "").slice(0, 400) };
   } catch (e) {
     console.error("describeImage failed:", e.message);
     return { alt: "", description: "" };
-  }
+  } finally { clearTimeout(t); }
 }
 
 /* ---- Strong, decisive enhancement. Always analyse the photo first (per-image),
@@ -97,22 +81,11 @@ function composeBrief(o) {
   return brief.slice(0, 800);
 }
 
-// Vision analysis via Gemini
-async function analyzeGemini(base64, mime) {
-  if (!process.env.GEMINI_API_KEY) return "";
-  try {
-    const json = await call(TEXT_MODEL, {
-      contents: [{ parts: [{ inline_data: { mime_type: mime, data: base64 } }, { text: ANALYZE_PROMPT }] }],
-      generationConfig: { temperature: 0.2, maxOutputTokens: 450, responseMimeType: "application/json" },
-    });
-    let txt = partsOf(json).map(p => p.text || "").join("").trim();
-    txt = txt.replace(/^```json/i, "").replace(/^```/, "").replace(/```$/, "").trim();
-    const mt = txt.match(/\{[\s\S]*\}/);
-    return composeBrief(JSON.parse(mt ? mt[0] : txt));
-  } catch (e) { console.error("analyzeGemini failed:", e.message); return ""; }
+// Vision analysis via OpenAI only.
+async function analyzePhoto(base64, mime) {
+  if (process.env.OPENAI_API_KEY) { const b = await analyzeOpenAI(base64, mime); if (b) return b; }
+  return "";
 }
-
-// Vision analysis via OpenAI (so analysis works even without a Gemini key)
 async function analyzeOpenAI(base64, mime) {
   const key = process.env.OPENAI_API_KEY; if (!key) return "";
   const model = process.env.OPENAI_VISION_MODEL || "gpt-4o-mini";
@@ -138,32 +111,8 @@ async function analyzeOpenAI(base64, mime) {
   finally { clearTimeout(t); }
 }
 
-// Pick the available vision provider for analysis (OpenAI preferred, Gemini fallback).
-async function analyzePhoto(base64, mime) {
-  if (process.env.OPENAI_API_KEY) { const b = await analyzeOpenAI(base64, mime); if (b) return b; }
-  if (process.env.GEMINI_API_KEY) return analyzeGemini(base64, mime);
-  return "";
-}
 // backward-compatible alias
 const analyzeForEnhance = analyzePhoto;
-
-async function enhanceImageGemini(base64, mime) {
-  if (!process.env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY missing");
-  const brief = await analyzePhoto(base64, mime).catch(() => "");
-  const prompt = STRONG_PROMPT + (brief ? (" Issues found in THIS exact photo — fix them decisively: " + brief) : "");
-  const json = await call(IMAGE_MODEL, {
-    contents: [{ parts: [{ inline_data: { mime_type: mime, data: base64 } }, { text: prompt }] }],
-    generationConfig: { responseModalities: ["TEXT", "IMAGE"], temperature: 0.4 },
-  });
-  for (const p of partsOf(json)) {
-    const d = inlineOf(p);
-    if (d && /^image\//.test(d.mime_type || d.mimeType || "")) {
-      return { image: d.data, mime: d.mime_type || d.mimeType };
-    }
-  }
-  console.error("enhanceImageGemini: no image in response:", JSON.stringify(json).slice(0, 300));
-  return null;
-}
 
 /* =====================================================================
    OpenAI gpt-image-2 path (matches the trusted LocalStay GPT editor):
@@ -253,17 +202,10 @@ async function enhanceImageOpenAI(base64, mime) {
   return { image: b64, mime: "image/jpeg" };
 }
 
-// Provider dispatcher: prefer gpt-image-2 (the trusted GPT editor) when configured, else Gemini.
+// Provider: OpenAI gpt-image-2 only (Gemini removed).
 async function enhanceImage(base64, mime) {
-  if (process.env.OPENAI_API_KEY) {
-    try { return await enhanceImageOpenAI(base64, mime); }
-    catch (e) {
-      console.error("enhanceImageOpenAI failed:", e.message);
-      if (process.env.GEMINI_API_KEY) return enhanceImageGemini(base64, mime); // graceful fallback
-      throw e;
-    }
-  }
-  return enhanceImageGemini(base64, mime);
+  if (!process.env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY missing — optimizarea AI necesită OpenAI");
+  return enhanceImageOpenAI(base64, mime);
 }
 
-module.exports = { describeImage, enhanceImage, enhanceImageGemini, enhanceImageOpenAI, analyzePhoto, analyzeForEnhance, analyzeOpenAI, analyzeGemini, makeApiSize };
+module.exports = { describeImage, enhanceImage, enhanceImageOpenAI, analyzePhoto, analyzeForEnhance, analyzeOpenAI, makeApiSize };
