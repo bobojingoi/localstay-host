@@ -353,6 +353,8 @@ body:not(.is-host) .host-only{display:none}
       <div class="row" style="margin-top:6px"><input id="hmResetPass" type="text" style="flex:1" placeholder="Parolă nouă"><button class="btn btn-out" id="hmResetBtn">Resetează</button></div>
       <label style="margin-top:16px">Acces direct</label>
       <div class="row" style="margin-top:6px"><button class="btn btn-out" id="hmImpersonate" style="flex:1"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M15 3h4a2 2 0 0 1 2 2v4M21 3l-7 7M10 14l-7 7M3 15v4a2 2 0 0 0 2 2h4"/></svg> Intră ca hotelier (fără parolă)</button></div>
+      <label style="margin-top:16px">Preț per poză AI (lei) <small id="hmSpentInfo" style="color:#8b94a3"></small></label>
+      <div class="row" style="margin-top:6px"><input id="hmPhotoPrice" type="number" min="0" step="0.5" style="flex:1" placeholder="3"><button class="btn btn-out" id="hmPriceBtn">Setează preț</button></div>
     </div>
     <div class="err" id="hmErr"></div>
     <div class="row"><button class="btn btn-pri" id="hmSave">Creează cont</button><button class="btn btn-out" data-close>Renunță</button><button class="btn btn-del" id="hmDelete" style="display:none;margin-left:auto">Șterge contul</button></div>
@@ -580,6 +582,8 @@ body.is-host .del{display:none}
     $("#hmResetPass").value="";$("#hmErr").style.display="none";
     $("#hmSave").textContent="Salvează";
     propPicker((h.slugs||[]).filter(Boolean));
+    var pp=$("#hmPhotoPrice"); if(pp) pp.value=(h.photo_price!=null?h.photo_price:3);
+    var si=$("#hmSpentInfo"); if(si) si.textContent="· cheltuit: "+(Math.round((h.photo_spent||0)*100)/100)+" lei ("+(h.photos_optimized||0)+" poze)";
     openModal("hostModal");
   }
   $("#btnNewHost").onclick=openHostCreate;
@@ -617,6 +621,16 @@ body.is-host .del{display:none}
     var r=await api("/api/admin/impersonate/"+editingHost.id,{method:"POST"});
     if(!r.ok){ var d=await r.json().catch(function(){return{};}); var err=$("#hmErr"); err.textContent=d.error||"Nu am putut intra în cont."; err.style.display="block"; return; }
     location.href="/host"; // land in the hotelier's console as the hotelier
+  };
+  $("#hmPriceBtn").onclick=async function(){
+    if(!editingHost) return;
+    var price=parseFloat($("#hmPhotoPrice").value);
+    var err=$("#hmErr"); err.style.display="none";
+    if(!isFinite(price)||price<0){ err.textContent="Preț invalid."; err.style.display="block"; return; }
+    var r=await api("/api/admin/hosts/"+editingHost.id+"/photo-price",{method:"POST",body:JSON.stringify({price:price})});
+    var d=await r.json().catch(function(){return{};});
+    if(!r.ok){ err.textContent=d.error||"Eroare la setarea prețului."; err.style.display="block"; return; }
+    editingHost.photo_price=d.price; note("Preț setat: "+d.price+" lei/poză"); if(window.__refreshHosts) window.__refreshHosts();
   };
   $("#hmDelete").onclick=async function(){
     if(!editingHost) return;
