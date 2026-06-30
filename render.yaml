@@ -1,7 +1,7 @@
 # Render reads this file and creates everything in one click ("Blueprint").
 services:
   - type: web
-    name: staypredeal
+    name: localstay
     runtime: node
     plan: starter            # ~$7/mo. Use "free" to try it (sleeps when idle).
     region: frankfurt        # EU region (GDPR + close to Romania)
@@ -10,12 +10,14 @@ services:
     envVars:
       - key: DATABASE_URL
         fromDatabase:
-          name: staypredeal-db
+          name: localstay-db
           property: connectionString
       - key: BASE_DOMAIN
-        value: ""            # leave empty until you connect a domain, then put: staypredeal.ro
+        value: ""            # leave empty until you connect a domain, then put: localstay.ro
+      - key: NOINDEX
+        value: "true"        # keeps all pages out of search engines until you validate; set to "false" to allow indexing
 
 databases:
-  - name: staypredeal-db
+  - name: localstay-db
     plan: basic-256mb        # smallest paid Postgres. "free" works but expires after 30 days.
     region: frankfurt
