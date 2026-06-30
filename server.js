@@ -888,8 +888,8 @@ app.get("/api/host/overview", AUTH.requireAuth, async (req, res) => {
 
     let events=[], reqsBack=[], stays=[];
     if (slugs.length){
-      events=(await pool.query("select type, meta, to_char(created_at,'YYYY-MM-DD') as day from site_events where slug = ANY($1) and created_at >= $2 and type in ('page_view','phone_reveal')", [slugs, backStart])).rows;
-      reqsBack=(await pool.query("select status, to_char(created_at,'YYYY-MM-DD') as day from booking_requests where slug = ANY($1) and created_at >= $2", [slugs, backStart])).rows;
+      events=(await pool.query("select type, meta, slug, to_char(created_at,'YYYY-MM-DD') as day from site_events where slug = ANY($1) and created_at >= $2 and type in ('page_view','phone_reveal')", [slugs, backStart])).rows;
+      reqsBack=(await pool.query("select status, slug, to_char(created_at,'YYYY-MM-DD') as day from booking_requests where slug = ANY($1) and created_at >= $2", [slugs, backStart])).rows;
       stays=(await pool.query("select slug, name, phone, to_char(checkin,'YYYY-MM-DD') as checkin, to_char(checkout,'YYYY-MM-DD') as checkout, adults, children, status from booking_requests where slug = ANY($1) and ((checkin >= $2 and checkin < $3) or (checkout >= $2 and checkout < $3)) order by checkin asc limit 100", [slugs, today, fwdEnd])).rows;
     }
     const views=events.filter(e=>e.type==="page_view").length;
@@ -907,6 +907,12 @@ app.get("/api/host/overview", AUTH.requireAuth, async (req, res) => {
     const tindex={}; trend.forEach(t=>{ tindex[t.date]=t; });
     events.forEach(e=>{ if (e.type==="page_view" && tindex[e.day]) tindex[e.day].views++; });
     reqsBack.forEach(r=>{ if (tindex[r.day]) tindex[r.day].requests++; });
+
+    // per-property traffic + requests (platform view for master admin)
+    const viewsBySlug={}, reqBySlug={};
+    events.forEach(e=>{ if (e.type==="page_view") viewsBySlug[e.slug]=(viewsBySlug[e.slug]||0)+1; });
+    reqsBack.forEach(r=>{ reqBySlug[r.slug]=(reqBySlug[r.slug]||0)+1; });
+    perProperty.forEach(pp=>{ pp.views=viewsBySlug[pp.slug]||0; pp.requests=reqBySlug[pp.slug]||0; });
 
     const fmt=s=>({ name:s.name||"—", phone:s.phone||"", property:nameOf[s.slug]||s.slug, checkin:s.checkin, checkout:s.checkout, guests:(s.adults||0)+(s.children||0), status:s.status||"nou" });
     const arrivals=stays.filter(s=>s.checkin && s.checkin>=today && s.checkin<fwdEnd).map(fmt);
