@@ -528,6 +528,67 @@ app.post("/api/host/approval", AUTH.requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+/* ============== OFFERS / DEALS (hotelier-created, shown on the public site) ============== */
+
+const DEAL_TYPES = ["interval_discount", "last_minute", "late_checkout", "early_checkin", "free_snack", "stay_pay", "long_stay", "early_bird"];
+
+function sanitizeDeals(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr.slice(0, 40).map(d => {
+    d = d || {};
+    return {
+      id: String(d.id || crypto.randomBytes(6).toString("hex")).slice(0, 40),
+      type: DEAL_TYPES.includes(d.type) ? d.type : "interval_discount",
+      title: String(d.title || "").slice(0, 120),
+      active: d.active !== false,
+      percent: Math.max(0, Math.min(90, Math.round(+d.percent || 0))),
+      start: String(d.start || "").slice(0, 10),
+      end: String(d.end || "").slice(0, 10),
+      days: Math.max(0, Math.min(60, Math.round(+d.days || 0))),
+      recurring: !!d.recurring,
+      time: String(d.time || "").slice(0, 5),
+      nights: Math.max(0, Math.min(30, Math.round(+d.nights || 0))),
+      freeNights: Math.max(0, Math.min(10, Math.round(+d.freeNights || 0))),
+      weekdaysOnly: !!d.weekdaysOnly,
+      note: String(d.note || "").slice(0, 300)
+    };
+  });
+}
+
+// Read the hotelier's deals for a unit (host owns slug, or admin).
+app.get("/api/host/deals", AUTH.requireAuth, async (req, res) => {
+  try {
+    const slug = String(req.query.slug || "");
+    if (!slug) return res.status(400).json({ error: "slug lipsă" });
+    if (!(await AUTH.userCanAccessSlug(pool, req.user, slug))) return res.status(403).json({ error: "Fără acces" });
+    const r = await pool.query("select deals from properties where slug=$1", [slug]);
+    res.json({ deals: (r.rows[0] && r.rows[0].deals) || [] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Save the deals array for a unit.
+app.post("/api/host/deals", AUTH.requireAuth, async (req, res) => {
+  try {
+    const slug = String((req.body && req.body.slug) || "");
+    if (!slug) return res.status(400).json({ error: "slug lipsă" });
+    if (!(await AUTH.userCanAccessSlug(pool, req.user, slug))) return res.status(403).json({ error: "Fără acces" });
+    const deals = sanitizeDeals(req.body && req.body.deals);
+    await pool.query("update properties set deals=$1 where slug=$2", [JSON.stringify(deals), slug]);
+    res.json({ ok: true, deals });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Public: active (non-expired) deals for a unit — rendered on the public site.
+app.get("/api/site/:slug/deals", async (req, res) => {
+  try {
+    const r = await pool.query("select deals from properties where slug=$1", [req.params.slug]);
+    const all = (r.rows[0] && r.rows[0].deals) || [];
+    const today = todayIso();
+    const active = all.filter(d => d && d.active !== false && !(d.type === "interval_discount" && d.end && d.end < today));
+    res.json({ deals: active });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post("/api/import", AUTH.requireAdmin, async (req, res) => {
   try {
     const master = req.body;
