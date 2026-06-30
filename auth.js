@@ -10,7 +10,8 @@
 const crypto = require("crypto");
 
 const COOKIE = "stay_auth";
-const TOKEN_TTL = 7 * 24 * 60 * 60; // 7 days, in seconds
+const TOKEN_TTL = 7 * 24 * 60 * 60; // 7 days, in seconds (default session length)
+const REMEMBER_TTL = 30 * 24 * 60 * 60; // 30 days when "remember me" is checked
 const SECRET =
   process.env.AUTH_SECRET ||
   // Fallback keeps local dev working, but logs a loud warning so it isn't shipped.
@@ -63,12 +64,12 @@ function fromB64url(s) {
 function sign(body) {
   return b64url(crypto.createHmac("sha256", SECRET).update(body).digest());
 }
-function signToken(user) {
+function signToken(user, ttl) {
   const payload = {
     uid: user.id,
     role: user.role,
     email: user.email,
-    exp: Math.floor(Date.now() / 1000) + TOKEN_TTL,
+    exp: Math.floor(Date.now() / 1000) + (ttl || TOKEN_TTL),
   };
   const body = b64url(JSON.stringify(payload));
   return body + "." + sign(body);
@@ -111,15 +112,17 @@ function isSecure(req) {
     (req.headers["x-forwarded-proto"] || "").split(",")[0].trim() === "https"
   );
 }
-function setAuthCookie(req, res, user) {
-  const token = signToken(user);
+function setAuthCookie(req, res, user, remember) {
+  const ttl = remember ? REMEMBER_TTL : TOKEN_TTL;
+  const token = signToken(user, ttl);
   const parts = [
     `${COOKIE}=${encodeURIComponent(token)}`,
     "HttpOnly",
     "Path=/",
     "SameSite=Lax",
-    `Max-Age=${TOKEN_TTL}`,
   ];
+  // "Remember me" → a persistent cookie; otherwise a session cookie (clears on browser close).
+  if (remember) parts.push(`Max-Age=${ttl}`);
   if (isSecure(req)) parts.push("Secure");
   res.append("Set-Cookie", parts.join("; "));
 }
