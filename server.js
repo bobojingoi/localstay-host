@@ -306,7 +306,7 @@ app.get("/api/auth/me", async (req, res) => {
       const ps = await pool.query("select slug from properties where owner_id=$1 order by updated_at desc", [me.id]);
       slugs = ps.rows.map((r) => r.slug);
     }
-    res.json({ id: me.id, email: me.email, role: me.role, name: me.name || "", slugs });
+    res.json({ id: me.id, email: me.email, role: me.role, name: me.name || "", slugs, imp: !!req.user.imp });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -336,6 +336,27 @@ app.post("/api/auth/change-credentials", AUTH.requireAuth, async (req, res) => {
 });
 
 /* ============== ADMIN: manage hotelier accounts ============== */
+
+// Admin enters a hotelier's console without their password (impersonation).
+app.post("/api/admin/impersonate/:hostId", AUTH.requireAdmin, async (req, res) => {
+  try {
+    const r = await pool.query("select id, email, role from users where id=$1 and role='host'", [req.params.hostId]);
+    if (!r.rows.length) return res.status(404).json({ error: "Hotelier inexistent." });
+    AUTH.setAuthCookie(req, res, r.rows[0], false, req.user.id); // imp = admin uid; session cookie
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Return to the admin account after impersonating a hotelier.
+app.post("/api/auth/stop-impersonation", AUTH.requireAuth, async (req, res) => {
+  try {
+    if (!req.user.imp) return res.status(400).json({ error: "Nu ești în modul impersonare." });
+    const r = await pool.query("select id, email, role from users where id=$1 and role='admin'", [req.user.imp]);
+    if (!r.rows.length) return res.status(404).json({ error: "Cont admin inexistent." });
+    AUTH.setAuthCookie(req, res, r.rows[0], false); // back to admin (no imp)
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 // List host accounts + the slugs each owns.
 app.get("/api/admin/hosts", AUTH.requireAdmin, async (req, res) => {
@@ -1001,7 +1022,7 @@ app.get("/admin", async (req, res) => {
   const ap = p.approval || {};
   res.send(inject(html,
     "window.__ADMIN_STATE=" + JSON.stringify(p.admin_state) +
-    ";window.__ME=" + JSON.stringify({ role: req.user.role, email: req.user.email }) +
+    ";window.__ME=" + JSON.stringify({ role: req.user.role, email: req.user.email, imp: !!req.user.imp }) +
     ";window.__APPROVAL=" + JSON.stringify({ status: ap.status || "pending", token: ap.token || "", note: ap.note || "" }) + ";"));
 });
 
