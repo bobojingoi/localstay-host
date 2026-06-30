@@ -308,6 +308,25 @@ app.post("/api/admin/hosts", AUTH.requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Update a host's email and/or name (admin manages credentials from Hotelieri).
+app.post("/api/admin/hosts/:id", AUTH.requireAdmin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    const b = req.body || {};
+    const email = normEmail(b.email);
+    const name = (b.name || "").trim() || null;
+    if (!email) return res.status(400).json({ error: "Email obligatoriu" });
+    const dup = await pool.query("select 1 from users where email=$1 and id<>$2", [email, id]);
+    if (dup.rows.length) return res.status(409).json({ error: "Acest email este deja folosit" });
+    const r = await pool.query(
+      "update users set email=$1, name=$2 where id=$3 and role='host' returning id, email, name",
+      [email, name, id]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: "Hotelier negăsit" });
+    res.json(r.rows[0]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Replace the set of properties a host owns.
 app.post("/api/admin/hosts/:id/properties", AUTH.requireAdmin, async (req, res) => {
   try {
@@ -541,6 +560,88 @@ app.post("/api/track", async (req, res) => {
       [slug, type, JSON.stringify(b.meta || {})]
     );
     res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ---------- host dashboard: occupancy, est. revenue, traffic, requests ---------- */
+function todayIso(){ return iso(new Date()); }
+function addDaysIso(s,n){ const d=fromIso(s); d.setUTCDate(d.getUTCDate()+n); return iso(d); }
+function rangeDates(fromS,toS){ const out=[]; let d=fromIso(fromS); const end=fromIso(toS); while(d<end){ out.push(iso(d)); d.setUTCDate(d.getUTCDate()+1); } return out; }
+function isWeekendIso(s){ const w=fromIso(s).getUTCDay(); return w===5||w===6; } // Fri/Sat nights
+function nightlyPrice(pricing, roomId, ds){
+  const dp=(pricing && pricing.dayPrices) || {};
+  if (dp[roomId] && dp[roomId][ds]!=null) return +dp[roomId][ds] || 0;
+  const rooms=(pricing && pricing.rooms) || [];
+  const room=rooms.find(r=>r.id===roomId) || {};
+  const we=isWeekendIso(ds);
+  const periods=(pricing && pricing.periods) || [];
+  const per=periods.find(p=>(p.roomId===roomId||p.roomId==="all") && p.start && p.end && ds>=p.start && ds<=p.end);
+  if (per){ const v=we ? (per.weekend||per.weekday) : per.weekday; if (v) return +v || 0; }
+  const base=we ? (room.weekend||room.weekday) : room.weekday;
+  return +base || 0;
+}
+function occupancyAndRevenue(adminState, dates){
+  const units=(adminState && adminState.units) || [];
+  const pricing=(adminState && adminState.pricing) || {};
+  const rooms=pricing.rooms || [];
+  const hasEntire=rooms.some(r=>r.isEntire), hasRooms=rooms.some(r=>!r.isEntire);
+  // when a property mixes an "entire" unit with individual rooms, count only the rooms
+  // (the entire unit mirrors them, so counting both would double-count nights)
+  const counted=units.filter(u=>{ const r=rooms.find(x=>x.id===u.id); const isE=r?!!r.isEntire:false; return (hasEntire&&hasRooms)?!isE:true; });
+  const dateSet=new Set(dates);
+  let occ=0, rev=0;
+  counted.forEach(u=>{ effectiveBlocked(adminState, u.id).forEach(ds=>{ if (dateSet.has(ds)){ occ++; rev+=nightlyPrice(pricing, u.id, ds); } }); });
+  return { occNights:occ, totalNights:counted.length*dates.length, estRevenue:Math.round(rev), currency:(rooms[0]&&rooms[0].currency)||"RON", units:counted.length };
+}
+// Aggregated dashboard for a hotelier across all their properties (admin sees all).
+app.get("/api/host/overview", AUTH.requireAuth, async (req, res) => {
+  try {
+    const days=[7,30,90].includes(+req.query.days) ? +req.query.days : 30;
+    const propsQ = req.user.role==="admin"
+      ? await pool.query("select slug, admin_state from properties order by created_at desc")
+      : await pool.query("select slug, admin_state from properties where owner_id=$1 order by created_at desc", [req.user.id]);
+    const props=propsQ.rows;
+    const slugs=props.map(p=>p.slug);
+    const today=todayIso(), fwdEnd=addDaysIso(today,days), backStart=addDaysIso(today,-days);
+    const fwdDates=rangeDates(today,fwdEnd);
+
+    let occ=0,total=0,rev=0,currency="RON"; const perProperty=[];
+    props.forEach(p=>{
+      const s=occupancyAndRevenue(p.admin_state, fwdDates);
+      occ+=s.occNights; total+=s.totalNights; rev+=s.estRevenue; if (s.currency) currency=s.currency;
+      const name=(p.admin_state.property && p.admin_state.property.basicInfo && p.admin_state.property.basicInfo.name) || p.slug;
+      perProperty.push({ slug:p.slug, name, occupancy: s.totalNights?Math.round(s.occNights/s.totalNights*100):0, occNights:s.occNights, estRevenue:s.estRevenue, currency:s.currency, units:s.units });
+    });
+    const nameOf={}; perProperty.forEach(pp=>{ nameOf[pp.slug]=pp.name; });
+
+    let events=[], reqsBack=[], stays=[];
+    if (slugs.length){
+      events=(await pool.query("select type, to_char(created_at,'YYYY-MM-DD') as day from site_events where slug = ANY($1) and created_at >= $2 and type in ('page_view','phone_reveal')", [slugs, backStart])).rows;
+      reqsBack=(await pool.query("select status, to_char(created_at,'YYYY-MM-DD') as day from booking_requests where slug = ANY($1) and created_at >= $2", [slugs, backStart])).rows;
+      stays=(await pool.query("select slug, name, phone, to_char(checkin,'YYYY-MM-DD') as checkin, to_char(checkout,'YYYY-MM-DD') as checkout, adults, children, status from booking_requests where slug = ANY($1) and ((checkin >= $2 and checkin < $3) or (checkout >= $2 and checkout < $3)) order by checkin asc limit 100", [slugs, today, fwdEnd])).rows;
+    }
+    const views=events.filter(e=>e.type==="page_view").length;
+    const reveals=events.filter(e=>e.type==="phone_reveal").length;
+    const requests=reqsBack.length;
+    const byStatus={}; reqsBack.forEach(r=>{ const s=r.status||"nou"; byStatus[s]=(byStatus[s]||0)+1; });
+
+    const trend=rangeDates(backStart, addDaysIso(today,1)).map(d=>({ date:d, views:0, requests:0 }));
+    const tindex={}; trend.forEach(t=>{ tindex[t.date]=t; });
+    events.forEach(e=>{ if (e.type==="page_view" && tindex[e.day]) tindex[e.day].views++; });
+    reqsBack.forEach(r=>{ if (tindex[r.day]) tindex[r.day].requests++; });
+
+    const fmt=s=>({ name:s.name||"—", phone:s.phone||"", property:nameOf[s.slug]||s.slug, checkin:s.checkin, checkout:s.checkout, guests:(s.adults||0)+(s.children||0), status:s.status||"nou" });
+    const arrivals=stays.filter(s=>s.checkin && s.checkin>=today && s.checkin<fwdEnd).map(fmt);
+    const departures=stays.filter(s=>s.checkout && s.checkout>=today && s.checkout<fwdEnd).map(fmt);
+
+    res.json({
+      days, properties: perProperty.length,
+      occupancy: total?Math.round(occ/total*100):0, occNights:occ, totalNights:total,
+      estRevenue:Math.round(rev), currency,
+      views, reveals, requests, byStatus,
+      conv: { viewToReveal: views?Math.round(reveals/views*100):0, revealToRequest: reveals?Math.round(requests/reveals*100):0, viewToRequest: views?Math.round(requests/views*100):0 },
+      trend, arrivals, departures, perProperty
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
