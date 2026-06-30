@@ -189,6 +189,7 @@ body:not(.is-host) .host-only{display:none}
   <aside class="sidebar"><nav class="nav" id="dashNav">
     <button class="navitem active" data-nav="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg><span>Panou</span></button>
     <button class="navitem" data-nav="import" data-admin><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg><span>Importă</span></button>
+    <button class="navitem" data-nav="photos" data-admin><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg><span>Poze AI</span></button>
     <button class="navitem" data-nav="properties"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span class="admin-only">Proprietăți</span><span class="host-only">Proprietățile tale</span></button>
     <button class="navitem" data-nav="stats" data-admin><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Statistici</span></button>
     <button class="navitem" data-nav="hosts" data-admin><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0M17 7.5a3 3 0 0 1 0 6M16.5 20a5.5 5.5 0 0 0-2-4.3"/></svg><span>Hotelieri</span></button>
@@ -215,19 +216,24 @@ body:not(.is-host) .host-only{display:none}
     <div class="flow" id="flowStrip"><span>JSON unitate</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span>Site public</span><span style="color:var(--muted)">+</span><span>Admin gazdă</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 6l6 6-6 6"/></svg><span>conectate</span></div>
 
     <div class="card" id="importCard">
-      <div class="hd"><h2>Încarcă JSON-ul unității</h2><p>Structura general.* + rooms / reviews / photos.</p></div>
+      <div class="hd"><h2>Încarcă JSON-ul unității</h2><p>Una sau mai multe proprietăți. Pentru bulk: trage mai multe fișiere .json sau lipește un array <code>[ {…}, {…} ]</code>.</p></div>
       <div class="bd">
         <div class="drop" id="drop">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>
-          <b>Trage fișierul .json aici</b><small>sau click pentru a alege</small>
-          <input type="file" id="file" accept=".json,application/json" style="display:none">
+          <b>Trage fișierele .json aici</b><small>unul sau mai multe · sau click pentru a alege</small>
+          <input type="file" id="file" accept=".json,application/json" multiple style="display:none">
         </div>
-        <div class="or">— sau lipește JSON-ul —</div>
-        <textarea id="paste" placeholder='{ "general": { "basicInfo": { ... } }, "rooms": [...] }'></textarea>
+        <div class="or">— sau lipește JSON-ul (obiect sau array) —</div>
+        <textarea id="paste" placeholder='{ "general": { "basicInfo": { ... } }, "rooms": [...] }  ·  sau  [ {…}, {…}, {…} ]'></textarea>
         <div class="err" id="err"></div>
         <div class="row"><button class="btn btn-pri" id="importBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> Importă și generează</button>
           <button class="btn btn-out" id="demoBtn">Încarcă exemplu (Vila Maria)</button></div>
       </div>
+    </div>
+
+    <div class="card" id="bulkCard" style="display:none">
+      <div class="hd"><h2>Rezultat import bulk</h2><p id="bulkSummary">—</p></div>
+      <div class="bd"><div id="bulkList"></div></div>
     </div>
 
     <div class="card" id="resultCard" style="display:none">
@@ -242,6 +248,29 @@ body:not(.is-host) .host-only{display:none}
         </div>
       </div>
     </div>
+    </section>
+
+    <section class="pane" data-pane="photos">
+      <div class="pane-head"><h1>Optimizare poze cu AI</h1><p>Încarcă mai multe poze deodată. Fiecare e îmbunătățită cu AI, redimensionată, comprimată (WebP) și urcată. Primești linkurile gata de folosit.</p></div>
+      <div class="card">
+        <div class="hd"><h2>Poze</h2><p>Trage mai multe imagini sau click pentru a alege.</p></div>
+        <div class="bd">
+          <div class="drop" id="phDrop">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+            <b>Trage pozele aici</b><small>JPG / PNG / WebP · mai multe deodată</small>
+            <input type="file" id="phFile" accept="image/*" multiple style="display:none">
+          </div>
+          <label style="display:flex;align-items:center;gap:9px;margin-top:14px;font-weight:500;cursor:pointer"><input type="checkbox" id="phEnhance" checked style="width:auto"> Îmbunătățește cu AI (debifează pentru doar optimizare + upload, mult mai rapid)</label>
+          <div class="err" id="phErr"></div>
+          <div class="row" style="margin-top:14px">
+            <button class="btn btn-pri" id="phRun" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3l14 9-14 9z"/></svg> Optimizează</button>
+            <button class="btn btn-out" id="phCopy" disabled>Copiază toate linkurile</button>
+            <button class="btn btn-out" id="phClear" disabled>Golește</button>
+            <span id="phProgress" style="align-self:center;color:var(--muted);font-weight:600"></span>
+          </div>
+          <div id="phGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin-top:18px"></div>
+        </div>
+      </div>
     </section>
 
     <section class="pane" data-pane="properties">
@@ -806,6 +835,7 @@ async function doImport(master){
 function countFac(P){let n=0;["foodAndDrinks","generalFacilities","wellness","exterior","cleaningServices","businessFacilities","bathroom","kitchen","bedroom","comfort","commonAreas","livingArea","mediaTechnology","roomFacilities","shops"].forEach(c=>n+=(P.allFacilities[c]||[]).length);["skiing","entertainmentAndFamilyServices","sportsAndRecreation"].forEach(c=>n+=(P.activities[c]||[]).length);return n;}
 function showResult(slug,admin,site,host,url,approval){
   url = url || pubUrl(slug);
+  var bc=$("#bulkCard"); if(bc) bc.style.display="none";
   $("#resultCard").style.display="block";
   $("#resultName").textContent=admin.property.basicInfo.name+" · "+url.replace(/^https?:\/\//,"");
   $("#summary").innerHTML=[
@@ -885,11 +915,130 @@ const drop=$("#drop"),file=$("#file");
 drop.onclick=()=>file.click();
 drop.ondragover=e=>{e.preventDefault();drop.classList.add("over");};
 drop.ondragleave=()=>drop.classList.remove("over");
-drop.ondrop=e=>{e.preventDefault();drop.classList.remove("over");if(e.dataTransfer.files[0])readFile(e.dataTransfer.files[0]);};
-file.onchange=()=>{if(file.files[0])readFile(file.files[0]);};
-function readFile(f){const r=new FileReader();r.onload=()=>{try{doImport(JSON.parse(r.result));}catch(e){$("#err").textContent="JSON invalid: "+e.message;$("#err").style.display="block";}};r.readAsText(f);}
-$("#importBtn").onclick=()=>{const t=$("#paste").value.trim();if(!t){toast("Lipește un JSON sau încarcă un fișier");return;}try{doImport(JSON.parse(t));}catch(e){$("#err").textContent="JSON invalid: "+e.message;$("#err").style.display="block";}};
+drop.ondrop=e=>{e.preventDefault();drop.classList.remove("over"); var fs=[].slice.call(e.dataTransfer.files).filter(function(f){return /\.json$/i.test(f.name)||f.type.indexOf("json")>-1;}); if(fs.length) readFiles(fs);};
+file.onchange=()=>{ if(file.files.length) readFiles([].slice.call(file.files)); };
+
+function readFiles(files){
+  $("#err").style.display="none";
+  var items=[], errs=[], done=0;
+  files.forEach(function(f){
+    var r=new FileReader();
+    r.onload=function(){
+      try{ var j=JSON.parse(r.result); if(Array.isArray(j)){ items=items.concat(j); } else { items.push(j); } }
+      catch(e){ errs.push(f.name+": JSON invalid"); }
+      if(++done===files.length) finish();
+    };
+    r.onerror=function(){ errs.push(f.name+": citire eșuată"); if(++done===files.length) finish(); };
+    r.readAsText(f);
+  });
+  function finish(){
+    if(errs.length){ $("#err").textContent=errs.join(" · "); $("#err").style.display="block"; }
+    if(!items.length) return;
+    if(items.length===1) doImport(items[0]); else doBulkImport(items);
+  }
+}
+$("#importBtn").onclick=()=>{const t=$("#paste").value.trim();if(!t){toast("Lipește un JSON sau încarcă fișiere");return;}
+  try{ var j=JSON.parse(t); if(Array.isArray(j)){ if(j.length===1) doImport(j[0]); else doBulkImport(j); } else { doImport(j); } }
+  catch(e){$("#err").textContent="JSON invalid: "+e.message;$("#err").style.display="block";}};
 $("#demoBtn").onclick=()=>{ if(window.DEMO_MASTER){doImport(window.DEMO_MASTER);} else {toast("Exemplul nu este disponibil aici");} };
+
+async function doBulkImport(items){
+  $("#err").style.display="none";
+  var E=function(x){ return String(x==null?"":x).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];}); };
+  var card=$("#bulkCard"), list=$("#bulkList"), sum=$("#bulkSummary");
+  $("#resultCard").style.display="none";
+  card.style.display="block";
+  sum.textContent="Se importă "+items.length+" proprietăți…";
+  list.innerHTML='<div class="dempty">Se procesează… nu închide pagina.</div>';
+  card.scrollIntoView({behavior:"smooth"});
+  try{
+    var res=await fetch("/api/import-bulk",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({items:items})});
+    if(!res.ok){ var e=await res.json().catch(()=>({})); $("#err").textContent="Eroare: "+(e.error||res.status); $("#err").style.display="block"; list.innerHTML=""; sum.textContent="Eșuat"; return; }
+    var d=await res.json();
+    sum.innerHTML='<b style="color:var(--brand)">'+d.ok+'</b> importate · '+(d.failed?('<b style="color:#cf4b4b">'+d.failed+'</b> eșuate · '):'')+d.count+' în total';
+    list.innerHTML='<table class="dtable"><thead><tr><th>Proprietate</th><th>Stare</th><th>Acțiuni</th></tr></thead><tbody>'+
+      d.results.map(function(r){
+        if(r.ok){
+          var tag = r.merged ? '<span style="color:var(--muted)">actualizată</span>' : '<span style="color:var(--brand)">nouă</span>';
+          var cred = (r.host&&r.host.password) ? ' · parolă: <code>'+E(r.host.password)+'</code>' : '';
+          return '<tr><td><b>'+E(r.name||r.slug)+'</b><div class="sl" style="font-size:12px;color:var(--muted);font-family:ui-monospace,monospace">'+E(r.slug)+cred+'</div></td>'+
+            '<td>✓ '+tag+'</td>'+
+            '<td><a class="chip" target="_blank" href="/s/'+E(r.slug)+'">Site</a> <a class="chip" target="_blank" href="/admin?slug='+E(r.slug)+'">Admin</a></td></tr>';
+        }
+        return '<tr><td><b>'+E(r.name||("#"+(r.index+1)))+'</b></td><td style="color:#cf4b4b">✗ eșuat</td><td style="color:#cf4b4b;font-size:12px">'+E(r.error||"")+'</td></tr>';
+      }).join('')+'</tbody></table>';
+    await renderList(); if(window.__refreshHosts) window.__refreshHosts();
+    toast(d.ok+" proprietăți importate");
+  }catch(e){ $("#err").textContent="Eroare la procesare: "+e.message; $("#err").style.display="block"; list.innerHTML=""; sum.textContent="Eșuat"; }
+}
+
+// ---------- Bulk AI photo optimization ----------
+(function(){
+  var phDrop=$("#phDrop"), phFile=$("#phFile");
+  if(!phDrop) return;
+  var PH=[], running=false;
+  function E(x){ return String(x==null?"":x).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+  phDrop.onclick=function(){ phFile.click(); };
+  phDrop.ondragover=function(e){ e.preventDefault(); phDrop.classList.add("over"); };
+  phDrop.ondragleave=function(){ phDrop.classList.remove("over"); };
+  phDrop.ondrop=function(e){ e.preventDefault(); phDrop.classList.remove("over"); addFiles(e.dataTransfer.files); };
+  phFile.onchange=function(){ addFiles(phFile.files); phFile.value=""; };
+  function addFiles(files){
+    $("#phErr").style.display="none";
+    [].slice.call(files).filter(function(f){ return /^image\//.test(f.type); }).forEach(function(f){
+      var r=new FileReader();
+      r.onload=function(){ PH.push({dataUrl:r.result, name:f.name, status:"wait"}); render(); };
+      r.readAsDataURL(f);
+    });
+  }
+  function statLabel(s){ return s==="wait"?"în așteptare":s==="run"?"se procesează…":s==="done"?"gata":"eșuat"; }
+  function render(){
+    var grid=$("#phGrid");
+    grid.innerHTML=PH.map(function(p){
+      var thumb=p.thumb||p.dataUrl;
+      var color=p.status==="done"?"var(--brand)":p.status==="err"?"#cf4b4b":"var(--muted)";
+      var link=p.url?('<a href="'+E(p.url)+'" target="_blank" style="font-size:11px;color:var(--brand);word-break:break-all">'+E(p.url)+'</a>'):"";
+      return '<div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff">'+
+        '<div style="aspect-ratio:4/3;background:#f0f2f5 center/cover;background-image:url('+JSON.stringify(thumb)+')"></div>'+
+        '<div style="padding:9px 11px">'+
+          '<div style="font-size:12.5px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+E(p.name)+'</div>'+
+          '<div style="font-size:12px;color:'+color+';margin:2px 0 4px">'+statLabel(p.status)+(p.enhanced?" · AI":"")+(p.err?(" · "+E(p.err)):"")+'</div>'+
+          link+
+          (p.alt?('<div style="font-size:11px;color:var(--muted);margin-top:4px">'+E(p.alt)+'</div>'):"")+
+        '</div></div>';
+    }).join("");
+    var any=PH.length>0, anyDone=PH.some(function(p){ return !!p.url; });
+    $("#phRun").disabled=!any||running;
+    $("#phClear").disabled=!any||running;
+    $("#phCopy").disabled=!anyDone;
+  }
+  $("#phRun").onclick=async function(){
+    if(running||!PH.length) return; running=true; render();
+    var enhance=$("#phEnhance").checked;
+    var todo=PH.filter(function(p){ return p.status!=="done"; }).length, done=0;
+    for(var i=0;i<PH.length;i++){
+      var p=PH[i]; if(p.status==="done") continue;
+      p.status="run"; render();
+      $("#phProgress").textContent="Se procesează "+(done+1)+"/"+todo+"…";
+      try{
+        var res=await fetch("/api/ai-optimize",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({dataUrl:p.dataUrl, enhance:enhance})});
+        var d=await res.json().catch(function(){ return {}; });
+        if(!res.ok){ p.status="err"; p.err=d.error||("HTTP "+res.status); }
+        else { p.status="done"; p.url=d.url; p.thumb=d.thumb||p.thumb; p.alt=d.alt||""; p.enhanced=!!d.enhanced; }
+      }catch(e){ p.status="err"; p.err=e.message; }
+      done++; render();
+    }
+    $("#phProgress").textContent="Gata · "+PH.filter(function(p){ return !!p.url; }).length+"/"+PH.length+" optimizate";
+    running=false; render();
+  };
+  $("#phCopy").onclick=function(){
+    var urls=PH.filter(function(p){ return !!p.url; }).map(function(p){ return p.url; }).join("\n");
+    if(!urls) return;
+    function fb(){ var ta=document.createElement("textarea"); ta.value=urls; document.body.appendChild(ta); ta.select(); try{ document.execCommand("copy"); toast("Linkuri copiate"); }catch(e){} ta.remove(); }
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(urls).then(function(){ toast("Linkuri copiate"); }, fb); } else { fb(); }
+  };
+  $("#phClear").onclick=function(){ if(running) return; PH=[]; $("#phProgress").textContent=""; render(); };
+})();
 
 async function renderStats(){
   let d=null; try{ d=await fetch("/api/stats").then(r=>r.ok?r.json():null); }catch(e){}
