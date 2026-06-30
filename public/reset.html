@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>LocalStay · Setează parolă nouă</title>
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--line:#e6e9ee;--ink:#1c2430;--text:#566072;--muted:#8b94a3;--brand:#2f7355;--brand-d:#255c44;--brand-soft:#e8f2ec;--red:#cf4b4b;--shadow:0 1px 2px rgba(16,24,40,.04),0 24px 60px -28px rgba(16,24,40,.4)}
+*{box-sizing:border-box}
+body{margin:0;background:linear-gradient(180deg,#15201a 0,#15201a 280px,var(--bg) 280px,var(--bg) 100%);min-height:100vh;color:var(--text);font-family:"Inter",system-ui,sans-serif;font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:430px;margin:0 auto;padding:60px 20px}
+.brand{display:flex;align-items:center;gap:11px;color:#fff;margin-bottom:26px}
+.brand .dot{width:38px;height:38px;border-radius:10px;background:var(--brand);display:grid;place-items:center}
+.brand b{font-size:18px}
+.brand small{display:block;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:#9fbaab;margin-top:1px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:28px 26px}
+h1{font-size:20px;color:var(--ink);margin:0 0 6px}
+.sub{color:var(--muted);font-size:14px;margin:0 0 20px}
+label{display:block;font-size:13px;font-weight:600;color:var(--ink);margin:14px 0 6px}
+label:first-of-type{margin-top:0}
+input{width:100%;border:1px solid var(--line);border-radius:11px;padding:12px 14px;font-size:15px;color:var(--ink);font-family:inherit;background:#fcfdfe}
+input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft);background:#fff}
+.btn{width:100%;margin-top:20px;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:700;font-size:15px;border-radius:11px;padding:13px 22px;cursor:pointer;border:0;background:var(--brand);color:#fff;transition:.18s}
+.btn:hover{background:var(--brand-d)}.btn:disabled{opacity:.6;cursor:default}
+.err{color:var(--red);font-size:14px;margin-top:14px;display:none}
+.ok{background:var(--brand-soft);color:var(--brand-d);border-radius:12px;padding:16px;font-size:14px;font-weight:500}
+.foot{text-align:center;color:var(--muted);font-size:13px;margin-top:18px}
+.foot a{color:var(--brand);font-weight:600;text-decoration:none}
+.center{text-align:center;padding:14px 0}
+.spin{width:26px;height:26px;border:3px solid var(--line);border-top-color:var(--brand);border-radius:50%;animation:s .8s linear infinite;margin:0 auto}
+@keyframes s{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand"><span class="dot"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M3 10l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></span><span><b>LocalStay</b><small>Parolă nouă</small></span></div>
+  <div class="card" id="card"><div class="center"><div class="spin"></div></div></div>
+  <div class="foot"><a href="/login">← Înapoi la autentificare</a></div>
+</div>
+<script>
+(function(){
+  var token = location.pathname.split("/").filter(Boolean).pop() || "";
+  var card = document.getElementById("card");
+  function $(id){return document.getElementById(id);}
+  function form(email){
+    card.innerHTML =
+      '<h1>Setează o parolă nouă</h1>'+
+      '<p class="sub">Cont: <b>'+email.replace(/[&<>"]/g,"")+'</b></p>'+
+      '<label for="p1">Parolă nouă</label><input id="p1" type="password" autocomplete="new-password" placeholder="minim 8 caractere">'+
+      '<label for="p2">Confirmă parola</label><input id="p2" type="password" autocomplete="new-password" placeholder="repetă parola">'+
+      '<div class="err" id="err"></div>'+
+      '<button class="btn" id="btn">Salvează parola</button>';
+    $("btn").addEventListener("click",save);
+  }
+  async function save(){
+    var err=$("err"); err.style.display="none";
+    var p1=$("p1").value, p2=$("p2").value;
+    if(p1.length<8){ err.textContent="Parola trebuie să aibă minim 8 caractere."; err.style.display="block"; return; }
+    if(p1!==p2){ err.textContent="Parolele nu coincid."; err.style.display="block"; return; }
+    $("btn").disabled=true; $("btn").textContent="Se salvează…";
+    try{
+      var r=await fetch("/api/auth/reset",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({token:token,password:p1})});
+      var d=await r.json().catch(function(){return{};});
+      if(!r.ok){ err.textContent=d.error||"Eroare."; err.style.display="block"; $("btn").disabled=false; $("btn").textContent="Salvează parola"; return; }
+      card.innerHTML='<h1>Parolă schimbată</h1><div class="ok">Parola a fost actualizată. Acum te poți autentifica.</div><a class="btn" href="/login" style="text-decoration:none;margin-top:18px">Mergi la autentificare</a>';
+    }catch(e){ err.textContent="Eroare de rețea. Reîncearcă."; err.style.display="block"; $("btn").disabled=false; $("btn").textContent="Salvează parola"; }
+  }
+  (async function(){
+    try{
+      var r=await fetch("/api/auth/reset/"+encodeURIComponent(token));
+      if(!r.ok){ card.innerHTML='<h1>Link invalid</h1><div class="ok" style="background:#fbeaea;color:#a23b3b">Acest link de resetare nu este valid sau a expirat. Cere unul nou.</div>'; return; }
+      var d=await r.json(); form(d.email||"");
+    }catch(e){ card.innerHTML='<h1>Eroare</h1><p class="sub">Reîncearcă mai târziu.</p>'; }
+  })();
+})();
+</script>
+</body>
+</html>
