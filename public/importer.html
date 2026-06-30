@@ -589,6 +589,10 @@ body.is-host .del{display:none}
 </script>
 <script>
 const $=s=>document.querySelector(s);
+// public unit URL builder: <slug>.<baseDomain> when configured, else /s/<slug>
+let CFG={baseDomain:"",_loaded:false};
+async function loadCfg(){ if(CFG._loaded) return CFG; try{ const c=await fetch("/api/config").then(r=>r.json()); CFG={baseDomain:(c&&c.baseDomain)||"",_loaded:true}; }catch(e){ CFG._loaded=true; } return CFG; }
+function pubUrl(slug){ return CFG.baseDomain ? ("https://"+slug+"."+CFG.baseDomain) : ("/s/"+slug); }
 let toastT;function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),2200);}
 function lsGet(k,d){try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}}
 function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){toast("Stocarea locală este blocată")}}
@@ -600,23 +604,24 @@ async function doImport(master){
   try{
     const res=await fetch("/api/import",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(master)});
     if(!res.ok){ const e=await res.json().catch(()=>({})); $("#err").textContent="Eroare: "+(e.error||res.status); $("#err").style.display="block"; return; }
-    const {slug,name,host}=await res.json();
+    const {slug,name,host,url}=await res.json();
     // fetch the generated pieces back for the summary
     const site=await fetch("/api/site/"+slug).then(r=>r.json());
     const admin=await fetch("/api/host/"+slug+"/state").then(r=>r.json());
-    showResult(slug,admin,site,host); await renderList(); toast("Proprietate generată");
+    showResult(slug,admin,site,host,url); await renderList(); toast("Proprietate generată");
   }catch(e){ $("#err").textContent="Eroare la procesare: "+e.message; $("#err").style.display="block"; }
 }
 function countFac(P){let n=0;["foodAndDrinks","generalFacilities","wellness","exterior","cleaningServices","businessFacilities","bathroom","kitchen","bedroom","comfort","commonAreas","livingArea","mediaTechnology","roomFacilities","shops"].forEach(c=>n+=(P.allFacilities[c]||[]).length);["skiing","entertainmentAndFamilyServices","sportsAndRecreation"].forEach(c=>n+=(P.activities[c]||[]).length);return n;}
-function showResult(slug,admin,site,host){
+function showResult(slug,admin,site,host,url){
+  url = url || pubUrl(slug);
   $("#resultCard").style.display="block";
-  $("#resultName").textContent=admin.property.basicInfo.name+" · /"+slug;
+  $("#resultName").textContent=admin.property.basicInfo.name+" · "+url.replace(/^https?:\/\//,"");
   $("#summary").innerHTML=[
     [admin.pricing.rooms.length,"unități"],[countFac(admin.property),"facilități"],
     [site.amenities.length,"categorii"],[(site.reviews.items||[]).length,"recenzii"]
   ].map(([n,l])=>'<div class="s"><b>'+n+'</b><span>'+l+'</span></div>').join("");
   renderCreds(host);
-  $("#openSite").href="/s/"+slug;
+  $("#openSite").href=url;
   $("#openAdmin").href="/admin?slug="+slug;
   $("#resultCard").scrollIntoView({behavior:"smooth"});
 }
@@ -650,14 +655,15 @@ function renderCreds(host){
 }
 async function renderList(){
   const box=$("#list");
+  await loadCfg();
   let idx=[]; try{ idx=await fetch("/api/properties").then(r=>r.json()); }catch(e){}
   if(!idx.length){box.innerHTML='<div class="empty">Nicio proprietate importată încă.</div>';return;}
   box.innerHTML="";
   idx.forEach(p=>{
     const el=document.createElement("div");el.className="prop-item";
     el.innerHTML='<div class="ph" style="background-image:url(\''+(p.hero||"")+'\')"></div>'+
-      '<div class="meta"><b>'+(p.name||p.slug)+'</b><div class="sl">/'+p.slug+'</div></div>'+
-      '<div class="acts"><a class="chip" target="_blank" href="/s/'+p.slug+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M7 7h10v10"/></svg> Site</a>'+
+      '<div class="meta"><b>'+(p.name||p.slug)+'</b><div class="sl">'+pubUrl(p.slug).replace(/^https?:\/\//,"")+'</div></div>'+
+      '<div class="acts"><a class="chip" target="_blank" href="'+pubUrl(p.slug)+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M7 7h10v10"/></svg> Site</a>'+
       '<a class="chip" target="_blank" href="/admin?slug='+p.slug+'"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg> Admin</a></div>'+
       '<button class="del" title="Șterge" data-slug="'+p.slug+'"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button>';
     el.querySelector(".del").onclick=async()=>{ await fetch("/api/host/"+p.slug,{method:"DELETE"}); renderList(); toast("Șters"); };
