@@ -1,7 +1,7 @@
 {
-  "name": "staypredeal-backend",
+  "name": "localstay-backend",
   "version": "1.0.0",
-  "description": "StayPredeal — importer + admin + site, backed by Postgres",
+  "description": "LocalStay — importer + admin + site, backed by Postgres",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
