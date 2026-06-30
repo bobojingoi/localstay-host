@@ -597,10 +597,12 @@ function occupancyAndRevenue(adminState, dates){
 app.get("/api/host/overview", AUTH.requireAuth, async (req, res) => {
   try {
     const days=[7,30,90].includes(+req.query.days) ? +req.query.days : 30;
+    const wantSlug = req.query.slug ? String(req.query.slug) : null;
     const propsQ = req.user.role==="admin"
       ? await pool.query("select slug, admin_state from properties order by created_at desc")
       : await pool.query("select slug, admin_state from properties where owner_id=$1 order by created_at desc", [req.user.id]);
-    const props=propsQ.rows;
+    // optional: scope the whole dashboard to a single property the user can access
+    const props = wantSlug ? propsQ.rows.filter(p => p.slug === wantSlug) : propsQ.rows;
     const slugs=props.map(p=>p.slug);
     const today=todayIso(), fwdEnd=addDaysIso(today,days), backStart=addDaysIso(today,-days);
     const fwdDates=rangeDates(today,fwdEnd);
@@ -731,7 +733,7 @@ app.get("/admin", async (req, res) => {
   if (!allowed) return res.status(403).send("Nu ai acces la această proprietate.");
   const p = await getProp(slug);
   if (!p) return res.status(404).send("Proprietate negăsită");
-  res.send(inject(html, "window.__ADMIN_STATE=" + JSON.stringify(p.admin_state) + ";"));
+  res.send(inject(html, "window.__ADMIN_STATE=" + JSON.stringify(p.admin_state) + ";window.__ME=" + JSON.stringify({ role: req.user.role, email: req.user.email }) + ";"));
 });
 
 /* public site by path (preview without a subdomain) */
@@ -763,10 +765,15 @@ app.get("/importer.html", (req, res) => {
   res.sendFile(path.join(PUBLIC, "importer.html"));
 });
 
-// Hotelier dashboard — host only (admins use the importer hub).
-app.get("/host", (req, res) => {
+// Hotelier landing — the unified console (editor + dashboard) for their property.
+app.get("/host", async (req, res) => {
   if (!req.user) return res.redirect("/login?next=/host");
   if (req.user.role === "admin") return res.redirect("/importer.html");
+  try {
+    const r = await pool.query("select slug from properties where owner_id=$1 order by created_at asc limit 1", [req.user.id]);
+    if (r.rows.length) return res.redirect("/admin?slug=" + encodeURIComponent(r.rows[0].slug));
+  } catch (e) {}
+  // no property assigned yet → simple empty-state page
   res.sendFile(path.join(PUBLIC, "host.html"));
 });
 app.get("/host.html", (req, res) => res.redirect("/host"));
