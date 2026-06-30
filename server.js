@@ -364,6 +364,9 @@ app.get("/api/admin/hosts", AUTH.requireAdmin, async (req, res) => {
     const r = await pool.query(
       `select u.id, u.email, u.name, u.created_at,
               (u.reset_token is not null and u.reset_expires > now()) as reset_pending,
+              coalesce(u.photo_price,3) as photo_price,
+              coalesce(u.photo_spent,0) as photo_spent,
+              coalesce(u.photos_optimized,0) as photos_optimized,
               coalesce(json_agg(p.slug) filter (where p.slug is not null), '[]') as slugs,
               coalesce(json_agg(json_build_object(
                 'slug', p.slug,
@@ -444,6 +447,23 @@ app.post("/api/admin/hosts/:id/password", AUTH.requireAdmin, async (req, res) =>
     const r = await pool.query("update users set password_hash=$1, updated_at=now() where id=$2 and role='host' returning id", [hash, req.params.id]);
     if (!r.rowCount) return res.status(404).json({ error: "Cont negăsit" });
     res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Set a hotelier's price per AI-optimized photo (in lei). Optionally reset their spend counter.
+app.post("/api/admin/hosts/:id/photo-price", AUTH.requireAdmin, async (req, res) => {
+  try {
+    const price = Number(req.body && req.body.price);
+    if (!isFinite(price) || price < 0 || price > 10000) return res.status(400).json({ error: "Preț invalid" });
+    const resetSpend = !!(req.body && req.body.resetSpend);
+    const r = await pool.query(
+      resetSpend
+        ? "update users set photo_price=$1, photo_spent=0, photos_optimized=0, updated_at=now() where id=$2 and role='host' returning coalesce(photo_price,3) as price, coalesce(photo_spent,0) as spent, coalesce(photos_optimized,0) as count"
+        : "update users set photo_price=$1, updated_at=now() where id=$2 and role='host' returning coalesce(photo_price,3) as price, coalesce(photo_spent,0) as spent, coalesce(photos_optimized,0) as count",
+      [price, req.params.id]
+    );
+    if (!r.rowCount) return res.status(404).json({ error: "Cont negăsit" });
+    res.json({ ok: true, price: Number(r.rows[0].price), spent: Number(r.rows[0].spent), count: Number(r.rows[0].count) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -542,7 +562,28 @@ app.post("/api/ai-optimize", AUTH.requireAuth, async (req, res) => {
       ]);
       alt = ai.alt; description = ai.description;
     } catch (e) {}
-    res.json({ url, thumb: thumbUrl, alt, description, enhanced });
+
+    // Billing: hotelieri are charged their per-account price per optimized photo.
+    let cost = 0, spent = null, count = null;
+    if (req.user.role === "host") {
+      try {
+        const pr = await pool.query(
+          "update users set photos_optimized = coalesce(photos_optimized,0)+1, photo_spent = coalesce(photo_spent,0)+coalesce(photo_price,3) where id=$1 returning coalesce(photo_price,3) as price, photo_spent, photos_optimized",
+          [req.user.id]
+        );
+        if (pr.rows.length) { cost = Number(pr.rows[0].price); spent = Number(pr.rows[0].photo_spent); count = Number(pr.rows[0].photos_optimized); }
+      } catch (e) { /* billing is best-effort; never fail the optimize */ }
+    }
+    res.json({ url, thumb: thumbUrl, alt, description, enhanced, cost, spent, count });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Current hotelier's photo billing (price per photo + cumulative spend).
+app.get("/api/host/photo-billing", AUTH.requireAuth, async (req, res) => {
+  try {
+    const r = await pool.query("select coalesce(photo_price,3) as price, coalesce(photo_spent,0) as spent, coalesce(photos_optimized,0) as count from users where id=$1", [req.user.id]);
+    const row = r.rows[0] || { price: 3, spent: 0, count: 0 };
+    res.json({ price: Number(row.price), spent: Number(row.spent), count: Number(row.count), isHost: req.user.role === "host" });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 function mergeAdminState(oldS, newS) {
