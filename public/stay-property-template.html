@@ -536,6 +536,16 @@ footer a:hover{color:#fff}
 .grp-chips span{background:#fff;border:1px solid var(--line);border-radius:9px;padding:7px 12px;font-size:13.5px;color:var(--navy)}
 .grp-chips i{font-style:normal;color:var(--accent);font-size:11px;margin-left:5px;font-weight:700;text-transform:uppercase}
 </style>
+<style>
+/* hotelier offers / deals shown on the public site */
+#oferte .offers-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px}
+#oferte .offer{position:relative;border:1px solid var(--line,#e6e9ee);border-radius:16px;padding:18px 18px 16px;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.05);overflow:hidden}
+#oferte .offer::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--accent,#2f7355)}
+#oferte .offer .otag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;color:var(--accent,#2f7355);background:rgba(47,115,85,.1);padding:3px 9px;border-radius:999px;margin-bottom:10px}
+#oferte .offer h3{font-size:16px;margin:0 0 6px;color:var(--navy,#1c2430)}
+#oferte .offer p{font-size:13.5px;margin:0;color:#566072;line-height:1.5}
+#oferte .offer .obig{font-size:24px;font-weight:800;color:var(--accent,#2f7355);margin:2px 0 6px}
+</style>
 </head>
 <body id="top">
 <div id="app"></div>
@@ -1691,5 +1701,37 @@ render();
 </script>
 <script>/* traffic tracking: one page_view per load (real data for the host dashboard) */
 (function(){try{var slug=(window.STAY_SLUG||new URLSearchParams(location.search).get('slug')||'');if(slug){var q=new URLSearchParams(location.search);var meta={ref:document.referrer||'',utm:q.get('utm_source')||''};fetch('/api/track',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slug:slug,type:'page_view',meta:meta})}).catch(function(){});}}catch(e){}})();</script>
+<script>/* hotelier offers / deals — fetched live and inserted before the booking section */
+(function(){
+  var slug=(window.STAY_SLUG||new URLSearchParams(location.search).get('slug')||''); if(!slug) return;
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function tag(t){ return {interval_discount:'Reducere',last_minute:'Last minute',early_bird:'Early bird',long_stay:'Sejur lung',stay_pay:'Nopți bonus',late_checkout:'Late check-out',early_checkin:'Early check-in',free_snack:'Bonus'}[t]||'Ofertă'; }
+  function big(d){ if((d.type==='interval_discount'||d.type==='last_minute'||d.type==='early_bird'||d.type==='long_stay')&&d.percent) return '−'+d.percent+'%'; if(d.type==='stay_pay'&&d.nights) return (d.nights)+' / '+Math.max(0,(d.nights||0)-(d.freeNights||0)); if((d.type==='late_checkout'||d.type==='early_checkin')&&d.time) return d.time; return ''; }
+  function sub(d){
+    switch(d.type){
+      case 'interval_discount': return (d.start||d.end)?('Valabil '+(d.start||'…')+' – '+(d.end||'…')):'Reducere pe interval limitat.';
+      case 'last_minute': return 'Pentru rezervări în următoarele '+(d.days||0)+' zile.'+(d.recurring?' Ofertă recurentă.':'');
+      case 'early_bird': return 'Dacă rezervi cu cel puțin '+(d.days||0)+' zile înainte.';
+      case 'long_stay': return 'La sejururi de minimum '+(d.nights||0)+' nopți.';
+      case 'stay_pay': return 'Stai '+(d.nights||0)+' nopți, plătești '+Math.max(0,(d.nights||0)-(d.freeNights||0))+'.'+(d.weekdaysOnly?' În timpul săptămânii.':'');
+      case 'late_checkout': return 'Predai camera mai târziu, fără grabă.';
+      case 'early_checkin': return 'Te cazezi mai devreme în ziua sosirii.';
+      case 'free_snack': return d.note||'O gustare din partea casei la sosire.';
+      default: return '';
+    }
+  }
+  fetch('/api/site/'+encodeURIComponent(slug)+'/deals').then(function(r){return r.json();}).then(function(res){
+    var deals=(res&&res.deals)||[]; if(!deals.length) return;
+    var cards=deals.map(function(d){
+      var b=big(d);
+      return '<div class="offer"><span class="otag">'+esc(tag(d.type))+'</span>'+(b?('<div class="obig">'+esc(b)+'</div>'):'')+'<h3>'+esc(d.title||tag(d.type))+'</h3><p>'+esc(sub(d))+'</p></div>';
+    }).join('');
+    var sec=document.createElement('section'); sec.className='sec tight'; sec.id='oferte';
+    sec.innerHTML='<div class="wrap"><div class="gal-head rv"><h2>Oferte</h2></div><div class="offers-grid">'+cards+'</div></div>';
+    var anchor=document.getElementById('rezervare');
+    if(anchor&&anchor.parentNode) anchor.parentNode.insertBefore(sec, anchor);
+    else { var app=document.getElementById('app'); if(app) app.appendChild(sec); }
+  }).catch(function(){});
+})();</script>
 </body>
 </html>
