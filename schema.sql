@@ -34,6 +34,10 @@ create index if not exists properties_owner_idx on properties(owner_id);
 -- {status:'pending'|'approved'|'rejected', token, requestedAt, decidedAt, note}
 alter table properties add column if not exists approval jsonb;
 
+-- Offers / deals the hotelier creates (interval discounts, last-minute, perks, etc.).
+-- Array of {id, type, title, active, ...type-specific fields...}
+alter table properties add column if not exists deals jsonb default '[]'::jsonb;
+
 -- Reservation requests submitted from the public site's booking form.
 create table if not exists booking_requests (
   id          uuid primary key default gen_random_uuid(),
