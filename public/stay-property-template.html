@@ -1690,6 +1690,6 @@ if (typeof window!=='undefined' && window.STAY_THEME) THEME = Object.assign({}, 
 render();
 </script>
 <script>/* traffic tracking: one page_view per load (real data for the host dashboard) */
-(function(){try{var slug=(window.STAY_SLUG||new URLSearchParams(location.search).get('slug')||'');if(slug){fetch('/api/track',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slug:slug,type:'page_view'})}).catch(function(){});}}catch(e){}})();</script>
+(function(){try{var slug=(window.STAY_SLUG||new URLSearchParams(location.search).get('slug')||'');if(slug){var q=new URLSearchParams(location.search);var meta={ref:document.referrer||'',utm:q.get('utm_source')||''};fetch('/api/track',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slug:slug,type:'page_view',meta:meta})}).catch(function(){});}}catch(e){}})();</script>
 </body>
 </html>
