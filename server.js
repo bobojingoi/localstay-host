@@ -222,13 +222,70 @@ app.post("/api/auth/login", async (req, res) => {
   try {
     const email = normEmail(req.body && req.body.email);
     const password = (req.body && req.body.password) || "";
+    const remember = !!(req.body && req.body.remember);
     if (!email || !password) return res.status(400).json({ error: "Email și parolă obligatorii" });
     const r = await pool.query("select * from users where email=$1", [email]);
     const u = r.rows[0];
     if (!u || !(await AUTH.verifyPassword(password, u.password_hash)))
       return res.status(401).json({ error: "Email sau parolă greșite" });
-    AUTH.setAuthCookie(req, res, u);
+    AUTH.setAuthCookie(req, res, u, remember);
     res.json({ ok: true, role: u.role, email: u.email, name: u.name || "" });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ---------- password recovery ---------- */
+// Pages
+app.get("/forgot", (req, res) => res.sendFile(path.join(PUBLIC, "forgot.html")));
+app.get("/reset/:token", (req, res) => res.sendFile(path.join(PUBLIC, "reset.html")));
+
+// Host asks for a reset: we store a token. Delivery is admin-relayed (no SMTP yet),
+// so we always answer generically and never reveal whether the email exists.
+app.post("/api/auth/forgot", async (req, res) => {
+  try {
+    const email = normEmail(req.body && req.body.email);
+    if (email) {
+      const r = await pool.query("select id from users where email=$1", [email]);
+      if (r.rows.length) {
+        const token = crypto.randomBytes(24).toString("hex");
+        const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+        await pool.query("update users set reset_token=$1, reset_expires=$2 where id=$3", [token, expires, r.rows[0].id]);
+      }
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Validate a reset token (so the reset page can show/hide the form).
+app.get("/api/auth/reset/:token", async (req, res) => {
+  try {
+    const r = await pool.query("select email from users where reset_token=$1 and reset_expires > now()", [req.params.token]);
+    if (!r.rows.length) return res.status(404).json({ error: "Link invalid sau expirat." });
+    res.json({ ok: true, email: r.rows[0].email });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Set a new password using a valid token.
+app.post("/api/auth/reset", async (req, res) => {
+  try {
+    const token = String((req.body && req.body.token) || "");
+    const password = String((req.body && req.body.password) || "");
+    if (password.length < 8) return res.status(400).json({ error: "Parola trebuie să aibă minim 8 caractere." });
+    const r = await pool.query("select id from users where reset_token=$1 and reset_expires > now()", [token]);
+    if (!r.rows.length) return res.status(404).json({ error: "Link invalid sau expirat." });
+    const hash = await AUTH.hashPassword(password);
+    await pool.query("update users set password_hash=$1, reset_token=null, reset_expires=null where id=$2", [hash, r.rows[0].id]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Admin: generate a reset link for a host (to relay by WhatsApp/email).
+app.post("/api/admin/hosts/:id/reset-link", AUTH.requireAdmin, async (req, res) => {
+  try {
+    const token = crypto.randomBytes(24).toString("hex");
+    const expires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h for admin-generated links
+    const r = await pool.query("update users set reset_token=$1, reset_expires=$2 where id=$3 and role='host' returning email", [token, expires, req.params.id]);
+    if (!r.rows.length) return res.status(404).json({ error: "Hotelier inexistent." });
+    res.json({ ok: true, token, email: r.rows[0].email, path: "/reset/" + token });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -285,6 +342,7 @@ app.get("/api/admin/hosts", AUTH.requireAdmin, async (req, res) => {
   try {
     const r = await pool.query(
       `select u.id, u.email, u.name, u.created_at,
+              (u.reset_token is not null and u.reset_expires > now()) as reset_pending,
               coalesce(json_agg(p.slug) filter (where p.slug is not null), '[]') as slugs,
               coalesce(json_agg(json_build_object(
                 'slug', p.slug,
@@ -561,8 +619,19 @@ app.get("/api/host/deals", AUTH.requireAuth, async (req, res) => {
     const slug = String(req.query.slug || "");
     if (!slug) return res.status(400).json({ error: "slug lipsă" });
     if (!(await AUTH.userCanAccessSlug(pool, req.user, slug))) return res.status(403).json({ error: "Fără acces" });
-    const r = await pool.query("select deals from properties where slug=$1", [slug]);
-    res.json({ deals: (r.rows[0] && r.rows[0].deals) || [] });
+    const r = await pool.query("select deals, deals_consent from properties where slug=$1", [slug]);
+    res.json({ deals: (r.rows[0] && r.rows[0].deals) || [], consent: !!(r.rows[0] && r.rows[0].deals_consent) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Hotelier agrees that offers are published on the LocalStay platform.
+app.post("/api/host/deals-consent", AUTH.requireAuth, async (req, res) => {
+  try {
+    const slug = String((req.body && req.body.slug) || "");
+    if (!slug) return res.status(400).json({ error: "slug lipsă" });
+    if (!(await AUTH.userCanAccessSlug(pool, req.user, slug))) return res.status(403).json({ error: "Fără acces" });
+    await pool.query("update properties set deals_consent=$1 where slug=$2", [!!(req.body && req.body.consent), slug]);
+    res.json({ ok: true, consent: !!(req.body && req.body.consent) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
