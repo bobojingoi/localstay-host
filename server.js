@@ -14,6 +14,17 @@ app.set("trust proxy", 1); // Render runs behind a proxy — needed for Secure c
 app.use(express.json({ limit: "25mb" }));
 app.use(AUTH.attachUser); // sets req.user (or null) from the auth cookie on every request
 
+// While the project is not yet validated, keep every page out of search indexes.
+// Controlled by the NOINDEX env var (ON by default). Set NOINDEX=false to allow
+// indexing once you're ready — no code change needed.
+app.use((req, res, next) => {
+  if (NOINDEX) res.set("X-Robots-Tag", "noindex, nofollow");
+  next();
+});
+app.get("/robots.txt", (req, res) => {
+  res.type("text/plain").send(NOINDEX ? "User-agent: *\nDisallow: /\n" : "User-agent: *\nAllow: /\n");
+});
+
 // Safety net: never let a request hang forever (e.g. if the DB is briefly down).
 // If a handler hasn't responded in time, return 503 instead of spinning.
 // AI image editing and uploads are legitimately slow, so they get longer budgets.
@@ -51,6 +62,9 @@ app.get("/api/health", async (req, res) => {
 
 const PUBLIC = path.join(__dirname, "public");
 const BASE_DOMAIN = (process.env.BASE_DOMAIN || "").toLowerCase(); // e.g. localstay.ro
+// Search-engine indexing switch. ON by default (everything noindex) until the
+// project is validated; set NOINDEX=false (or 0/off/no) to allow indexing.
+const NOINDEX = !/^(false|0|off|no)$/i.test(String(process.env.NOINDEX || "").trim());
 // Canonical public URL for a unit: pensiunea-crocus.localstay.ro when a base
 // domain is configured, otherwise the path form on the Render host.
 function siteUrl(slug) {
@@ -72,10 +86,11 @@ function renderSite(site, slug) {
   if (c.phone) theme.booking = { phone: c.phone, whatsapp: (c.phone || "").replace(/[^0-9]/g, ""), url: "" };
   const url = siteUrl(slug);
   const html = inject(tpl, "window.STAY_PROPERTY=" + JSON.stringify(site) + ";window.STAY_THEME=" + JSON.stringify(theme) + ";window.STAY_SLUG=" + JSON.stringify(slug||"") + ";window.STAY_URL=" + JSON.stringify(url) + ";");
-  // advertise the canonical subdomain URL for SEO / sharing when a base domain is set
-  return BASE_DOMAIN
-    ? html.replace("</head>", '<link rel="canonical" href="' + url + '"><meta property="og:url" content="' + url + '"></head>')
-    : html;
+  // robots noindex (until validated) + canonical subdomain URL for SEO / sharing
+  let headExtra = "";
+  if (NOINDEX) headExtra += '<meta name="robots" content="noindex, nofollow">';
+  if (BASE_DOMAIN) headExtra += '<link rel="canonical" href="' + url + '"><meta property="og:url" content="' + url + '">';
+  return headExtra ? html.replace("</head>", headExtra + "</head>") : html;
 }
 
 /* ---------- iCal export (effective blocks incl. entire/room overlap) ---------- */
