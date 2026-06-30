@@ -42,6 +42,10 @@ input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--br
     <input id="email" type="email" autocomplete="username" placeholder="nume@exemplu.ro" autofocus>
     <label for="password">Parolă</label>
     <input id="password" type="password" autocomplete="current-password" placeholder="••••••••">
+    <div class="lrow" style="display:flex;align-items:center;justify-content:space-between;margin-top:14px;font-size:13.5px">
+      <label for="remember" style="display:flex;align-items:center;gap:8px;margin:0;font-weight:500;color:var(--text);cursor:pointer"><input id="remember" type="checkbox" style="width:auto;margin:0"> Nu mă uita</label>
+      <a href="/forgot" style="color:var(--brand);font-weight:600;text-decoration:none">Ai uitat parola?</a>
+    </div>
     <div class="err" id="err"></div>
     <button class="btn" id="btn">Intră în cont</button>
   </div>
@@ -59,7 +63,7 @@ input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--br
     if(!email||!password){ showErr("Completează email și parolă."); return; }
     btn.disabled=true; btn.textContent="Se verifică…";
     try{
-      var r=await fetch("/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:email,password:password})});
+      var r=await fetch("/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:email,password:password,remember:$("remember").checked})});
       var d=await r.json().catch(function(){return {};});
       if(!r.ok){ showErr(d.error||"Autentificare eșuată."); btn.disabled=false; btn.textContent="Intră în cont"; return; }
       location.href = nextUrl() || "/";
