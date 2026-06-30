@@ -43,6 +43,9 @@ alter table properties add column if not exists deals_consent boolean default fa
 -- Password recovery: a short-lived reset token per user.
 alter table users add column if not exists reset_token text;
 alter table users add column if not exists reset_expires timestamptz;
+alter table users add column if not exists photo_price numeric(8,2) default 3;
+alter table users add column if not exists photo_spent numeric(10,2) default 0;
+alter table users add column if not exists photos_optimized integer default 0;
 
 -- Reservation requests submitted from the public site's booking form.
 create table if not exists booking_requests (
