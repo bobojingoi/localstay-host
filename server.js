@@ -755,11 +755,21 @@ app.get("/ical/:slug/:file", async (req, res) => {
 // Public login page.
 app.get("/login", (req, res) => res.sendFile(path.join(PUBLIC, "login.html")));
 
-// The importer is the admin/host hub — require login to load it.
+// The importer hub is ADMIN ONLY. Hosts get their own dashboard at /host so a
+// hotelier can never load the platform admin (import, hosts, global stats).
 app.get("/importer.html", (req, res) => {
   if (!req.user) return res.redirect("/login");
+  if (req.user.role !== "admin") return res.redirect("/host");
   res.sendFile(path.join(PUBLIC, "importer.html"));
 });
+
+// Hotelier dashboard — host only (admins use the importer hub).
+app.get("/host", (req, res) => {
+  if (!req.user) return res.redirect("/login?next=/host");
+  if (req.user.role === "admin") return res.redirect("/importer.html");
+  res.sendFile(path.join(PUBLIC, "host.html"));
+});
+app.get("/host.html", (req, res) => res.redirect("/host"));
 
 // Don't let the raw editor shell load without auth — funnel to the gated /admin route.
 app.get("/admin-console.html", (req, res) => {
@@ -768,7 +778,8 @@ app.get("/admin-console.html", (req, res) => {
 });
 
 app.use(express.static(PUBLIC));
-app.get("/", (req, res) => res.redirect(req.user ? "/importer.html" : "/login"));
+// Role-aware landing: admins → hub, hosts → their dashboard.
+app.get("/", (req, res) => res.redirect(!req.user ? "/login" : (req.user.role === "admin" ? "/importer.html" : "/host")));
 
 /* ---------- start ---------- */
 // Keep the web service alive even through transient DB outages: a stray async
