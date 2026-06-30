@@ -533,9 +533,18 @@ app.post("/api/upload", AUTH.requireAuth, async (req, res) => {
 app.post("/api/ai-optimize", AUTH.requireAuth, async (req, res) => {
   try {
     if (!r2ready()) return res.status(503).json({ error: "R2 not configured" });
-    const m = String(req.body.dataUrl || "").match(/^data:(image\/[\w+.-]+);base64,(.+)$/);
-    if (!m) return res.status(400).json({ error: "bad image" });
-    let mime = m[1], b64 = m[2], enhanced = false;
+    let mime, b64;
+    if (req.body && req.body.url) {
+      const fr = await fetch(req.body.url);
+      if (!fr.ok) return res.status(400).json({ error: "fetch image " + fr.status });
+      mime = fr.headers.get("content-type") || "image/jpeg";
+      b64 = Buffer.from(await fr.arrayBuffer()).toString("base64");
+    } else {
+      const m = String((req.body && req.body.dataUrl) || "").match(/^data:(image\/[\w+.-]+);base64,(.+)$/);
+      if (!m) return res.status(400).json({ error: "bad image" });
+      mime = m[1]; b64 = m[2];
+    }
+    let enhanced = false;
     // 1) AI enhance — best-effort; if it fails we still optimize+upload the original
     if (req.body.enhance !== false) {
       try {
