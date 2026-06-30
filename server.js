@@ -65,6 +65,9 @@ const BASE_DOMAIN = (process.env.BASE_DOMAIN || "").toLowerCase(); // e.g. local
 // Search-engine indexing switch. ON by default (everything noindex) until the
 // project is validated; set NOINDEX=false (or 0/off/no) to allow indexing.
 const NOINDEX = !/^(false|0|off|no)$/i.test(String(process.env.NOINDEX || "").trim());
+// Optional Google Analytics 4 measurement ID (e.g. G-XXXXXXXXXX). When set, the
+// gtag snippet is injected into every public unit page so traffic flows to GA4.
+const GA4_ID = (process.env.GA4_MEASUREMENT_ID || "").trim();
 // Canonical public URL for a unit: pensiunea-crocus.localstay.ro when a base
 // domain is configured, otherwise the path form on the Render host.
 function siteUrl(slug) {
@@ -90,6 +93,13 @@ function renderSite(site, slug) {
   let headExtra = "";
   if (NOINDEX) headExtra += '<meta name="robots" content="noindex, nofollow">';
   if (BASE_DOMAIN) headExtra += '<link rel="canonical" href="' + url + '"><meta property="og:url" content="' + url + '">';
+  // Google Analytics 4 — collects real traffic into your GA4 property when GA4_MEASUREMENT_ID is set.
+  // The slug is sent as a custom dimension so you can segment traffic per unit in GA4.
+  if (GA4_ID) {
+    headExtra += '<script async src="https://www.googletagmanager.com/gtag/js?id=' + GA4_ID + '"></script>'
+      + '<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag("js",new Date());'
+      + 'gtag("config",' + JSON.stringify(GA4_ID) + ',{property_slug:' + JSON.stringify(slug||"") + '});</script>';
+  }
   return headExtra ? html.replace("</head>", headExtra + "</head>") : html;
 }
 
@@ -593,6 +603,29 @@ function occupancyAndRevenue(adminState, dates){
   counted.forEach(u=>{ effectiveBlocked(adminState, u.id).forEach(ds=>{ if (dateSet.has(ds)){ occ++; rev+=nightlyPrice(pricing, u.id, ds); } }); });
   return { occNights:occ, totalNights:counted.length*dates.length, estRevenue:Math.round(rev), currency:(rooms[0]&&rooms[0].currency)||"RON", units:counted.length };
 }
+// Map a page_view event's referrer/utm to a readable traffic source label.
+function classifySource(meta, ownHosts) {
+  let m = meta || {};
+  if (typeof m === "string") { try { m = JSON.parse(m); } catch (e) { m = {}; } }
+  const utm = String(m.utm || "").trim();
+  if (utm) return utm.charAt(0).toUpperCase() + utm.slice(1);
+  const ref = String(m.ref || "").trim();
+  if (!ref) return "Direct";
+  let host = "";
+  try { host = new URL(ref).hostname.replace(/^www\./, "").toLowerCase(); } catch (e) { return "Direct"; }
+  if (host.endsWith("onrender.com")) return "Intern";
+  if (ownHosts.some(h => h && (host === h || host.endsWith("." + h)))) return "Intern";
+  if (host.includes("google")) return "Google";
+  if (host.includes("facebook") || host === "fb.com" || host.startsWith("l.facebook")) return "Facebook";
+  if (host.includes("instagram")) return "Instagram";
+  if (host.includes("tiktok")) return "TikTok";
+  if (host.includes("bing")) return "Bing";
+  if (host.includes("t.co") || host.includes("twitter") || host === "x.com") return "X/Twitter";
+  if (host.includes("booking.com")) return "Booking.com";
+  if (host.includes("airbnb")) return "Airbnb";
+  return host; // fallback: the referring domain itself
+}
+
 // Aggregated dashboard for a hotelier across all their properties (admin sees all).
 app.get("/api/host/overview", AUTH.requireAuth, async (req, res) => {
   try {
@@ -618,7 +651,7 @@ app.get("/api/host/overview", AUTH.requireAuth, async (req, res) => {
 
     let events=[], reqsBack=[], stays=[];
     if (slugs.length){
-      events=(await pool.query("select type, to_char(created_at,'YYYY-MM-DD') as day from site_events where slug = ANY($1) and created_at >= $2 and type in ('page_view','phone_reveal')", [slugs, backStart])).rows;
+      events=(await pool.query("select type, meta, to_char(created_at,'YYYY-MM-DD') as day from site_events where slug = ANY($1) and created_at >= $2 and type in ('page_view','phone_reveal')", [slugs, backStart])).rows;
       reqsBack=(await pool.query("select status, to_char(created_at,'YYYY-MM-DD') as day from booking_requests where slug = ANY($1) and created_at >= $2", [slugs, backStart])).rows;
       stays=(await pool.query("select slug, name, phone, to_char(checkin,'YYYY-MM-DD') as checkin, to_char(checkout,'YYYY-MM-DD') as checkout, adults, children, status from booking_requests where slug = ANY($1) and ((checkin >= $2 and checkin < $3) or (checkout >= $2 and checkout < $3)) order by checkin asc limit 100", [slugs, today, fwdEnd])).rows;
     }
@@ -626,6 +659,12 @@ app.get("/api/host/overview", AUTH.requireAuth, async (req, res) => {
     const reveals=events.filter(e=>e.type==="phone_reveal").length;
     const requests=reqsBack.length;
     const byStatus={}; reqsBack.forEach(r=>{ const s=r.status||"nou"; byStatus[s]=(byStatus[s]||0)+1; });
+
+    // traffic sources (from page_view referrer/utm) — analytics without GA
+    const ownHosts = [BASE_DOMAIN].filter(Boolean);
+    const srcCounts = {};
+    events.forEach(e => { if (e.type === "page_view") { const s = classifySource(e.meta, ownHosts); srcCounts[s] = (srcCounts[s] || 0) + 1; } });
+    const sources = Object.keys(srcCounts).map(k => ({ source: k, count: srcCounts[k] })).sort((a, b) => b.count - a.count);
 
     const trend=rangeDates(backStart, addDaysIso(today,1)).map(d=>({ date:d, views:0, requests:0 }));
     const tindex={}; trend.forEach(t=>{ tindex[t.date]=t; });
@@ -636,13 +675,23 @@ app.get("/api/host/overview", AUTH.requireAuth, async (req, res) => {
     const arrivals=stays.filter(s=>s.checkin && s.checkin>=today && s.checkin<fwdEnd).map(fmt);
     const departures=stays.filter(s=>s.checkout && s.checkout>=today && s.checkout<fwdEnd).map(fmt);
 
+    // leads = users who left personal data (booking-request contacts), most recent first
+    let leadRows=[];
+    if (slugs.length) {
+      leadRows=(await pool.query(
+        "select slug, name, phone, email, to_char(checkin,'YYYY-MM-DD') as checkin, to_char(checkout,'YYYY-MM-DD') as checkout, adults, children, status, to_char(created_at,'YYYY-MM-DD') as day from booking_requests where slug = ANY($1) order by created_at desc limit 60",
+        [slugs])).rows;
+    }
+    const leads = leadRows.map(r=>({ name:r.name||"—", phone:r.phone||"", email:r.email||"", property:nameOf[r.slug]||r.slug, checkin:r.checkin, checkout:r.checkout, guests:(r.adults||0)+(r.children||0), status:r.status||"nou", day:r.day }));
+    const leadsTotal = leadRows.length;
+
     res.json({
       days, properties: perProperty.length,
       occupancy: total?Math.round(occ/total*100):0, occNights:occ, totalNights:total,
       estRevenue:Math.round(rev), currency,
       views, reveals, requests, byStatus,
       conv: { viewToReveal: views?Math.round(reveals/views*100):0, revealToRequest: reveals?Math.round(requests/reveals*100):0, viewToRequest: views?Math.round(requests/views*100):0 },
-      trend, arrivals, departures, perProperty
+      trend, arrivals, departures, perProperty, leads, leadsTotal, sources
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
