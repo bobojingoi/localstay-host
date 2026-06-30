@@ -51,6 +51,11 @@ app.get("/api/health", async (req, res) => {
 
 const PUBLIC = path.join(__dirname, "public");
 const BASE_DOMAIN = (process.env.BASE_DOMAIN || "").toLowerCase(); // e.g. localstay.ro
+// Canonical public URL for a unit: pensiunea-crocus.localstay.ro when a base
+// domain is configured, otherwise the path form on the Render host.
+function siteUrl(slug) {
+  return BASE_DOMAIN ? ("https://" + slug + "." + BASE_DOMAIN) : ("/s/" + slug);
+}
 
 /* ---------- helpers ---------- */
 async function getProp(slug) {
@@ -65,7 +70,12 @@ function renderSite(site, slug) {
   const c = site._contact || {};
   const theme = { brandName: site.name || "", brandSub: (site.location && site.location.area) || "" };
   if (c.phone) theme.booking = { phone: c.phone, whatsapp: (c.phone || "").replace(/[^0-9]/g, ""), url: "" };
-  return inject(tpl, "window.STAY_PROPERTY=" + JSON.stringify(site) + ";window.STAY_THEME=" + JSON.stringify(theme) + ";window.STAY_SLUG=" + JSON.stringify(slug||"") + ";");
+  const url = siteUrl(slug);
+  const html = inject(tpl, "window.STAY_PROPERTY=" + JSON.stringify(site) + ";window.STAY_THEME=" + JSON.stringify(theme) + ";window.STAY_SLUG=" + JSON.stringify(slug||"") + ";window.STAY_URL=" + JSON.stringify(url) + ";");
+  // advertise the canonical subdomain URL for SEO / sharing when a base domain is set
+  return BASE_DOMAIN
+    ? html.replace("</head>", '<link rel="canonical" href="' + url + '"><meta property="og:url" content="' + url + '"></head>')
+    : html;
 }
 
 /* ---------- iCal export (effective blocks incl. entire/room overlap) ---------- */
@@ -174,6 +184,9 @@ app.use(async (req, res, next) => {
 });
 
 /* ---------- API ---------- */
+
+/* public client config (base domain for building unit URLs) */
+app.get("/api/config", (req, res) => res.json({ baseDomain: BASE_DOMAIN || "" }));
 
 /* ====================== AUTH ====================== */
 function normEmail(e) { return String(e || "").trim().toLowerCase(); }
@@ -439,7 +452,7 @@ app.post("/api/import", AUTH.requireAdmin, async (req, res) => {
       host = { error: e.message }; // never fail the import over host provisioning
     }
 
-    res.json({ slug, name: merged.property.basicInfo.name || slug, merged: !!existing, host });
+    res.json({ slug, name: merged.property.basicInfo.name || slug, merged: !!existing, host, url: siteUrl(slug) });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
