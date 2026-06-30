@@ -2209,7 +2209,8 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
 
     // KPI tiles
     if(kb) kb.innerHTML =
-      tile(ICONS.gauge, o.occupancy+'%', 'grad de ocupare · următoarele '+days+' zile')
+      ((o.properties>1) ? tile(ICONS.bed, o.properties, 'proprietăți') : '')
+      + tile(ICONS.gauge, o.occupancy+'%', 'grad de ocupare · următoarele '+days+' zile')
       + tile(ICONS.money, money(o.estRevenue,o.currency), 'venit estimat · următoarele '+days+' zile')
       + tile(ICONS.inbox, o.requests, 'cereri de rezervare · ultimele '+days+' zile')
       + tile(ICONS.eye, o.views, 'vizualizări · ultimele '+days+' zile')
@@ -2257,7 +2258,13 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
         '<div class="dcard"><h3>Check-in-uri ce urmează</h3><p class="sub">următoarele '+days+' zile</p><div class="stays">'+arrHtml+'</div></div>'+
         '<div class="dcard"><h3>Check-out-uri ce urmează</h3><p class="sub">următoarele '+days+' zile</p><div class="stays">'+depHtml+'</div></div>'+
       '</div>'+
+      (function(){ var ss=o.sources||[]; if(!ss.length) return '<div class="dcard" style="margin-bottom:16px"><h3>Surse de trafic</h3><div class="dempty">Niciun trafic \u00eenc\u0103.</div></div>'; var mx=Math.max.apply(null,ss.map(function(s){return s.count;}).concat([1])); return '<div class="dcard" style="margin-bottom:16px"><h3>Surse de trafic</h3><p class="sub">de unde au venit \u00b7 ultimele '+days+' zile</p><div class="funnel">'+ss.slice(0,8).map(function(s){ return '<div class="frow"><span class="fl">'+esc(s.source)+'</span><div class="fbar"><span style="width:'+Math.round(s.count/mx*100)+'%"></span></div><span class="fv">'+s.count+'</span></div>'; }).join('')+'</div></div>'; })()+
       (pp.length>1 ? '<div class="dcard" style="margin-bottom:16px"><h3>Pe proprietate</h3><p class="sub">ocupare în următoarele '+days+' zile</p>'+ppHtml+'</div>' : '')+
+      ('<div class="dcard" style="margin-bottom:16px"><h3>Date de contact (lead-uri)</h3><p class="sub">utilizatori care au lăsat datele · cele mai recente</p>'+
+        ((o.leads&&o.leads.length) ? '<table class="dtable"><thead><tr><th>Nume</th><th>Contact</th><th>Proprietate</th><th>Perioadă</th><th>Status</th></tr></thead><tbody>'+
+          o.leads.slice(0,12).map(function(l){ var per=(l.checkin||'')+(l.checkout?(' \u2192 '+l.checkout):''); var contact=[l.phone,l.email].filter(Boolean).join(' \u00b7 ')||'\u2014'; return '<tr><td><b>'+esc(l.name)+'</b></td><td>'+esc(contact)+'</td><td>'+esc(l.property)+'</td><td>'+esc(per||'\u2014')+'</td><td>'+esc(l.status)+'</td></tr>'; }).join('')+
+          '</tbody></table>' : '<div class="dempty">Niciun lead \u00eenc\u0103.</div>')+
+      '</div>')+
       '<div class="estnote">Gradul de ocupare și venitul estimat se calculează din calendarul de disponibilitate (blocări manuale + sincronizări Booking/Airbnb) și din prețurile setate. Venitul este o <b>estimare</b> a nopților ocupate × tarif — platforma nu procesează plăți. Traficul se înregistrează din momentul activării.</div>';
   }
 
