@@ -408,6 +408,51 @@ textarea.inp{min-height:70px;resize:vertical;line-height:1.5}
 .amodal-row{display:flex;gap:10px;margin-top:16px}
 .amodal .btn{flex:0 0 auto}
 </style>
+<style>
+/* approvals tab */
+.appr-item{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:12px;box-shadow:var(--shadow)}
+.appr-item .ai{width:40px;height:40px;border-radius:10px;background:var(--brand-soft);display:grid;place-items:center;flex:none}
+.appr-item .ai svg{width:19px;height:19px;color:var(--brand)}
+.appr-item .at{flex:1;min-width:0}
+.appr-item .at b{display:block;color:var(--ink);font-size:14.5px}
+.appr-item .at span{font-size:12.5px;color:var(--muted)}
+.appr-item .actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.sbadge{font-size:11.5px;font-weight:700;padding:4px 11px;border-radius:999px;white-space:nowrap}
+.sbadge.pending{background:#fdf4e3;color:#8a6516}
+.sbadge.approved{background:var(--brand-soft);color:var(--brand-d)}
+.sbadge.rejected{background:#fbeaea;color:#a23b3b}
+.sbadge.soon{background:#eef1f4;color:var(--muted)}
+/* deals tab */
+.deal-card{display:flex;align-items:flex-start;gap:14px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:15px 17px;margin-bottom:12px;box-shadow:var(--shadow)}
+.deal-card .di{width:40px;height:40px;border-radius:10px;background:var(--brand-soft);display:grid;place-items:center;flex:none}
+.deal-card .di svg{width:19px;height:19px;color:var(--brand)}
+.deal-card .dt{flex:1;min-width:0}
+.deal-card .dt b{display:block;color:var(--ink);font-size:14.5px}
+.deal-card .dt .meta{font-size:12.5px;color:var(--muted);margin-top:2px}
+.deal-card .dt .sum{font-size:13px;color:var(--brand-d);font-weight:600;margin-top:6px}
+.deal-card.off{opacity:.5}
+.deal-acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tgl{position:relative;width:38px;height:22px;border-radius:999px;background:#cfd6df;cursor:pointer;transition:.15s;border:0;flex:none;padding:0}
+.tgl.on{background:var(--brand)}
+.tgl::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.15s}
+.tgl.on::after{left:18px}
+.lnk-btn{font-size:12.5px;font-weight:600;border:1px solid var(--line);background:#fff;color:var(--text);border-radius:8px;padding:5px 11px;cursor:pointer}
+.lnk-btn:hover{border-color:var(--brand);color:var(--brand-d)}
+.lnk-btn.del:hover{border-color:#e0b4b4;color:#a23b3b}
+.dfield{margin-top:13px}
+.dfield label{display:block;font-size:13px;font-weight:600;color:var(--ink);margin-bottom:5px}
+.dfield input,.dfield select{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font:inherit;font-size:14px;color:var(--ink)}
+.dfield.row2{display:flex;gap:10px}.dfield.row2>div{flex:1}
+.dcheck{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13.5px;color:var(--ink)}
+.dcheck input{width:auto;margin:0}
+.dgrid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:6px}
+.dtype{border:1px solid var(--line);border-radius:11px;padding:11px 12px;cursor:pointer;text-align:left;background:#fff;font:inherit}
+.dtype:hover{border-color:var(--brand);background:var(--brand-soft)}
+.dtype.sel{border-color:var(--brand);background:var(--brand-soft)}
+.dtype b{display:block;font-size:13px;color:var(--ink)}
+.dtype span{font-size:11.5px;color:var(--muted)}
+.amodal-card.wide{max-width:520px}
+</style>
 </head>
 <body>
 <div class="app">
@@ -421,6 +466,8 @@ textarea.inp{min-height:70px;resize:vertical;line-height:1.5}
     <button class="nav-i" data-tab="ical"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/></svg> Calendare iCal</button>
     <button class="nav-i" data-tab="galerie"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg> Galerie</button>
     <button class="nav-i" data-tab="cereri"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Cereri</button>
+    <button class="nav-i" data-tab="oferte"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.6 13.4L13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.6z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg> Oferte</button>
+    <button class="nav-i" data-tab="aprobari"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg> Aprobări</button>
     <div class="sp"></div>
     <div class="prop"><b id="propName">Vila Maria Rustic Predeal</b>Predeal · jud. Brașov<a href="#" target="_blank" id="viewSite">Vizualizează site-ul <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M7 7h10v10"/></svg></a></div>
   </aside>
@@ -514,6 +561,17 @@ textarea.inp{min-height:70px;resize:vertical;line-height:1.5}
         <p class="intro">Cererile de rezervare trimise din formularul site-ului public. Datele clientului, perioada, oaspeții și camerele alese.</p>
         <div style="display:flex;gap:10px;margin-bottom:14px"><button class="btn ghost" id="cereriReload">Reîmprospătează</button></div>
         <div id="cereriBox"><p class="muted">Se încarcă…</p></div>
+      </section>
+
+      <section class="panel" id="panel-oferte">
+        <p class="intro">Creează oferte și beneficii pe care le afișezi pe site. Oaspeții le văd când rezervă, iar tu le onorezi la confirmarea cererii.</p>
+        <div style="display:flex;gap:10px;margin-bottom:16px"><button class="btn btn-pri" id="dealAdd">+ Ofertă nouă</button></div>
+        <div id="dealsBox"><p class="muted">Se încarcă…</p></div>
+      </section>
+
+      <section class="panel" id="panel-aprobari">
+        <p class="intro">Verifică și aprobă materialele unității înainte de publicare.</p>
+        <div id="apprBox"><p class="muted">Se încarcă…</p></div>
       </section>
     </div>
   </div>
@@ -1836,7 +1894,7 @@ $("#feedSave").onclick=()=>{
 };
 
 /* =================== NAV / INIT =================== */
-const TITLES={panou:"Panou",continut:"Conținut",preturi:"Prețuri",calendar:"Calendar",ical:"Calendare iCal",galerie:"Galerie",cereri:"Cereri de rezervare"};
+const TITLES={panou:"Panou",continut:"Conținut",preturi:"Prețuri",calendar:"Calendar",ical:"Calendare iCal",galerie:"Galerie",cereri:"Cereri de rezervare",oferte:"Oferte",aprobari:"Aprobări"};
 $$(".nav-i").forEach(b=>b.onclick=()=>{
   $$(".nav-i").forEach(x=>x.classList.remove("on"));b.classList.add("on");
   $$(".panel").forEach(p=>p.classList.remove("on"));$("#panel-"+b.dataset.tab).classList.add("on");
@@ -1845,6 +1903,8 @@ $$(".nav-i").forEach(b=>b.onclick=()=>{
   if(b.dataset.tab==="galerie") renderGalerie();
   if(b.dataset.tab==="cereri") renderCereri();
   if(b.dataset.tab==="panou" && window.__renderDash) window.__renderDash();
+  if(b.dataset.tab==="oferte" && window.__renderDeals) window.__renderDeals();
+  if(b.dataset.tab==="aprobari" && window.__renderAppr) window.__renderAppr();
 });
 $("#menuBtn").onclick=()=>$("#side").classList.toggle("open");
 $("#viewSite").href="/s/"+SLUG;
@@ -2312,6 +2372,180 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
     if(!r.ok){ err.textContent=d.error||"Eroare."; err.style.display="block"; return; }
     ME.email = body.newEmail || ME.email; closeAcct(); note("Date actualizate");
   };
+
+  // ===== OFERTE (deals) =====
+  var DEAL_META = {
+    interval_discount: { label:"Reducere pe interval", desc:"−X% pentru un interval de date", fields:["percent","start","end"] },
+    last_minute:       { label:"Last minute",          desc:"−X% pentru rezervări în următoarele X zile", fields:["percent","days","recurring"] },
+    early_bird:        { label:"Early bird",            desc:"−X% dacă rezervă cu min. X zile înainte", fields:["percent","days"] },
+    long_stay:         { label:"Sejur lung",            desc:"−X% pentru sejururi de min. X nopți", fields:["percent","nights"] },
+    stay_pay:          { label:"Stai N, plătești mai puțin", desc:"ex. 3 nopți, 1 gratis (în timpul săptămânii)", fields:["nights","freeNights","weekdaysOnly"] },
+    late_checkout:     { label:"Late check-out",        desc:"check-out târziu, la ora stabilită", fields:["time"] },
+    early_checkin:     { label:"Early check-in",        desc:"check-in devreme, la ora stabilită", fields:["time"] },
+    free_snack:        { label:"Gustare din partea casei", desc:"un bonus de bun-venit", fields:["note"] }
+  };
+  var DEAL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.6 13.4L13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.6z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>';
+  var DEALS = [];
+
+  function dealDefaultTitle(t){ return (DEAL_META[t] && DEAL_META[t].label) || "Ofertă"; }
+  function dealSummary(d){
+    var p=d.percent||0;
+    switch(d.type){
+      case "interval_discount": return "−"+p+"%"+((d.start||d.end)?(" • "+(d.start||"…")+" → "+(d.end||"…")):"");
+      case "last_minute": return "−"+p+"% • următoarele "+(d.days||0)+" zile"+(d.recurring?" • recurent":"");
+      case "early_bird": return "−"+p+"% • rezervare cu min. "+(d.days||0)+" zile înainte";
+      case "long_stay": return "−"+p+"% • min. "+(d.nights||0)+" nopți";
+      case "stay_pay": return "Stai "+(d.nights||0)+", plătești "+Math.max(0,(d.nights||0)-(d.freeNights||0))+(d.weekdaysOnly?" • în timpul săptămânii":"");
+      case "late_checkout": return "Check-out până la "+(d.time||"—");
+      case "early_checkin": return "Check-in de la "+(d.time||"—");
+      case "free_snack": return d.note || "Gustare din partea casei";
+      default: return "";
+    }
+  }
+
+  async function saveDeals(){
+    try{
+      var r=await fetch("/api/host/deals",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({slug:_slug,deals:DEALS})});
+      var d=await r.json().catch(function(){return{};});
+      if(r.ok && d.deals){ DEALS=d.deals; renderDeals(); note("Oferte salvate"); }
+      else note("Eroare la salvare");
+    }catch(e){ note("Eroare la salvare"); }
+  }
+
+  function renderDeals(){
+    var box=byId("dealsBox"); if(!box) return;
+    if(!DEALS.length){ box.innerHTML='<div class="dempty" style="padding:16px 0">Nicio ofertă încă. Apasă „Ofertă nouă" ca să creezi prima.</div>'; return; }
+    box.innerHTML = DEALS.map(function(d){
+      var meta=DEAL_META[d.type]||{label:"Ofertă"};
+      return '<div class="deal-card'+(d.active===false?' off':'')+'">'+
+        '<div class="di">'+DEAL_ICON+'</div>'+
+        '<div class="dt"><b>'+esc(d.title||meta.label)+'</b><div class="meta">'+esc(meta.label)+'</div><div class="sum">'+esc(dealSummary(d))+'</div></div>'+
+        '<div class="deal-acts"><button class="tgl'+(d.active===false?'':' on')+'" data-tgl="'+esc(d.id)+'" title="Activă pe site"></button>'+
+          '<button class="lnk-btn" data-edit="'+esc(d.id)+'">Editează</button>'+
+          '<button class="lnk-btn del" data-del="'+esc(d.id)+'">Șterge</button></div>'+
+      '</div>';
+    }).join("");
+    [].slice.call(box.querySelectorAll("[data-tgl]")).forEach(function(b){ b.onclick=function(){ var d=DEALS.filter(function(x){return x.id===b.getAttribute("data-tgl");})[0]; if(d){ d.active=!(d.active!==false); saveDeals(); } }; });
+    [].slice.call(box.querySelectorAll("[data-edit]")).forEach(function(b){ b.onclick=function(){ openDeal(DEALS.filter(function(x){return x.id===b.getAttribute("data-edit");})[0]); }; });
+    [].slice.call(box.querySelectorAll("[data-del]")).forEach(function(b){ b.onclick=function(){ if(confirm("Ștergi oferta?")){ DEALS=DEALS.filter(function(x){return x.id!==b.getAttribute("data-del");}); saveDeals(); } }; });
+  }
+
+  window.__renderDeals = async function(){
+    var box=byId("dealsBox"); if(box && !DEALS.length) box.innerHTML='<p class="muted">Se încarcă…</p>';
+    try{ var r=await fetch("/api/host/deals?slug="+encodeURIComponent(_slug),{credentials:"same-origin"}); var d=await r.json(); DEALS=(d&&d.deals)||[]; }catch(e){ DEALS=[]; }
+    renderDeals();
+  };
+
+  // deal create/edit modal (built once)
+  var dealModal=null, editingDealId=null, pickedType="interval_discount";
+  function buildDealModal(){
+    var m=document.createElement("div"); m.className="amodal"; m.id="dealModal";
+    m.innerHTML='<div class="amodal-card wide"><div class="amodal-hd"><h3 id="dmTitle">Ofertă nouă</h3><button class="amodal-x" id="dmX" type="button">&times;</button></div>'+
+      '<div class="amodal-bd"><div id="dmTypes"></div><div id="dmForm"></div><div class="amodal-err" id="dmErr"></div>'+
+      '<div class="amodal-row"><button class="btn btn-pri" id="dmSave" type="button">Salvează</button><button class="btn btn-out" id="dmCancel" type="button">Renunță</button></div></div></div>';
+    document.body.appendChild(m);
+    m.addEventListener("click",function(e){ if(e.target===m) closeDeal(); });
+    byId("dmX").onclick=closeDeal; byId("dmCancel").onclick=closeDeal;
+    byId("dmSave").onclick=saveDealForm;
+    dealModal=m;
+  }
+  function fieldHtml(f, d){
+    d=d||{};
+    if(f==="percent") return '<div class="dfield"><label>Reducere (%)</label><input id="f_percent" type="number" min="1" max="90" value="'+(d.percent||"")+'"></div>';
+    if(f==="days") return '<div class="dfield"><label>Număr de zile</label><input id="f_days" type="number" min="1" max="60" value="'+(d.days||"")+'"></div>';
+    if(f==="nights") return '<div class="dfield"><label>Nopți</label><input id="f_nights" type="number" min="1" max="30" value="'+(d.nights||"")+'"></div>';
+    if(f==="freeNights") return '<div class="dfield"><label>Nopți gratis</label><input id="f_freeNights" type="number" min="1" max="10" value="'+(d.freeNights||1)+'"></div>';
+    if(f==="start") return '<div class="dfield"><label>De la</label><input id="f_start" type="date" value="'+(d.start||"")+'"></div>';
+    if(f==="end") return '<div class="dfield"><label>Până la</label><input id="f_end" type="date" value="'+(d.end||"")+'"></div>';
+    if(f==="time") return '<div class="dfield"><label>Ora</label><input id="f_time" type="time" value="'+(d.time||"")+'"></div>';
+    if(f==="note") return '<div class="dfield"><label>Detalii</label><input id="f_note" type="text" maxlength="300" value="'+esc(d.note||"")+'" placeholder="ex. o gustare locală la sosire"></div>';
+    if(f==="recurring") return '<label class="dcheck"><input id="f_recurring" type="checkbox"'+(d.recurring?" checked":"")+'> Recurent (se reînnoiește automat)</label>';
+    if(f==="weekdaysOnly") return '<label class="dcheck"><input id="f_weekdaysOnly" type="checkbox"'+(d.weekdaysOnly?" checked":"")+'> Doar în timpul săptămânii</label>';
+    return "";
+  }
+  function paintDealForm(d){
+    var meta=DEAL_META[pickedType]; var rows="";
+    // group start+end on one row for interval
+    var fields=meta.fields.slice();
+    var html="";
+    html+='<div class="dfield"><label>Titlu (afișat pe site)</label><input id="f_title" type="text" maxlength="120" placeholder="'+esc(dealDefaultTitle(pickedType))+'" value="'+esc((d&&d.title)||"")+'"></div>';
+    if(pickedType==="interval_discount"){
+      html+='<div class="dfield"><label>Reducere (%)</label><input id="f_percent" type="number" min="1" max="90" value="'+((d&&d.percent)||"")+'"></div>';
+      html+='<div class="dfield row2"><div><label>De la</label><input id="f_start" type="date" value="'+((d&&d.start)||"")+'"></div><div><label>Până la</label><input id="f_end" type="date" value="'+((d&&d.end)||"")+'"></div></div>';
+    } else {
+      fields.forEach(function(f){ html+=fieldHtml(f, d||{}); });
+    }
+    byId("dmForm").innerHTML=html;
+  }
+  function paintTypePicker(){
+    byId("dmTypes").innerHTML='<div class="dfield"><label>Tip ofertă</label><div class="dgrid">'+
+      Object.keys(DEAL_META).map(function(t){ var m=DEAL_META[t]; return '<button type="button" class="dtype'+(t===pickedType?" sel":"")+'" data-type="'+t+'"><b>'+esc(m.label)+'</b><span>'+esc(m.desc)+'</span></button>'; }).join("")+'</div></div>';
+    [].slice.call(byId("dmTypes").querySelectorAll("[data-type]")).forEach(function(b){ b.onclick=function(){ pickedType=b.getAttribute("data-type"); paintTypePicker(); paintDealForm(null); }; });
+  }
+  function openDeal(d){
+    if(!dealModal) buildDealModal();
+    editingDealId = d ? d.id : null;
+    pickedType = d ? d.type : "interval_discount";
+    byId("dmTitle").textContent = d ? "Editează oferta" : "Ofertă nouă";
+    byId("dmErr").style.display="none";
+    if(d){ byId("dmTypes").innerHTML=""; } else { paintTypePicker(); }
+    paintDealForm(d);
+    dealModal.classList.add("on");
+  }
+  function closeDeal(){ if(dealModal) dealModal.classList.remove("on"); }
+  function val(id){ var e=byId(id); return e?e.value:""; }
+  function chk(id){ var e=byId(id); return e?!!e.checked:false; }
+  function saveDealForm(){
+    var err=byId("dmErr"); err.style.display="none";
+    var d={ id: editingDealId || ("d"+Date.now().toString(36)), type:pickedType, active:true, title:val("f_title").trim() };
+    var m=DEAL_META[pickedType];
+    if(m.fields.indexOf("percent")>=0){ d.percent=+val("f_percent")||0; if(d.percent<1){ err.textContent="Introdu un procent de reducere."; err.style.display="block"; return; } }
+    if(m.fields.indexOf("days")>=0){ d.days=+val("f_days")||0; if(d.days<1){ err.textContent="Introdu numărul de zile."; err.style.display="block"; return; } }
+    if(m.fields.indexOf("nights")>=0){ d.nights=+val("f_nights")||0; if(d.nights<1){ err.textContent="Introdu numărul de nopți."; err.style.display="block"; return; } }
+    if(m.fields.indexOf("freeNights")>=0){ d.freeNights=+val("f_freeNights")||1; }
+    if(m.fields.indexOf("start")>=0){ d.start=val("f_start"); }
+    if(m.fields.indexOf("end")>=0){ d.end=val("f_end"); }
+    if(m.fields.indexOf("time")>=0){ d.time=val("f_time"); if(!d.time){ err.textContent="Alege ora."; err.style.display="block"; return; } }
+    if(m.fields.indexOf("note")>=0){ d.note=val("f_note").trim(); }
+    if(m.fields.indexOf("recurring")>=0){ d.recurring=chk("f_recurring"); }
+    if(m.fields.indexOf("weekdaysOnly")>=0){ d.weekdaysOnly=chk("f_weekdaysOnly"); }
+    if(!d.title) d.title=dealDefaultTitle(pickedType);
+    if(editingDealId){ DEALS=DEALS.map(function(x){ return x.id===editingDealId ? d : x; }); }
+    else { DEALS.push(d); }
+    closeDeal(); saveDeals();
+  }
+  (function(){ var a=byId("dealAdd"); if(a) a.onclick=function(){ openDeal(null); }; })();
+
+  // ===== APROBĂRI =====
+  window.__renderAppr = function(){
+    var box=byId("apprBox"); if(!box) return;
+    var ap=window.__APPROVAL || {status:"pending"};
+    var st=ap.status||"pending";
+    var stLbl = st==="approved"?"Aprobat":(st==="rejected"?"Respins":"În așteptare");
+    var siteBtns = (st==="pending")
+      ? '<button class="btn btn-pri" id="aSiteOk" type="button" style="padding:8px 14px">Aprobă</button><button class="btn btn-out" id="aSiteNo" type="button" style="padding:8px 14px">Respinge</button>'
+      : '<span class="sbadge '+st+'">'+stLbl+'</span><button class="lnk-btn" id="aSiteReset" type="button">Schimbă</button>';
+    box.innerHTML =
+      '<div class="appr-item"><div class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg></div>'+
+        '<div class="at"><b>Site-ul generat</b><span>pagina publică a unității</span></div>'+
+        '<div class="actions"><a class="lnk-btn" target="_blank" id="aSiteView">Vezi</a>'+siteBtns+'</div></div>'+
+      '<div class="appr-item"><div class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18M3 12h18M3 17h18"/></svg></div>'+
+        '<div class="at"><b>Pagina TravelScan</b><span>se va conecta în curând</span></div>'+
+        '<div class="actions"><span class="sbadge soon">În curând</span></div></div>';
+    var view=byId("aSiteView"); if(view){ view.href = (window.__pubUrl||("/s/"+_slug)); }
+    var ok=byId("aSiteOk"), no=byId("aSiteNo"), reset=byId("aSiteReset");
+    if(ok) ok.onclick=function(){ apprDecide("approved"); };
+    if(no) no.onclick=function(){ var n=prompt("Motivul respingerii (opțional):")||""; apprDecide("rejected", n); };
+    if(reset) reset.onclick=function(){ window.__APPROVAL.status="pending"; window.__renderAppr(); };
+  };
+  async function apprDecide(decision, rnote){
+    try{
+      var r=await fetch("/api/host/approval",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({slug:_slug,decision:decision,note:rnote||""})});
+      if(r.ok){ (window.__APPROVAL=window.__APPROVAL||{}).status=decision; window.__renderAppr(); note(decision==="approved"?"Unitate aprobată":"Unitate respinsă"); }
+    }catch(e){}
+  }
+  // expose the public URL for the approvals "Vezi" link
+  fetch("/api/config").then(function(r){return r.json();}).then(function(c){ window.__pubUrl = (c&&c.baseDomain) ? ("https://"+_slug+"."+c.baseDomain) : ("/s/"+_slug); }).catch(function(){});
 
   // approval banner — the hotelier can review & approve/reject right from the console
   (function(){
