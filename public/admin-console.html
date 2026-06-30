@@ -2313,6 +2313,34 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
     ME.email = body.newEmail || ME.email; closeAcct(); note("Date actualizate");
   };
 
+  // approval banner — the hotelier can review & approve/reject right from the console
+  (function(){
+    var ap = window.__APPROVAL || { status: "pending" };
+    var content = document.querySelector(".content"); if (!content) return;
+    var panou = byId("panel-panou");
+    var bar = document.createElement("div"); bar.id = "apBar";
+    function paint(){
+      var st = ap.status || "pending";
+      var bg = st==="approved"?"var(--brand-soft)": st==="rejected"?"#fbeaea":"#fdf4e3";
+      var fg = st==="approved"?"var(--brand-d)": st==="rejected"?"#a23b3b":"#8a6516";
+      bar.style.cssText = "display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:"+bg+";color:"+fg+";border-radius:12px;padding:12px 16px;margin:0 0 18px;font-size:14px;font-weight:600";
+      if (st==="approved") bar.innerHTML = "\u2713 Unitate aprobat\u0103.";
+      else if (st==="rejected") bar.innerHTML = "\u2715 Ai respins aceast\u0103 unitate. Contacteaz\u0103 LocalStay pentru ajust\u0103ri.";
+      else bar.innerHTML = '<span>Aceast\u0103 unitate a\u0219teapt\u0103 aprobarea ta. Verific\u0103 site-ul \u0219i aprob\u0103 publicarea.</span><span style="flex:1"></span><button id="apOk" class="btn btn-pri" type="button" style="padding:8px 14px">Aprob\u0103</button><button id="apNo" class="btn btn-out" type="button" style="padding:8px 14px">Respinge</button>';
+    }
+    paint();
+    if (panou) panou.insertBefore(bar, panou.firstChild); else content.insertBefore(bar, content.firstChild);
+    content.addEventListener("click", async function(e){
+      var ok = e.target.closest("#apOk"), no = e.target.closest("#apNo"); if (!ok && !no) return;
+      var decision = ok ? "approved" : "rejected";
+      var rnote = no ? (prompt("Motivul respingerii (opțional):") || "") : "";
+      try {
+        var r = await fetch("/api/host/approval", { method:"POST", headers:{"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify({ slug:_slug, decision:decision, note:rnote }) });
+        if (r.ok) { ap.status = decision; paint(); note(decision==="approved" ? "Unitate aprobată" : "Unitate respinsă"); }
+      } catch(e){}
+    });
+  })();
+
   // render the dashboard on load (Panou is the default tab)
   renderHostDash(DASH_DAYS);
 })();
