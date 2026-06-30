@@ -2,6 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 const { pool, init } = require("./db");
 const { STAY } = require("./transform");
 const sharp = require("sharp");
@@ -284,7 +285,13 @@ app.get("/api/admin/hosts", AUTH.requireAdmin, async (req, res) => {
   try {
     const r = await pool.query(
       `select u.id, u.email, u.name, u.created_at,
-              coalesce(json_agg(p.slug) filter (where p.slug is not null), '[]') as slugs
+              coalesce(json_agg(p.slug) filter (where p.slug is not null), '[]') as slugs,
+              coalesce(json_agg(json_build_object(
+                'slug', p.slug,
+                'name', p.admin_state->'property'->'basicInfo'->>'name',
+                'status', coalesce(p.approval->>'status','pending'),
+                'token', p.approval->>'token'
+              ) order by p.created_at) filter (where p.slug is not null), '[]') as units
        from users u
        left join properties p on p.owner_id = u.id
        where u.role='host'
@@ -454,6 +461,73 @@ function mergeAdminState(oldS, newS) {
   return newS;
 }
 
+/* ============== UNIT APPROVAL (hotelier reviews the generated site) ============== */
+
+function approvalLinks(slug, token) {
+  return { site: siteUrl(slug), console: "/admin?slug=" + encodeURIComponent(slug), approve: "/aproba/" + token };
+}
+
+// Public LocalStay approval page (the link sent to the hotelier by email / WhatsApp).
+app.get("/aproba/:token", (req, res) => res.sendFile(path.join(PUBLIC, "approve.html")));
+
+// Info for the approval page (token-gated, no login required).
+app.get("/api/approval/:token", async (req, res) => {
+  try {
+    const r = await pool.query(
+      "select slug, admin_state->'property'->'basicInfo'->>'name' as name, approval from properties where approval->>'token' = $1",
+      [req.params.token]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: "Link invalid sau expirat." });
+    const row = r.rows[0];
+    res.json({
+      slug: row.slug, name: row.name || row.slug,
+      status: (row.approval && row.approval.status) || "pending",
+      note: (row.approval && row.approval.note) || "",
+      links: approvalLinks(row.slug, req.params.token)
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+function parseDecision(b) {
+  if (b && b.decision === "approved") return "approved";
+  if (b && b.decision === "rejected") return "rejected";
+  return null;
+}
+
+// Record a decision via the token (from the email / WhatsApp link, no login).
+app.post("/api/approval/:token", async (req, res) => {
+  try {
+    const decision = parseDecision(req.body);
+    if (!decision) return res.status(400).json({ error: "Decizie invalidă." });
+    const patch = { status: decision, note: String((req.body && req.body.note) || "").slice(0, 500), decidedAt: new Date().toISOString() };
+    const r = await pool.query(
+      "update properties set approval = coalesce(approval,'{}'::jsonb) || $2::jsonb where approval->>'token' = $1 returning slug",
+      [req.params.token, JSON.stringify(patch)]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: "Link invalid." });
+    res.json({ ok: true, status: decision });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Record a decision from inside the hotelier's own console (session-authenticated).
+app.post("/api/host/approval", AUTH.requireAuth, async (req, res) => {
+  try {
+    const slug = String((req.body && req.body.slug) || "");
+    const decision = parseDecision(req.body);
+    if (!slug || !decision) return res.status(400).json({ error: "Date lipsă." });
+    const patch = { status: decision, note: String((req.body && req.body.note) || "").slice(0, 500), decidedAt: new Date().toISOString() };
+    const isAdmin = req.user.role === "admin";
+    const where = isAdmin ? "slug=$1" : "slug=$1 and owner_id=$3";
+    const params = isAdmin ? [slug, JSON.stringify(patch)] : [slug, JSON.stringify(patch), req.user.id];
+    const r = await pool.query(
+      "update properties set approval = coalesce(approval,'{}'::jsonb) || $2::jsonb where " + where + " returning slug",
+      params
+    );
+    if (!r.rows.length) return res.status(404).json({ error: "Unitate inexistentă sau fără acces." });
+    res.json({ ok: true, status: decision });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post("/api/import", AUTH.requireAdmin, async (req, res) => {
   try {
     const master = req.body;
@@ -496,7 +570,19 @@ app.post("/api/import", AUTH.requireAdmin, async (req, res) => {
       host = { error: e.message }; // never fail the import over host provisioning
     }
 
-    res.json({ slug, name: merged.property.basicInfo.name || slug, merged: !!existing, host, url: siteUrl(slug) });
+    // Ensure an approval record exists (status "pending") without ever resetting a
+    // decision the hotelier already made on a previous import of the same unit.
+    let approval = null;
+    try {
+      const cur = await pool.query("select approval from properties where slug=$1", [slug]);
+      approval = cur.rows[0] && cur.rows[0].approval;
+      if (!approval || !approval.token) {
+        approval = { status: "pending", token: crypto.randomBytes(18).toString("hex"), requestedAt: new Date().toISOString() };
+        await pool.query("update properties set approval=$1 where slug=$2", [approval, slug]);
+      }
+    } catch (e) { /* approval is best-effort; never fail import */ }
+
+    res.json({ slug, name: merged.property.basicInfo.name || slug, merged: !!existing, host, url: siteUrl(slug), approval: approval ? { status: approval.status, token: approval.token } : null });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
 
@@ -782,7 +868,11 @@ app.get("/admin", async (req, res) => {
   if (!allowed) return res.status(403).send("Nu ai acces la această proprietate.");
   const p = await getProp(slug);
   if (!p) return res.status(404).send("Proprietate negăsită");
-  res.send(inject(html, "window.__ADMIN_STATE=" + JSON.stringify(p.admin_state) + ";window.__ME=" + JSON.stringify({ role: req.user.role, email: req.user.email }) + ";"));
+  const ap = p.approval || {};
+  res.send(inject(html,
+    "window.__ADMIN_STATE=" + JSON.stringify(p.admin_state) +
+    ";window.__ME=" + JSON.stringify({ role: req.user.role, email: req.user.email }) +
+    ";window.__APPROVAL=" + JSON.stringify({ status: ap.status || "pending", token: ap.token || "", note: ap.note || "" }) + ";"));
 });
 
 /* public site by path (preview without a subdomain) */
@@ -852,9 +942,22 @@ function startIcalSync() {
   setTimeout(syncAll, 30000);
   setInterval(syncAll, 15 * 60 * 1000);
 }
+// Give every existing unit an approval token (so already-imported units get a
+// shareable approval link without needing a re-import).
+async function backfillApproval() {
+  try {
+    const r = await pool.query("select slug from properties where approval is null or approval->>'token' is null");
+    for (const row of r.rows) {
+      const ap = { status: "pending", token: crypto.randomBytes(18).toString("hex"), requestedAt: new Date().toISOString() };
+      await pool.query("update properties set approval=$1 where slug=$2", [ap, row.slug]);
+    }
+    if (r.rows.length) console.log("[approval] backfilled tokens for " + r.rows.length + " unit(s).");
+  } catch (e) { console.error("[approval] backfill failed:", e && e.message); }
+}
+
 function bootDb() {
   init()
-    .then(() => { console.log("LocalStay DB ready."); startIcalSync(); return AUTH.seedAdmin(pool).catch((e)=>console.error("[auth] seedAdmin failed:", e && e.message)); })
+    .then(() => { console.log("LocalStay DB ready."); startIcalSync(); backfillApproval(); return AUTH.seedAdmin(pool).catch((e)=>console.error("[auth] seedAdmin failed:", e && e.message)); })
     .catch((e) => {
       console.error("DB not ready, server stays up; retrying in 30s:", e && e.message);
       setTimeout(bootDb, 30000); // recover automatically when the DB comes back
