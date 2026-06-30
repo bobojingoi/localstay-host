@@ -122,8 +122,9 @@ function setAuthCookie(req, res, user, remember, imp) {
     "Path=/",
     "SameSite=Lax",
   ];
-  // "Remember me" → a persistent cookie; otherwise a session cookie (clears on browser close).
-  if (remember) parts.push(`Max-Age=${ttl}`);
+  // Normal login → persistent cookie so you stay logged in across browser restarts
+  // (7 days by default, 30 with "remember me"). Impersonation → session cookie only.
+  if (!imp) parts.push(`Max-Age=${ttl}`);
   if (isSecure(req)) parts.push("Secure");
   res.append("Set-Cookie", parts.join("; "));
 }
