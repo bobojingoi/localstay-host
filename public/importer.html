@@ -434,11 +434,21 @@ body.is-host .del{display:none}
         ) : "";
         return '<div class="urow"><span class="ubadge '+st+'">'+badgeLabel(st)+'</span><span class="un">'+E(u.name||u.slug)+'</span>'+send+'</div>';
       }).join("")+'</div>' : "";
-      return '<div class="host-row"><div class="hi"><b>'+E(h.name||h.email)+'</b><div class="hs">'+E(h.email)+' · '+(units.length?units.length+' '+(units.length===1?"proprietate":"proprietăți"):"nicio proprietate")+'</div>'+unitsHtml+'</div>'+
-        '<button class="chip" data-edit="'+h.id+'">Gestionează</button></div>';
+      return '<div class="host-row"><div class="hi"><b>'+E(h.name||h.email)+'</b>'+(h.reset_pending?' <span class="ubadge pending" title="Hotelierul a cerut resetarea parolei">resetare cerută</span>':'')+'<div class="hs">'+E(h.email)+' · '+(units.length?units.length+' '+(units.length===1?"proprietate":"proprietăți"):"nicio proprietate")+'</div>'+unitsHtml+'</div>'+
+        '<div style="display:flex;gap:8px;align-items:flex-start"><button class="usend" data-reset="'+h.id+'" data-email="'+E(h.email)+'" title="Generează și trimite un link de resetare a parolei">🔑 Link resetare</button><button class="chip" data-edit="'+h.id+'">Gestionează</button></div></div>';
     }).join("") : '<div class="empty">Niciun hotelier încă. Creează primul cont.</div>';
     [].slice.call(box.querySelectorAll("[data-edit]")).forEach(function(b){
       b.onclick=function(){ var h=hosts.filter(function(x){return x.id===b.getAttribute("data-edit");})[0]; openHostEdit(h); };
+    });
+    [].slice.call(box.querySelectorAll("[data-reset]")).forEach(function(b){
+      b.onclick=async function(){
+        var r=await api("/api/admin/hosts/"+b.getAttribute("data-reset")+"/reset-link",{method:"POST"});
+        if(!r.ok){ note("Eroare la generarea linkului"); return; }
+        var d=await r.json(); var link=location.origin+d.path;
+        try{ if(navigator.clipboard) navigator.clipboard.writeText(link); }catch(e){}
+        window.open("https://wa.me/?text="+encodeURIComponent(resetMsg(link)),"_blank");
+        note("Link de resetare generat și copiat");
+      };
     });
     [].slice.call(box.querySelectorAll("[data-wa]")).forEach(function(b){
       b.onclick=function(){ var p=b.getAttribute("data-wa").split("~"); window.open("https://wa.me/?text="+encodeURIComponent(approvalMsg(p[2],p[0],p[1])),"_blank"); };
@@ -692,6 +702,7 @@ function approvalMsg(name, token, slug){
 }
 var WA_ICON='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2zm0 18a8 8 0 0 1-4.1-1.1l-.3-.2-2.8.8.8-2.7-.2-.3A8 8 0 1 1 12 20zm4.4-5.6c-.2-.1-1.4-.7-1.6-.8-.2-.1-.4-.1-.5.1l-.7.9c-.1.2-.3.2-.5.1a6.5 6.5 0 0 1-3.2-2.8c-.2-.4.2-.4.6-1.2.1-.1 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.5-.4h-.5a1 1 0 0 0-.7.3c-.3.3-.9.9-.9 2.1s.9 2.5 1.1 2.6c.1.2 1.8 2.7 4.3 3.8 1.6.7 2.2.7 3 .6.5 0 1.4-.6 1.6-1.1.2-.6.2-1 .1-1.1z"/></svg>';
 var EM_ICON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>';
+function resetMsg(link){ return "Salut! Pentru a-ți reseta parola LocalStay, deschide linkul de mai jos (valabil limitat):\n\n"+link+"\n\nDupă ce setezi parola nouă, te poți autentifica normal."; }
 let toastT;function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),2200);}
 function lsGet(k,d){try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}}
 function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){toast("Stocarea locală este blocată")}}
