@@ -465,6 +465,7 @@ textarea.inp{min-height:70px;resize:vertical;line-height:1.5}
     <button class="nav-i" data-tab="calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> Calendar</button>
     <button class="nav-i" data-tab="ical"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/></svg> Calendare iCal</button>
     <button class="nav-i" data-tab="galerie"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg> Galerie</button>
+    <button class="nav-i" data-tab="poze"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4-3.9-3.8 5.4-.8z"/></svg> Poze AI</button>
     <button class="nav-i" data-tab="cereri"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Cereri</button>
     <button class="nav-i" data-tab="oferte"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.6 13.4L13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.6z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg> Oferte</button>
     <button class="nav-i" data-tab="aprobari"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg> Aprobări</button>
@@ -556,6 +557,30 @@ textarea.inp{min-height:70px;resize:vertical;line-height:1.5}
           <div id="galerieBox"></div>
           <aside class="gal-dock" id="galDock"></aside>
         </div>
+      </section>
+      <section class="panel" id="panel-poze">
+        <p class="intro">Optimizează mai multe poze deodată cu AI: fiecare e îmbunătățită, redimensionată, comprimată (WebP) și urcată pe CDN, cu descriere automată. Primești linkurile gata de folosit. <b>Costul se adună pe contul tău.</b></p>
+        <div class="pz-bill" id="pzBill" style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:16px">
+          <div style="flex:1;min-width:150px;border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--card)"><div style="font-size:12px;color:var(--muted)">Preț per poză</div><b id="pzPrice" style="font-size:20px;color:var(--ink)">—</b></div>
+          <div style="flex:1;min-width:150px;border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--card)"><div style="font-size:12px;color:var(--muted)">Sesiunea curentă</div><b id="pzSession" style="font-size:20px;color:var(--brand)">0 lei</b></div>
+          <div style="flex:1;min-width:150px;border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--card)"><div style="font-size:12px;color:var(--muted)">Total cheltuit</div><b id="pzSpent" style="font-size:20px;color:var(--ink)">— lei</b><span id="pzCount" style="font-size:12px;color:var(--muted);display:block">— poze</span></div>
+        </div>
+        <div class="drop" id="pzDrop" style="border:2px dashed var(--line-2,var(--line));border-radius:14px;padding:26px;text-align:center;cursor:pointer;color:var(--muted)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:30px;height:30px"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+          <div style="margin-top:8px;font-weight:600;color:var(--ink)">Trage pozele aici</div><div style="font-size:13px">JPG / PNG / WebP · mai multe deodată</div>
+          <input type="file" id="pzFile" accept="image/*" multiple style="display:none">
+        </div>
+        <div class="pz-progress" id="pzProgWrap" style="display:none;margin-top:16px">
+          <div style="height:10px;background:var(--brand-soft);border-radius:6px;overflow:hidden"><div id="pzBar" style="height:100%;width:0;background:var(--brand);transition:width .25s"></div></div>
+          <div id="pzProgText" style="font-size:13px;color:var(--muted);margin-top:6px;font-weight:600"></div>
+        </div>
+        <div class="row" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:16px">
+          <button class="btn primary" id="pzRun" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M5 3l14 9-14 9z"/></svg> Optimizează</button>
+          <button class="btn ghost" id="pzCopy" disabled>Copiază linkurile</button>
+          <button class="btn ghost" id="pzClear" disabled>Golește</button>
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin-left:auto"><input type="checkbox" id="pzEnhance" checked> Îmbunătățire AI</label>
+        </div>
+        <div id="pzGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px;margin-top:18px"></div>
       </section>
       <section class="panel" id="panel-cereri">
         <p class="intro">Cererile de rezervare trimise din formularul site-ului public. Datele clientului, perioada, oaspeții și camerele alese.</p>
@@ -1894,7 +1919,7 @@ $("#feedSave").onclick=()=>{
 };
 
 /* =================== NAV / INIT =================== */
-const TITLES={panou:"Panou",continut:"Conținut",preturi:"Prețuri",calendar:"Calendar",ical:"Calendare iCal",galerie:"Galerie",cereri:"Cereri de rezervare",oferte:"Oferte",aprobari:"Aprobări"};
+const TITLES={panou:"Panou",continut:"Conținut",preturi:"Prețuri",calendar:"Calendar",ical:"Calendare iCal",galerie:"Galerie",poze:"Poze AI",cereri:"Cereri de rezervare",oferte:"Oferte",aprobari:"Aprobări"};
 $$(".nav-i").forEach(b=>b.onclick=()=>{
   $$(".nav-i").forEach(x=>x.classList.remove("on"));b.classList.add("on");
   $$(".panel").forEach(p=>p.classList.remove("on"));$("#panel-"+b.dataset.tab).classList.add("on");
@@ -1903,6 +1928,7 @@ $$(".nav-i").forEach(b=>b.onclick=()=>{
   if(b.dataset.tab==="galerie") renderGalerie();
   if(b.dataset.tab==="cereri") renderCereri();
   if(b.dataset.tab==="panou" && window.__renderDash) window.__renderDash();
+  if(b.dataset.tab==="poze" && window.__initPoze) window.__initPoze();
   if(b.dataset.tab==="oferte" && window.__renderDeals) window.__renderDeals();
   if(b.dataset.tab==="aprobari" && window.__renderAppr) window.__renderAppr();
 });
@@ -2339,6 +2365,85 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
   }
 
   window.__renderDash = function(){ renderHostDash(DASH_DAYS); };
+
+  // ---- Poze AI: bulk optimize with progress + per-host billing ----
+  (function(){
+    var wired=false, PZ=[], running=false, session=0;
+    function moneyLei(n){ return (Math.round(Number(n||0)*100)/100).toLocaleString('ro-RO')+' lei'; }
+    async function loadBilling(){
+      try{ var r=await fetch("/api/host/photo-billing",{credentials:"same-origin"}); if(!r.ok) return; var d=await r.json();
+        byId("pzPrice").textContent=moneyLei(d.price);
+        byId("pzSpent").textContent=moneyLei(d.spent);
+        byId("pzCount").textContent=(d.count||0)+" poze";
+      }catch(e){}
+    }
+    function statLabel(s){ return s==="wait"?"în așteptare":s==="run"?"se procesează…":s==="done"?"gata":"eșuat"; }
+    function render(){
+      var grid=byId("pzGrid"); if(!grid) return;
+      grid.innerHTML=PZ.map(function(p){
+        var thumb=p.thumb||p.dataUrl;
+        var color=p.status==="done"?"var(--brand)":p.status==="err"?"#cf4b4b":"var(--muted)";
+        var link=p.url?('<a href="'+esc(p.url)+'" target="_blank" style="font-size:11px;color:var(--brand);word-break:break-all">'+esc(p.url)+'</a>'):"";
+        return '<div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card)">'+
+          '<div style="aspect-ratio:4/3;background:#f0f2f5 center/cover;background-image:url('+JSON.stringify(thumb)+')"></div>'+
+          '<div style="padding:8px 10px">'+
+            '<div style="font-size:12px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(p.name)+'</div>'+
+            '<div style="font-size:11.5px;color:'+color+';margin:2px 0 3px">'+statLabel(p.status)+(p.enhanced?" · AI":"")+(p.err?(" · "+esc(p.err)):"")+'</div>'+
+            link+(p.alt?('<div style="font-size:11px;color:var(--muted);margin-top:3px">'+esc(p.alt)+'</div>'):"")+
+          '</div></div>';
+      }).join("");
+      var any=PZ.length>0, anyDone=PZ.some(function(p){ return !!p.url; });
+      byId("pzRun").disabled=!any||running; byId("pzClear").disabled=!any||running; byId("pzCopy").disabled=!anyDone;
+    }
+    function addFiles(files){
+      [].slice.call(files).filter(function(f){ return /^image\//.test(f.type); }).forEach(function(f){
+        var r=new FileReader(); r.onload=function(){ PZ.push({dataUrl:r.result,name:f.name,status:"wait"}); render(); }; r.readAsDataURL(f);
+      });
+    }
+    async function run(){
+      if(running||!PZ.length) return; running=true; render();
+      var enhance=byId("pzEnhance").checked;
+      var todo=PZ.filter(function(p){ return p.status!=="done"; }).length, done=0;
+      var wrap=byId("pzProgWrap"), bar=byId("pzBar"), txt=byId("pzProgText");
+      wrap.style.display="block"; bar.style.width="0";
+      for(var i=0;i<PZ.length;i++){
+        var p=PZ[i]; if(p.status==="done") continue;
+        p.status="run"; render();
+        txt.textContent="Se procesează "+(done+1)+"/"+todo+"…";
+        try{
+          var res=await fetch("/api/ai-optimize",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({dataUrl:p.dataUrl,enhance:enhance})});
+          var d=await res.json().catch(function(){ return {}; });
+          if(!res.ok){ p.status="err"; p.err=d.error||("HTTP "+res.status); }
+          else {
+            p.status="done"; p.url=d.url; p.thumb=d.thumb||p.thumb; p.alt=d.alt||""; p.enhanced=!!d.enhanced;
+            if(d.cost){ session+=Number(d.cost); byId("pzSession").textContent=moneyLei(session); }
+            if(d.spent!=null) byId("pzSpent").textContent=moneyLei(d.spent);
+            if(d.count!=null) byId("pzCount").textContent=d.count+" poze";
+          }
+        }catch(e){ p.status="err"; p.err=e.message; }
+        done++; bar.style.width=Math.round(done/todo*100)+"%"; render();
+      }
+      txt.textContent="Gata · "+PZ.filter(function(p){ return !!p.url; }).length+"/"+PZ.length+" optimizate · "+moneyLei(session)+" în sesiune";
+      running=false; render();
+    }
+    function wire(){
+      if(wired) return; wired=true;
+      var drop=byId("pzDrop"), file=byId("pzFile");
+      drop.onclick=function(){ file.click(); };
+      drop.ondragover=function(e){ e.preventDefault(); drop.style.borderColor="var(--brand)"; };
+      drop.ondragleave=function(){ drop.style.borderColor=""; };
+      drop.ondrop=function(e){ e.preventDefault(); drop.style.borderColor=""; addFiles(e.dataTransfer.files); };
+      file.onchange=function(){ addFiles(file.files); file.value=""; };
+      byId("pzRun").onclick=run;
+      byId("pzClear").onclick=function(){ if(running) return; PZ=[]; session=0; byId("pzSession").textContent="0 lei"; byId("pzProgWrap").style.display="none"; render(); };
+      byId("pzCopy").onclick=function(){
+        var urls=PZ.filter(function(p){ return !!p.url; }).map(function(p){ return p.url; }).join("\n"); if(!urls) return;
+        function fb(){ var ta=document.createElement("textarea"); ta.value=urls; document.body.appendChild(ta); ta.select(); try{ document.execCommand("copy"); note("Linkuri copiate"); }catch(e){} ta.remove(); }
+        if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(urls).then(function(){ note("Linkuri copiate"); }, fb); } else { fb(); }
+      };
+    }
+    window.__initPoze=function(){ wire(); loadBilling(); render(); };
+  })();
 
   // period selector
   (function(){ var p=byId("dashPeriod"); if(!p) return;
