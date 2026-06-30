@@ -62,7 +62,7 @@ input:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--br
       var r=await fetch("/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email:email,password:password})});
       var d=await r.json().catch(function(){return {};});
       if(!r.ok){ showErr(d.error||"Autentificare eșuată."); btn.disabled=false; btn.textContent="Intră în cont"; return; }
-      location.href = nextUrl() || "/importer.html";
+      location.href = nextUrl() || "/";
     }catch(e){ showErr("Eroare de rețea. Reîncearcă."); btn.disabled=false; btn.textContent="Intră în cont"; }
   }
   btn.addEventListener("click",submit);
