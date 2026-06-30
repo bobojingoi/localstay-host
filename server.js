@@ -32,7 +32,7 @@ app.get("/robots.txt", (req, res) => {
 app.use((req, res, next) => {
   const p = req.path || "";
   let ms = 12000;
-  if (p.indexOf("/api/ai-enhance") === 0) ms = 250000;   // gpt-image-2 / Gemini image edit is slow
+  if (p.indexOf("/api/ai-enhance") === 0 || p.indexOf("/api/ai-optimize") === 0) ms = 250000;   // gpt-image-2 / Gemini image edit is slow
   else if (p.indexOf("/api/upload") === 0) ms = 60000;   // image processing + R2 upload
   const t = setTimeout(() => {
     if (!res.headersSent && !res.writableEnded) {
@@ -509,7 +509,42 @@ app.post("/api/upload", AUTH.requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-/* Smart re-import: keep host-added data (iCal feeds/blocks, galleries, uploaded photos) when re-importing an existing slug */
+// AI optimize (for bulk photo tool): AI-enhance (best-effort) → optimize → upload → describe, in one call.
+app.post("/api/ai-optimize", AUTH.requireAuth, async (req, res) => {
+  try {
+    if (!r2ready()) return res.status(503).json({ error: "R2 not configured" });
+    const m = String(req.body.dataUrl || "").match(/^data:(image\/[\w+.-]+);base64,(.+)$/);
+    if (!m) return res.status(400).json({ error: "bad image" });
+    let mime = m[1], b64 = m[2], enhanced = false;
+    // 1) AI enhance — best-effort; if it fails we still optimize+upload the original
+    if (req.body.enhance !== false) {
+      try {
+        const out = await enhanceImage(b64, mime);
+        if (out && out.image) { b64 = out.image; mime = out.mime || mime; enhanced = true; }
+      } catch (e) { /* fall back to plain optimize */ }
+    }
+    const input = Buffer.from(b64, "base64");
+    const main = await sharp(input).rotate()
+      .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
+      .normalize().sharpen().webp({ quality: 82 }).toBuffer();
+    const thumb = await sharp(input).rotate()
+      .resize({ width: 480, height: 480, fit: "inside", withoutEnlargement: true })
+      .webp({ quality: 75 }).toBuffer();
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    const url = await r2put("photos/" + id + ".webp", main, "image/webp");
+    let thumbUrl = "";
+    try { thumbUrl = await r2put("photos/" + id + "_t.webp", thumb, "image/webp"); } catch (e) {}
+    let alt = "", description = "";
+    try {
+      const ai = await Promise.race([
+        describeImage(main.toString("base64"), "image/webp"),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("describe timeout")), 6000)),
+      ]);
+      alt = ai.alt; description = ai.description;
+    } catch (e) {}
+    res.json({ url, thumb: thumbUrl, alt, description, enhanced });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 function mergeAdminState(oldS, newS) {
   if (!oldS) return newS;
   const oldUnits = oldS.units || [];
@@ -679,62 +714,84 @@ app.get("/api/site/:slug/deals", async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Core import logic, reusable for single + bulk import.
+async function importOne(master) {
+  const admin = STAY.deriveAdminState(master);
+  const slug = STAY.slugify(admin.property.basicInfo.name || "unitate");
+  const existing = await getProp(slug);
+  const merged = existing ? mergeAdminState(existing.admin_state, admin) : admin;
+  const site = STAY.masterToSite(merged.property, merged.pricing, merged.galleries);
+  await pool.query(
+    `insert into properties(slug, admin_state, site) values($1,$2,$3)
+     on conflict(slug) do update set admin_state=excluded.admin_state, site=excluded.site, updated_at=now()`,
+    [slug, merged, site]
+  );
+
+  // Auto-provision a host account for this property. Default credentials:
+  //   email    = <slug>@<BASE_DOMAIN || localstay.ro>
+  //   password = <slug>            (the hotelier changes it after first login)
+  // Re-importing the same slug reuses the existing account (no duplicate, no
+  // password reset) and never steals a property already owned by someone else.
+  let host = null;
+  try {
+    const hostEmail = normEmail(slug + "@" + (BASE_DOMAIN || "localstay.ro"));
+    const found = await pool.query("select id from users where email=$1", [hostEmail]);
+    let hostId;
+    if (found.rows.length) {
+      hostId = found.rows[0].id;
+      host = { email: hostEmail, created: false };
+    } else {
+      const hash = await AUTH.hashPassword(slug);
+      const ins = await pool.query(
+        "insert into users(email,password_hash,role,name) values($1,$2,'host',$3) returning id",
+        [hostEmail, hash, merged.property.basicInfo.name || slug]
+      );
+      hostId = ins.rows[0].id;
+      host = { email: hostEmail, password: slug, created: true };
+    }
+    await pool.query("update properties set owner_id=$1 where slug=$2 and owner_id is null", [hostId, slug]);
+  } catch (e) {
+    host = { error: e.message }; // never fail the import over host provisioning
+  }
+
+  // Ensure an approval record exists (status "pending") without resetting a prior decision.
+  let approval = null;
+  try {
+    const cur = await pool.query("select approval from properties where slug=$1", [slug]);
+    approval = cur.rows[0] && cur.rows[0].approval;
+    if (!approval || !approval.token) {
+      approval = { status: "pending", token: crypto.randomBytes(18).toString("hex"), requestedAt: new Date().toISOString() };
+      await pool.query("update properties set approval=$1 where slug=$2", [approval, slug]);
+    }
+  } catch (e) { /* approval is best-effort */ }
+
+  return { slug, name: merged.property.basicInfo.name || slug, merged: !!existing, host, url: siteUrl(slug), approval: approval ? { status: approval.status, token: approval.token } : null };
+}
+
 app.post("/api/import", AUTH.requireAdmin, async (req, res) => {
   try {
-    const master = req.body;
-    const admin = STAY.deriveAdminState(master);
-    const slug = STAY.slugify(admin.property.basicInfo.name || "unitate");
-    const existing = await getProp(slug);
-    const merged = existing ? mergeAdminState(existing.admin_state, admin) : admin;
-    const site = STAY.masterToSite(merged.property, merged.pricing, merged.galleries);
-    await pool.query(
-      `insert into properties(slug, admin_state, site) values($1,$2,$3)
-       on conflict(slug) do update set admin_state=excluded.admin_state, site=excluded.site, updated_at=now()`,
-      [slug, merged, site]
-    );
-
-    // Auto-provision a host account for this property. Default credentials:
-    //   email    = <slug>@<BASE_DOMAIN || localstay.ro>
-    //   password = <slug>            (the hotelier changes it after first login)
-    // Re-importing the same slug reuses the existing account (no duplicate, no
-    // password reset) and never steals a property already owned by someone else.
-    let host = null;
-    try {
-      const hostEmail = normEmail(slug + "@" + (BASE_DOMAIN || "localstay.ro"));
-      const found = await pool.query("select id from users where email=$1", [hostEmail]);
-      let hostId;
-      if (found.rows.length) {
-        hostId = found.rows[0].id;
-        host = { email: hostEmail, created: false };
-      } else {
-        const hash = await AUTH.hashPassword(slug);
-        const ins = await pool.query(
-          "insert into users(email,password_hash,role,name) values($1,$2,'host',$3) returning id",
-          [hostEmail, hash, merged.property.basicInfo.name || slug]
-        );
-        hostId = ins.rows[0].id;
-        host = { email: hostEmail, password: slug, created: true };
-      }
-      // Link the property to this host only if it isn't already owned.
-      await pool.query("update properties set owner_id=$1 where slug=$2 and owner_id is null", [hostId, slug]);
-    } catch (e) {
-      host = { error: e.message }; // never fail the import over host provisioning
-    }
-
-    // Ensure an approval record exists (status "pending") without ever resetting a
-    // decision the hotelier already made on a previous import of the same unit.
-    let approval = null;
-    try {
-      const cur = await pool.query("select approval from properties where slug=$1", [slug]);
-      approval = cur.rows[0] && cur.rows[0].approval;
-      if (!approval || !approval.token) {
-        approval = { status: "pending", token: crypto.randomBytes(18).toString("hex"), requestedAt: new Date().toISOString() };
-        await pool.query("update properties set approval=$1 where slug=$2", [approval, slug]);
-      }
-    } catch (e) { /* approval is best-effort; never fail import */ }
-
-    res.json({ slug, name: merged.property.basicInfo.name || slug, merged: !!existing, host, url: siteUrl(slug), approval: approval ? { status: approval.status, token: approval.token } : null });
+    res.json(await importOne(req.body));
   } catch (e) { res.status(400).json({ error: e.message }); }
+});
+
+// Bulk import: accepts { items:[master, ...] } or a raw array. Each property is
+// imported independently; one bad item never aborts the rest.
+app.post("/api/import-bulk", AUTH.requireAdmin, async (req, res) => {
+  const items = Array.isArray(req.body) ? req.body : (Array.isArray(req.body && req.body.items) ? req.body.items : null);
+  if (!items || !items.length) return res.status(400).json({ error: "Trimite un array de proprietăți (items)." });
+  if (items.length > 100) return res.status(400).json({ error: "Maxim 100 de proprietăți per import." });
+  const results = [];
+  for (let i = 0; i < items.length; i++) {
+    try {
+      const r = await importOne(items[i]);
+      results.push({ ok: true, index: i, slug: r.slug, name: r.name, merged: r.merged, url: r.url, approval: r.approval, host: r.host });
+    } catch (e) {
+      let nm = "";
+      try { nm = (items[i] && items[i].general && items[i].general.basicInfo && items[i].general.basicInfo.name) || (items[i] && items[i].name) || ""; } catch (_) {}
+      results.push({ ok: false, index: i, name: nm, error: e.message });
+    }
+  }
+  res.json({ count: results.length, ok: results.filter(r => r.ok).length, failed: results.filter(r => !r.ok).length, results });
 });
 
 app.get("/api/properties", AUTH.requireAuth, async (req, res) => {
