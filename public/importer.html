@@ -149,6 +149,19 @@ body:not(.is-host) .host-only{display:none}
 }
 @media(max-width:480px){.kpis{grid-template-columns:1fr}}
 </style>
+<style>
+/* unit approval status + send actions (Hotelieri tab) */
+.host-units{display:flex;flex-direction:column;gap:7px;margin-top:11px}
+.urow{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.urow .un{font-size:13px;color:var(--ink);font-weight:600}
+.ubadge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px}
+.ubadge.pending{background:#fdf4e3;color:#8a6516}
+.ubadge.approved{background:var(--brand-soft);color:var(--brand-d)}
+.ubadge.rejected{background:#fbeaea;color:#a23b3b}
+.usend{font-size:12px;font-weight:600;border:1px solid var(--line);background:#fff;color:var(--text);border-radius:8px;padding:4px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.usend:hover{border-color:var(--brand);color:var(--brand-d);background:var(--brand-soft)}
+.usend svg{width:13px;height:13px}
+</style>
 </head>
 <body>
 <div class="top"><div class="wrap"><span class="dot"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M3 10l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></span><span><b>LocalStay</b><small>Administrare</small></span><div class="userbox" id="userbox"><span class="ub-email" id="ubEmail"></span><button class="ub-btn" id="btnAccount">Setări cont</button><button class="ub-btn ub-out" id="btnLogout">Deconectare</button></div></div></div>
@@ -202,6 +215,7 @@ body:not(.is-host) .host-only{display:none}
       <div class="bd">
         <div class="summary" id="summary"></div>
         <div id="resultCreds"></div>
+        <div id="resultApproval"></div>
         <div class="row" style="margin-top:0">
           <a class="btn btn-pri" id="openSite" target="_blank"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M7 7h10v10"/></svg> Deschide site-ul</a>
           <a class="btn btn-out" id="openAdmin" target="_blank"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg> Deschide adminul</a>
@@ -405,16 +419,32 @@ body.is-host .del{display:none}
   function pickedProps(){ return [].slice.call(document.querySelectorAll('#hmProps input:checked')).map(function(i){return i.value;}); }
 
   async function renderHosts(){
+    var E=function(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});};
+    await loadCfg();
     var r=await api("/api/admin/hosts"); if(!r.ok){ return; }
     var hosts=await r.json();
     var box=$("#hostsList");
     box.innerHTML = hosts.length ? hosts.map(function(h){
-      var slugs=(h.slugs||[]).filter(Boolean);
-      return '<div class="host-row"><div class="hi"><b>'+(h.name||h.email)+'</b><div class="hs">'+h.email+' · '+(slugs.length?slugs.length+' proprietăți: '+slugs.join(", "):'nicio proprietate')+'</div></div>'+
+      var units=(h.units||[]).filter(function(u){return u&&u.slug;});
+      var unitsHtml = units.length ? '<div class="host-units">'+units.map(function(u){
+        var st=u.status||"pending";
+        var send = u.token ? (
+          '<button class="usend" data-wa="'+E(u.token)+'~'+E(u.slug)+'~'+E(u.name||u.slug)+'">'+WA_ICON+'WhatsApp</button>'+
+          '<button class="usend" data-em="'+E(u.token)+'~'+E(u.slug)+'~'+E(u.name||u.slug)+'" data-email="'+E(h.email)+'">'+EM_ICON+'Email</button>'
+        ) : "";
+        return '<div class="urow"><span class="ubadge '+st+'">'+badgeLabel(st)+'</span><span class="un">'+E(u.name||u.slug)+'</span>'+send+'</div>';
+      }).join("")+'</div>' : "";
+      return '<div class="host-row"><div class="hi"><b>'+E(h.name||h.email)+'</b><div class="hs">'+E(h.email)+' · '+(units.length?units.length+' '+(units.length===1?"proprietate":"proprietăți"):"nicio proprietate")+'</div>'+unitsHtml+'</div>'+
         '<button class="chip" data-edit="'+h.id+'">Gestionează</button></div>';
     }).join("") : '<div class="empty">Niciun hotelier încă. Creează primul cont.</div>';
     [].slice.call(box.querySelectorAll("[data-edit]")).forEach(function(b){
       b.onclick=function(){ var h=hosts.filter(function(x){return x.id===b.getAttribute("data-edit");})[0]; openHostEdit(h); };
+    });
+    [].slice.call(box.querySelectorAll("[data-wa]")).forEach(function(b){
+      b.onclick=function(){ var p=b.getAttribute("data-wa").split("~"); window.open("https://wa.me/?text="+encodeURIComponent(approvalMsg(p[2],p[0],p[1])),"_blank"); };
+    });
+    [].slice.call(box.querySelectorAll("[data-em]")).forEach(function(b){
+      b.onclick=function(){ var p=b.getAttribute("data-em").split("~"); var email=b.getAttribute("data-email")||""; location.href="mailto:"+email+"?subject="+encodeURIComponent("LocalStay · Aprobare unitate: "+p[2])+"&body="+encodeURIComponent(approvalMsg(p[2],p[0],p[1])); };
     });
   }
 
@@ -648,6 +678,20 @@ const $=s=>document.querySelector(s);
 let CFG={baseDomain:"",_loaded:false};
 async function loadCfg(){ if(CFG._loaded) return CFG; try{ const c=await fetch("/api/config").then(r=>r.json()); CFG={baseDomain:(c&&c.baseDomain)||"",_loaded:true}; }catch(e){ CFG._loaded=true; } return CFG; }
 function pubUrl(slug){ return CFG.baseDomain ? ("https://"+slug+"."+CFG.baseDomain) : ("/s/"+slug); }
+function badgeLabel(s){ return s==="approved" ? "Aprobată" : s==="rejected" ? "Respinsă" : "În așteptare"; }
+function approvalMsg(name, token, slug){
+  var O=location.origin;
+  var site=pubUrl(slug); if(site.charAt(0)==="/") site=O+site;
+  var approve=O+"/aproba/"+token;
+  var cons=O+"/admin?slug="+encodeURIComponent(slug);
+  return 'Salut! Unitatea "'+name+'" este gata pe LocalStay. Te rugăm să o verifici și să o aprobi:\n\n'+
+         "• Aprobare (pagina LocalStay): "+approve+"\n"+
+         "• Site-ul generat: "+site+"\n"+
+         "• Consolă administrare: "+cons+"\n\n"+
+         "Mulțumim!";
+}
+var WA_ICON='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2zm0 18a8 8 0 0 1-4.1-1.1l-.3-.2-2.8.8.8-2.7-.2-.3A8 8 0 1 1 12 20zm4.4-5.6c-.2-.1-1.4-.7-1.6-.8-.2-.1-.4-.1-.5.1l-.7.9c-.1.2-.3.2-.5.1a6.5 6.5 0 0 1-3.2-2.8c-.2-.4.2-.4.6-1.2.1-.1 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.5-.4h-.5a1 1 0 0 0-.7.3c-.3.3-.9.9-.9 2.1s.9 2.5 1.1 2.6c.1.2 1.8 2.7 4.3 3.8 1.6.7 2.2.7 3 .6.5 0 1.4-.6 1.6-1.1.2-.6.2-1 .1-1.1z"/></svg>';
+var EM_ICON='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>';
 let toastT;function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),2200);}
 function lsGet(k,d){try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}}
 function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){toast("Stocarea locală este blocată")}}
@@ -659,15 +703,15 @@ async function doImport(master){
   try{
     const res=await fetch("/api/import",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(master)});
     if(!res.ok){ const e=await res.json().catch(()=>({})); $("#err").textContent="Eroare: "+(e.error||res.status); $("#err").style.display="block"; return; }
-    const {slug,name,host,url}=await res.json();
+    const {slug,name,host,url,approval}=await res.json();
     // fetch the generated pieces back for the summary
     const site=await fetch("/api/site/"+slug).then(r=>r.json());
     const admin=await fetch("/api/host/"+slug+"/state").then(r=>r.json());
-    showResult(slug,admin,site,host,url); await renderList(); if(window.__refreshHosts) window.__refreshHosts(); toast("Proprietate generată");
+    showResult(slug,admin,site,host,url,approval); await renderList(); if(window.__refreshHosts) window.__refreshHosts(); toast("Proprietate generată");
   }catch(e){ $("#err").textContent="Eroare la procesare: "+e.message; $("#err").style.display="block"; }
 }
 function countFac(P){let n=0;["foodAndDrinks","generalFacilities","wellness","exterior","cleaningServices","businessFacilities","bathroom","kitchen","bedroom","comfort","commonAreas","livingArea","mediaTechnology","roomFacilities","shops"].forEach(c=>n+=(P.allFacilities[c]||[]).length);["skiing","entertainmentAndFamilyServices","sportsAndRecreation"].forEach(c=>n+=(P.activities[c]||[]).length);return n;}
-function showResult(slug,admin,site,host,url){
+function showResult(slug,admin,site,host,url,approval){
   url = url || pubUrl(slug);
   $("#resultCard").style.display="block";
   $("#resultName").textContent=admin.property.basicInfo.name+" · "+url.replace(/^https?:\/\//,"");
@@ -676,9 +720,27 @@ function showResult(slug,admin,site,host,url){
     [site.amenities.length,"categorii"],[(site.reviews.items||[]).length,"recenzii"]
   ].map(([n,l])=>'<div class="s"><b>'+n+'</b><span>'+l+'</span></div>').join("");
   renderCreds(host);
+  renderApproval(approval, slug, admin.property.basicInfo.name||slug, host);
   $("#openSite").href=url;
   $("#openAdmin").href="/admin?slug="+slug;
   $("#resultCard").scrollIntoView({behavior:"smooth"});
+}
+function renderApproval(approval, slug, name, host){
+  var box=$("#resultApproval"); if(!box) return; box.innerHTML="";
+  if(!approval || !approval.token) return;
+  var email=(host&&host.email)||"";
+  var msg=approvalMsg(name, approval.token, slug);
+  var wrap=document.createElement("div");
+  wrap.className="cred-box";
+  wrap.style.cssText="margin-top:14px";
+  wrap.innerHTML='<div class="cnote" style="margin-bottom:10px">Trimite-i hotelierului linkul de aprobare (pagina LocalStay + site + admin). Se deschide cu textul precompletat — tu dai doar Send.</div>'+
+    '<div class="row" style="margin-top:0">'+
+      '<button class="btn btn-pri" id="apWa">'+WA_ICON+' Trimite pe WhatsApp</button>'+
+      '<button class="btn btn-out" id="apEm">'+EM_ICON+' Trimite pe email</button>'+
+    '</div>';
+  box.appendChild(wrap);
+  $("#apWa").onclick=function(){ window.open("https://wa.me/?text="+encodeURIComponent(msg),"_blank"); };
+  $("#apEm").onclick=function(){ location.href="mailto:"+email+"?subject="+encodeURIComponent("LocalStay · Aprobare unitate: "+name)+"&body="+encodeURIComponent(msg); };
 }
 function renderCreds(host){
   const box=$("#resultCreds"); if(!box) return;
