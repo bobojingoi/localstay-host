@@ -1,4 +1,4 @@
-/* Authentication for StayPredeal.
+/* Authentication for LocalStay.
    Two roles:
      - admin : platform owner (us). Sees every property, imports, stats, manages hosts.
      - host  : a hotelier. Manages only the properties they own (properties.owner_id).
