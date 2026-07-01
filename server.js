@@ -1022,26 +1022,31 @@ app.delete("/api/host/:slug", AUTH.requireAdmin, async (req, res) => {
 app.get("/api/documents", AUTH.requireAuth, async (req, res) => {
   try {
     const isAdmin = req.user.role === "admin";
+    const tpl = (await pool.query("select version from documents where slug='__template'")).rows[0];
+    const tplVersion = (tpl && tpl.version) || 0;
     const r = await pool.query(
       "select p.slug, p.admin_state->'property'->'basicInfo'->>'name' as name, p.approval as approval, " +
-      "  u.name as owner_name, u.email as owner_email, d.status as doc_status, d.sent_at as sent_at " +
+      "  u.name as owner_name, u.email as owner_email, d.status as doc_status, d.sent_at as sent_at, d.version as doc_version " +
       "from properties p left join users u on u.id = p.owner_id left join documents d on d.slug = p.slug " +
       (isAdmin ? "" : "where p.owner_id = $1 ") +
       "order by p.updated_at desc",
       isAdmin ? [] : [req.user.id]
     );
-    res.json(r.rows.map(row => {
-      const approved = (row.approval && row.approval.status) === "approved";
-      const status = approved ? "signed" : (row.doc_status || "draft"); // draft | sent | signed
-      return {
-        slug: row.slug, name: row.name || row.slug,
-        status, sentAt: row.sent_at || null,
-        approvalStatus: (row.approval && row.approval.status) || "pending",
-        decidedAt: (row.approval && row.approval.decidedAt) || null,
-        photoConsent: !!(row.approval && row.approval.photoConsent),
-        owner: { name: row.owner_name || "", email: row.owner_email || "" }
-      };
-    }));
+    res.json({
+      templateVersion: tplVersion,
+      properties: r.rows.map(row => {
+        const approved = (row.approval && row.approval.status) === "approved";
+        const status = approved ? "signed" : (row.doc_status || "draft"); // draft | sent | signed
+        return {
+          slug: row.slug, name: row.name || row.slug,
+          status, sentAt: row.sent_at || null, version: row.doc_version || 0, outdated: (row.doc_version || 0) < tplVersion,
+          approvalStatus: (row.approval && row.approval.status) || "pending",
+          decidedAt: (row.approval && row.approval.decidedAt) || null,
+          photoConsent: !!(row.approval && row.approval.photoConsent),
+          owner: { name: row.owner_name || "", email: row.owner_email || "" }
+        };
+      })
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1072,61 +1077,71 @@ async function propName(slug){
   const r = await pool.query("select admin_state->'property'->'basicInfo'->>'name' as name from properties where slug=$1", [slug]);
   return (r.rows[0] && r.rows[0].name) || slug;
 }
+const TEMPLATE_SLUG = "__template";
+async function getTemplate(){
+  const r = await pool.query("select content, version from documents where slug=$1", [TEMPLATE_SLUG]);
+  if (r.rows[0]) return { content: r.rows[0].content || DEFAULT_DOC(""), version: r.rows[0].version || 0 };
+  return { content: DEFAULT_DOC(""), version: 0 };
+}
+// The property's own document (what was sent to that hotelier); falls back to the template.
 app.get("/api/documents/:slug", AUTH.requireSlugAccess(pool), async (req, res) => {
   try {
-    const r = await pool.query("select title, content, status, sent_at from documents where slug=$1", [req.params.slug]);
-    const name = await propName(req.params.slug);
-    if (!r.rows[0]) return res.json({ slug: req.params.slug, title: "Contract de colaborare", content: DEFAULT_DOC(name), status: "draft", sentAt: null, seeded: true });
-    const d = r.rows[0];
-    res.json({ slug: req.params.slug, title: d.title || "Contract de colaborare", content: d.content || DEFAULT_DOC(name), status: d.status || "draft", sentAt: d.sent_at || null });
+    const r = await pool.query("select content, status, sent_at, version from documents where slug=$1", [req.params.slug]);
+    if (r.rows[0]) { const d = r.rows[0]; return res.json({ slug: req.params.slug, content: d.content || DEFAULT_DOC(await propName(req.params.slug)), status: d.status || "draft", sentAt: d.sent_at || null, version: d.version || 0 }); }
+    const t = await getTemplate();
+    res.json({ slug: req.params.slug, content: t.content, status: "draft", sentAt: null, version: 0 });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-app.put("/api/documents/:slug", AUTH.requireAdmin, async (req, res) => {
+
+/* ---- Master template: the standard document (AI-editable), sent individually or in bulk ---- */
+app.get("/api/doc-template", AUTH.requireAdmin, async (req, res) => {
+  try { res.json(await getTemplate()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.put("/api/doc-template", AUTH.requireAdmin, async (req, res) => {
+  try {
+    const content = String((req.body && req.body.content) || "").slice(0, 60000);
+    const r = await pool.query(
+      "insert into documents (slug, title, content, status, version, updated_at) values ($1,'Document standard',$2,'template',1,now()) " +
+      "on conflict (slug) do update set content=$2, version=documents.version+1, updated_at=now() returning version",
+      [TEMPLATE_SLUG, content]
+    );
+    res.json({ ok: true, version: r.rows[0].version });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post("/api/doc-template/ai", AUTH.requireAdmin, async (req, res) => {
   try {
     const b = req.body || {};
-    const title = String(b.title || "Contract de colaborare").slice(0, 200);
-    const content = String(b.content || "").slice(0, 60000);
-    await pool.query(
-      "insert into documents (slug, title, content, status, updated_at) values ($1,$2,$3,'draft',now()) " +
-      "on conflict (slug) do update set title=$2, content=$3, updated_at=now()",
-      [req.params.slug, title, content]
-    );
-    res.json({ ok: true });
+    const out = await generateDocument({ propertyName: "", owner: "", current: b.current || "", instruction: b.instruction || "" });
+    res.json({ content: out.content });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+// Bulk send — push the current template to every property that doesn't already have this version.
+app.post("/api/doc-template/send-bulk", AUTH.requireAdmin, async (req, res) => {
+  try {
+    const t = await getTemplate();
+    if (!t.version) return res.status(400).json({ error: "Salvează întâi documentul standard înainte de a-l trimite." });
+    const total = (await pool.query("select count(*)::int as n from properties")).rows[0].n;
+    const r = await pool.query(
+      "insert into documents (slug, content, status, version, sent_at, updated_at) " +
+      "select p.slug, $1, 'sent', $2, now(), now() from properties p " +
+      "on conflict (slug) do update set content=$1, status='sent', version=$2, sent_at=now(), updated_at=now() " +
+      "where documents.version is distinct from $2 returning slug",
+      [t.content, t.version]
+    );
+    res.json({ ok: true, sent: r.rows.length, skipped: total - r.rows.length, total, version: t.version });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Individual send — push the current template to a single property.
 app.post("/api/documents/:slug/send", AUTH.requireAdmin, async (req, res) => {
   try {
-    const b = req.body || {};
-    const content = b.content != null ? String(b.content).slice(0, 60000) : null;
-    if (content != null) {
-      await pool.query(
-        "insert into documents (slug, content, status, sent_at, updated_at) values ($1,$2,'sent',now(),now()) " +
-        "on conflict (slug) do update set content=$2, status='sent', sent_at=now(), updated_at=now()",
-        [req.params.slug, content]
-      );
-    } else {
-      await pool.query(
-        "insert into documents (slug, content, status, sent_at, updated_at) values ($1,$2,'sent',now(),now()) " +
-        "on conflict (slug) do update set status='sent', sent_at=now(), updated_at=now()",
-        [req.params.slug, DEFAULT_DOC(await propName(req.params.slug))]
-      );
-    }
-    res.json({ ok: true, status: "sent" });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-app.post("/api/documents/:slug/ai", AUTH.requireAdmin, async (req, res) => {
-  try {
-    const b = req.body || {};
-    let owner = "";
-    const or = await pool.query("select u.name, u.email from properties p left join users u on u.id=p.owner_id where p.slug=$1", [req.params.slug]);
-    if (or.rows[0]) owner = or.rows[0].name || or.rows[0].email || "";
-    const out = await generateDocument({
-      propertyName: await propName(req.params.slug),
-      owner,
-      current: b.current || "",
-      instruction: b.instruction || ""
-    });
-    res.json({ content: out.content });
+    const t = await getTemplate();
+    const version = t.version || 1;
+    await pool.query(
+      "insert into documents (slug, content, status, version, sent_at, updated_at) values ($1,$2,'sent',$3,now(),now()) " +
+      "on conflict (slug) do update set content=$2, status='sent', version=$3, sent_at=now(), updated_at=now()",
+      [req.params.slug, t.content, version]
+    );
+    res.json({ ok: true, status: "sent", version });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
