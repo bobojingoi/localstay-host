@@ -388,7 +388,7 @@ body:not(.is-host) .host-only{display:none}
         #rlList .rl-why{font-size:12px;color:var(--muted);flex-basis:100%}
         #rlList .rl-mut{color:var(--muted);font-size:13px}
       </style>
-      <div class="pane-head"><h1>Roots Leads</h1><p>Clienți din formularul ROOTS Villas, cu profilul dedus automat și unitățile LocalStay potrivite. <button id="rlReload" class="lnkbtn">reîmprospătează</button></p></div>
+      <div class="pane-head"><h1>Roots Leads</h1><p>Clienți din formularul ROOTS Villas, cu profilul dedus automat și unitățile LocalStay potrivite. <button id="rlReload" class="lnkbtn">reîmprospătează</button> · <button id="rlRematch" class="lnkbtn">recalculează potrivirile</button></p></div>
       <div class="card"><div class="bd"><div id="rlList"><div class="empty">Se încarcă…</div></div></div></div>
     </section>
 
@@ -1367,6 +1367,14 @@ async function renderRootsLeads(){
   if(inp) inp.oninput=()=>{ const q=inp.value.trim().toLowerCase(); const f=q?rows.filter(l=>((l.name||'')+' '+(l.phone||'')+' '+(l.email||'')+' '+(l.origin_city||'')).toLowerCase().indexOf(q)>=0):rows; document.getElementById('rlCards').innerHTML=f.length?f.map(card).join(''):'<div class="empty">Niciun rezultat.</div>'; };
 }
 const _rlr=document.getElementById("rlReload"); if(_rlr) _rlr.onclick=renderRootsLeads;
+const _rlm=document.getElementById("rlRematch"); if(_rlm) _rlm.onclick=async function(){
+  const t=(typeof toast==='function')?toast:function(){}; _rlm.disabled=true; const old=_rlm.textContent; _rlm.textContent='se recalculează…';
+  try{ const r=await fetch('/api/roots-leads/rematch',{method:'POST'}); const j=await r.json().catch(function(){return{};});
+    if(r.ok){ t('Potriviri recalculate pentru '+(j.leads||0)+' lead-uri ('+(j.units||0)+' unități)'); await renderRootsLeads(); }
+    else t(j.error||'Eroare la recalculare'); }
+  catch(e){ t('Eroare de rețea'); }
+  _rlm.disabled=false; _rlm.textContent=old;
+};
 
 /* Initial data load is handled by the role-aware bootstrap script below
    (so hosts don't call admin-only /api/stats and see import UI). */
