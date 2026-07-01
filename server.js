@@ -7,7 +7,7 @@ const { pool, init } = require("./db");
 const { STAY } = require("./transform");
 const sharp = require("sharp");
 const { r2put, r2ready } = require("./r2");
-const { describeImage, enhanceImage, generateFbPosts } = require("./ai");
+const { describeImage, enhanceImage, generateFbPosts, generateDocument } = require("./ai");
 const AUTH = require("./auth");
 
 const app = express();
@@ -104,6 +104,39 @@ function renderSite(site, slug) {
   return headExtra ? html.replace("</head>", headExtra + "</head>") : html;
 }
 
+/* Default (seed) contract content as Markdown; used until edited/generated. */
+function DEFAULT_DOC(propertyName){
+  return [
+    "## 1. Obiectul contractului",
+    "Prestatorul (LocalStay) oferă Clientului serviciul de listare și promovare a proprietății „" + (propertyName || "—") + "” prin generarea unui site de prezentare dedicat (pe subdomeniu propriu), a unei zone de administrare, sincronizarea calendarului de disponibilitate prin iCal cu platforme terțe (ex. Booking.com, Airbnb), generarea de conținut (texte, optimizare foto) și instrumente de promovare.",
+    "## 2. Durata",
+    "Contractul intră în vigoare la data semnării electronice (aprobarea unității) și se derulează pe perioadă nedeterminată, putând fi încetat de oricare dintre părți cu o notificare prealabilă de 30 de zile.",
+    "## 3. Obligațiile Prestatorului",
+    "Menținerea în stare de funcționare a site-ului și a instrumentelor, sincronizarea periodică a calendarelor, protejarea datelor conform legislației aplicabile și oferirea de suport rezonabil pentru utilizarea platformei.",
+    "## 4. Obligațiile Clientului",
+    "Furnizarea de informații corecte și actuale despre proprietate, gestionarea disponibilității și a prețurilor, respectarea obligațiilor față de turiști și a legislației în vigoare privind cazarea turistică.",
+    "## 5. Publicarea și editarea fotografiilor",
+    "Prin aprobarea unității, Clientul își exprimă acordul ca Prestatorul să editeze (inclusiv prin optimizare sau generare cu inteligență artificială), să publice și să folosească fotografiile proprietății în site-ul de prezentare și în materialele de promovare. Clientul declară că deține drepturile asupra fotografiilor furnizate.",
+    "## 6. Rezervări",
+    "În funcție de setările alese de Client, platforma poate funcționa în regim de cerere de rezervare (turistul trimite o solicitare pe care Clientul o confirmă) sau de rezervare directă (turistul blochează datele). În regim de rezervare directă, datele se blochează temporar, iar rezervarea se confirmă de către Client, care contactează turistul telefonic sau prin WhatsApp.",
+    "## 7. Date și confidențialitate",
+    "Datele turiștilor și ale Clientului sunt prelucrate exclusiv pentru operarea serviciului, conform Regulamentului (UE) 2016/679 (GDPR). Părțile păstrează confidențialitatea informațiilor la care au acces.",
+    "## 8. Dispoziții finale",
+    "Prezentul document este un model-cadru pus la dispoziție de platformă și poate fi completat cu anexe specifice. Semnarea electronică prin aprobarea unității confirmă acceptarea acestor termeni."
+  ].join("\n\n");
+}
+/* Minimal, safe Markdown → HTML (escapes everything, then applies ## headings, **bold**, paragraphs). */
+function mdToHtml(md){
+  const E = s => String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+  const blocks = String(md).replace(/\r/g,"").split(/\n{2,}/);
+  return blocks.map(b => {
+    b = b.trim(); if(!b) return "";
+    const bold = s => E(s).replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+    if(/^#{1,3}\s+/.test(b)) return "<h2>" + bold(b.replace(/^#{1,3}\s+/, "")) + "</h2>";
+    return "<p>" + bold(b).replace(/\n/g, "<br>") + "</p>";
+  }).join("");
+}
+
 /* ---------- LocalStay ↔ hotelier collaboration contract (signed on approval) ---------- */
 function contractHtml(d){
   const E = s => String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
@@ -113,16 +146,8 @@ function contractHtml(d){
   const signBlock = signed
     ? '<p class="sig-ok"><b>Semnat electronic</b> de către Client la data de <b>' + E(fmt(ap.decidedAt)) + '</b>, prin aprobarea unității în platforma LocalStay.' + (ap.photoConsent ? ' Clientul și-a exprimat acordul pentru publicarea fotografiilor proprietății.' : '') + '</p>'
     : '<p class="sig-no">Contract <b>nesemnat</b>. Se consideră semnat electronic în momentul în care Clientul aprobă unitatea publicată în platforma LocalStay.</p>';
-  const clauses = [
-    ["1. Obiectul contractului", "Prestatorul (LocalStay) oferă Clientului serviciul de listare și promovare a proprietății de mai sus prin generarea unui site de prezentare dedicat (pe subdomeniu propriu), a unei zone de administrare, sincronizarea calendarului de disponibilitate prin iCal cu platforme terțe (ex. Booking.com, Airbnb), generarea de conținut (texte, optimizare foto) și instrumente de promovare."],
-    ["2. Durata", "Contractul intră în vigoare la data semnării electronice (aprobarea unității) și se derulează pe perioadă nedeterminată, putând fi încetat de oricare dintre părți cu o notificare prealabilă de 30 de zile."],
-    ["3. Obligațiile Prestatorului", "Menținerea în stare de funcționare a site-ului și a instrumentelor, sincronizarea periodică a calendarelor, protejarea datelor conform legislației aplicabile și oferirea de suport rezonabil pentru utilizarea platformei."],
-    ["4. Obligațiile Clientului", "Furnizarea de informații corecte și actuale despre proprietate, gestionarea disponibilității și a prețurilor, respectarea obligațiilor față de turiști și a legislației în vigoare privind cazarea turistică."],
-    ["5. Publicarea fotografiilor", "Prin aprobarea unității, Clientul își exprimă acordul ca Prestatorul să publice și să folosească fotografiile proprietății (inclusiv variante optimizate) în site-ul de prezentare și în materialele de promovare a cazării. Clientul declară că deține drepturile asupra fotografiilor furnizate."],
-    ["6. Rezervări", "În funcție de setările alese de Client, platforma poate funcționa în regim de cerere de rezervare (turistul trimite o solicitare pe care Clientul o confirmă) sau de rezervare directă (turistul blochează datele), acesta din urmă doar cu acordul explicit al Clientului activat în zona de administrare."],
-    ["7. Date și confidențialitate", "Datele turiștilor și ale Clientului sunt prelucrate exclusiv pentru operarea serviciului, conform Regulamentului (UE) 2016/679 (GDPR). Părțile păstrează confidențialitatea informațiilor la care au acces."],
-    ["8. Dispoziții finale", "Prezentul document este un model-cadru pus la dispoziție de platformă și poate fi completat cu anexe specifice. Semnarea electronică prin aprobarea unității confirmă acceptarea acestor termeni."]
-  ];
+  const md = (d.content && String(d.content).trim()) ? String(d.content) : DEFAULT_DOC(d.propertyName);
+  const body = mdToHtml(md);
   return '<!doctype html><html lang="ro"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
     + '<title>Contract LocalStay · ' + E(d.propertyName) + '</title><style>'
     + ':root{--ink:#141c34;--mut:#5a6473;--line:#e6e9ef;--brand:#2f7d5b}'
@@ -147,7 +172,7 @@ function contractHtml(d){
     + '<p class="sub">Proprietate: <b>' + E(d.propertyName) + '</b>' + (d.address?(' · ' + E(d.address)):'') + '</p>'
     + '<div class="parties"><div class="party"><h3>Prestator</h3><b>LocalStay</b><small>Platformă de listare și promovare cazări</small></div>'
     + '<div class="party"><h3>Client (hotelier)</h3><b>' + E(d.owner.name || d.propertyName) + '</b><small>' + E(d.owner.email || "—") + '</small></div></div>'
-    + '<div class="cl">' + clauses.map(c => '<h2>' + E(c[0]) + '</h2><p>' + E(c[1]) + '</p>').join('') + '</div>'
+    + '<div class="cl">' + body + '</div>'
     + signBlock
     + '<p class="foot">Document generat de platforma LocalStay pentru proprietatea „' + E(d.propertyName) + '" (' + E(d.slug) + '). Model-cadru; nu constituie consultanță juridică.</p>'
     + '</div>'
@@ -795,6 +820,7 @@ app.post("/api/approval/:token", async (req, res) => {
       [req.params.token, JSON.stringify(patch)]
     );
     if (!r.rows.length) return res.status(404).json({ error: "Link invalid." });
+    if (decision === "approved") { try { await pool.query("insert into documents (slug, status, updated_at) values ($1,'signed',now()) on conflict (slug) do update set status='signed', updated_at=now()", [r.rows[0].slug]); } catch (e) {} }
     res.json({ ok: true, status: decision });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -815,6 +841,7 @@ app.post("/api/host/approval", AUTH.requireAuth, async (req, res) => {
       params
     );
     if (!r.rows.length) return res.status(404).json({ error: "Unitate inexistentă sau fără acces." });
+    if (decision === "approved") { try { await pool.query("insert into documents (slug, status, updated_at) values ($1,'signed',now()) on conflict (slug) do update set status='signed', updated_at=now()", [slug]); } catch (e) {} }
     res.json({ ok: true, status: decision });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -997,19 +1024,24 @@ app.get("/api/documents", AUTH.requireAuth, async (req, res) => {
     const isAdmin = req.user.role === "admin";
     const r = await pool.query(
       "select p.slug, p.admin_state->'property'->'basicInfo'->>'name' as name, p.approval as approval, " +
-      "  u.name as owner_name, u.email as owner_email " +
-      "from properties p left join users u on u.id = p.owner_id " +
+      "  u.name as owner_name, u.email as owner_email, d.status as doc_status, d.sent_at as sent_at " +
+      "from properties p left join users u on u.id = p.owner_id left join documents d on d.slug = p.slug " +
       (isAdmin ? "" : "where p.owner_id = $1 ") +
       "order by p.updated_at desc",
       isAdmin ? [] : [req.user.id]
     );
-    res.json(r.rows.map(row => ({
-      slug: row.slug, name: row.name || row.slug,
-      status: (row.approval && row.approval.status) || "pending",
-      decidedAt: (row.approval && row.approval.decidedAt) || null,
-      requestedAt: (row.approval && row.approval.requestedAt) || null,
-      owner: { name: row.owner_name || "", email: row.owner_email || "" }
-    })));
+    res.json(r.rows.map(row => {
+      const approved = (row.approval && row.approval.status) === "approved";
+      const status = approved ? "signed" : (row.doc_status || "draft"); // draft | sent | signed
+      return {
+        slug: row.slug, name: row.name || row.slug,
+        status, sentAt: row.sent_at || null,
+        approvalStatus: (row.approval && row.approval.status) || "pending",
+        decidedAt: (row.approval && row.approval.decidedAt) || null,
+        photoConsent: !!(row.approval && row.approval.photoConsent),
+        owner: { name: row.owner_name || "", email: row.owner_email || "" }
+      };
+    }));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1023,14 +1055,79 @@ app.get("/contract/:slug", AUTH.requireSlugAccess(pool), async (req, res) => {
       if (u.rows[0]) owner = { name: u.rows[0].name || "", email: u.rows[0].email || "" };
     }
     const bi = (p.admin_state && p.admin_state.property && p.admin_state.property.basicInfo) || {};
+    const doc = await pool.query("select content from documents where slug=$1", [p.slug]);
     res.set("Content-Type", "text/html; charset=utf-8");
     res.send(contractHtml({
       slug: p.slug,
       propertyName: bi.name || p.slug,
       address: [bi.address, bi.locality, bi.city, bi.county].filter(Boolean).join(", "),
+      content: (doc.rows[0] && doc.rows[0].content) || "",
       owner, approval: p.approval || {}
     }));
   } catch (e) { res.status(500).send("Eroare: " + e.message); }
+});
+
+/* Document CRUD (master admin edits + sends; AI can draft/modify the content). */
+async function propName(slug){
+  const r = await pool.query("select admin_state->'property'->'basicInfo'->>'name' as name from properties where slug=$1", [slug]);
+  return (r.rows[0] && r.rows[0].name) || slug;
+}
+app.get("/api/documents/:slug", AUTH.requireSlugAccess(pool), async (req, res) => {
+  try {
+    const r = await pool.query("select title, content, status, sent_at from documents where slug=$1", [req.params.slug]);
+    const name = await propName(req.params.slug);
+    if (!r.rows[0]) return res.json({ slug: req.params.slug, title: "Contract de colaborare", content: DEFAULT_DOC(name), status: "draft", sentAt: null, seeded: true });
+    const d = r.rows[0];
+    res.json({ slug: req.params.slug, title: d.title || "Contract de colaborare", content: d.content || DEFAULT_DOC(name), status: d.status || "draft", sentAt: d.sent_at || null });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.put("/api/documents/:slug", AUTH.requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const title = String(b.title || "Contract de colaborare").slice(0, 200);
+    const content = String(b.content || "").slice(0, 60000);
+    await pool.query(
+      "insert into documents (slug, title, content, status, updated_at) values ($1,$2,$3,'draft',now()) " +
+      "on conflict (slug) do update set title=$2, content=$3, updated_at=now()",
+      [req.params.slug, title, content]
+    );
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post("/api/documents/:slug/send", AUTH.requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const content = b.content != null ? String(b.content).slice(0, 60000) : null;
+    if (content != null) {
+      await pool.query(
+        "insert into documents (slug, content, status, sent_at, updated_at) values ($1,$2,'sent',now(),now()) " +
+        "on conflict (slug) do update set content=$2, status='sent', sent_at=now(), updated_at=now()",
+        [req.params.slug, content]
+      );
+    } else {
+      await pool.query(
+        "insert into documents (slug, content, status, sent_at, updated_at) values ($1,$2,'sent',now(),now()) " +
+        "on conflict (slug) do update set status='sent', sent_at=now(), updated_at=now()",
+        [req.params.slug, DEFAULT_DOC(await propName(req.params.slug))]
+      );
+    }
+    res.json({ ok: true, status: "sent" });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post("/api/documents/:slug/ai", AUTH.requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    let owner = "";
+    const or = await pool.query("select u.name, u.email from properties p left join users u on u.id=p.owner_id where p.slug=$1", [req.params.slug]);
+    if (or.rows[0]) owner = or.rows[0].name || or.rows[0].email || "";
+    const out = await generateDocument({
+      propertyName: await propName(req.params.slug),
+      owner,
+      current: b.current || "",
+      instruction: b.instruction || ""
+    });
+    res.json({ content: out.content });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 /* Google reviews for a property, via its Google Place ID (stored in state.property.googlePlaceId).
@@ -1123,7 +1220,7 @@ app.post("/api/book/:slug", async (req, res) => {
     await pool.query("update properties set admin_state=$2, updated_at=now() where slug=$1", [req.params.slug, admin]);
     const r = await pool.query(
       "insert into booking_requests (slug,name,phone,email,checkin,checkout,adults,children,infants,pets,rooms,message,status,kind) " +
-      "values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,'confirmat','direct') returning id",
+      "values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,'de confirmat','direct') returning id",
       [req.params.slug, (b.name || "").slice(0, 200), (b.phone || "").slice(0, 60), (b.email || "").slice(0, 200), b.checkin, b.checkout,
         +g.adults || 0, +g.children || 0, +g.infants || 0, +g.pets || 0, JSON.stringify(rooms), (b.message || "").slice(0, 4000)]
     );
@@ -1131,6 +1228,14 @@ app.post("/api/book/:slug", async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+/* Hotelier confirms a (direct) booking after contacting the guest by phone/WhatsApp. */
+app.post("/api/host/:slug/booking/:id/confirm", AUTH.requireSlugAccess(pool), async (req, res) => {
+  try {
+    const r = await pool.query("update booking_requests set status='confirmat' where id=$1 and slug=$2 returning id", [req.params.id, req.params.slug]);
+    if (!r.rows.length) return res.status(404).json({ error: "Rezervare inexistentă." });
+    res.json({ ok: true, status: "confirmat" });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 app.get("/api/host/:slug/booking-requests", AUTH.requireSlugAccess(pool), async (req, res) => {
   try {
     const r = await pool.query(
