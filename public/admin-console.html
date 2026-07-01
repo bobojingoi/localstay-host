@@ -3078,8 +3078,11 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
     var fmt=function(iso){ if(!iso) return "—"; try{ return new Date(iso).toLocaleDateString("ro-RO",{day:"numeric",month:"long",year:"numeric"}); }catch(e){ return iso; } };
     var badge = signed ? '<span class="sbadge approved">Semnat · '+fmt(ap.decidedAt)+'</span>' : (ap.status==="rejected"?'<span class="sbadge rejected">Respins</span>':'<span class="sbadge">Nesemnat</span>');
     var photo = ap.photoConsent ? '<div class="doc-line ok">✓ Acord pentru publicarea fotografiilor</div>' : '<div class="doc-line">Fără acord explicit pentru publicarea fotografiilor — îl bifezi în tab-ul <b>Aprobări</b> la aprobare.</div>';
+    var ds = window.__DOCSTATUS || {};
+    var newDoc = ds.status === "sent" && !signed;
+    var notice = newDoc ? '<div style="background:#fdf4e3;color:#8a6516;border:1px solid #f0d9a8;border-radius:10px;padding:10px 14px;margin-bottom:12px;font-size:13.5px;font-weight:600">\uD83D\uDCC4 Contract nou primit de la LocalStay'+(ds.version?(" \u00b7 versiunea "+ds.version):"")+(ds.sentAt?(" \u00b7 trimis "+fmt(ds.sentAt)):"")+'. Îl aprobi din tab-ul <b>Aprobări</b>.</div>' : '';
     box.innerHTML =
-      '<div class="dcard"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px"><b style="color:var(--ink);font-size:16px">Contract de colaborare LocalStay</b>'+badge+'</div>'+
+      '<div class="dcard">'+notice+'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px"><b style="color:var(--ink);font-size:16px">Contract de colaborare LocalStay</b>'+badge+'</div>'+
         '<p class="sub" style="margin:0 0 12px">Se semnează electronic prin aprobarea publicării unității (include acordul pentru publicarea fotografiilor).</p>'+
         photo+
         '<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><a class="btn btn-pri" href="/contract/'+encodeURIComponent(_slug)+'" target="_blank" rel="noopener" style="padding:9px 16px">Deschide contractul</a></div>'+
@@ -3256,6 +3259,46 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
 
   // render the dashboard on load (Panou is the default tab)
   renderHostDash(DASH_DAYS);
+})();
+</script>
+<script>
+/* Contract notification: unread dot on the Documente tab + a dashboard prompt to
+   approve, whenever the master admin has sent a contract (status='sent'). */
+(function(){
+  var slug = new URLSearchParams(location.search).get("slug") || "";
+  if(!slug) return;
+  var docBtn = document.querySelector('.nav-i[data-tab="documente"]');
+  function setDot(show){
+    if(!docBtn) return;
+    var dot = docBtn.querySelector('.nav-dot');
+    if(show){ if(!dot){ dot=document.createElement('span'); dot.className='nav-dot'; dot.style.cssText='display:inline-block;width:8px;height:8px;border-radius:50%;background:#e5484d;margin-left:6px;vertical-align:middle;flex:none'; docBtn.appendChild(dot); } }
+    else if(dot){ dot.remove(); }
+  }
+  function fmt(iso){ if(!iso) return ""; try{ return new Date(iso).toLocaleDateString("ro-RO",{day:"numeric",month:"long",year:"numeric"}); }catch(e){ return ""; } }
+  function paintCard(d){
+    var panou = document.getElementById('panel-panou'); if(!panou) return;
+    var old = document.getElementById('docAlert'); if(old) old.remove();
+    if(!d || d.status!=='sent') return; // only while a contract awaits signature
+    var card = document.createElement('div');
+    card.id='docAlert';
+    card.style.cssText='display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:#fdf4e3;color:#8a6516;border:1px solid #f0d9a8;border-radius:12px;padding:12px 16px;margin:0 0 18px;font-size:14px;font-weight:600';
+    card.innerHTML='<span>\uD83D\uDCC4 Ai un contract de colaborare de la LocalStay care a\u0219teapt\u0103 aprobarea ta'+(d.version?(' \u00b7 versiunea '+d.version):'')+'.</span><span style="flex:1"></span><button id="docAlertGo" class="btn btn-pri" type="button" style="padding:8px 14px">Vezi contractul</button>';
+    var apBar=document.getElementById('apBar');
+    if(apBar && apBar.parentNode===panou) panou.insertBefore(card, apBar.nextSibling);
+    else panou.insertBefore(card, panou.firstChild);
+    var go=document.getElementById('docAlertGo');
+    if(go) go.onclick=function(){ if(docBtn) docBtn.click(); };
+  }
+  function markSeen(){
+    if(!window.__DOCSTATUS || window.__DOCSTATUS.seen) return;
+    fetch('/api/documents/'+encodeURIComponent(slug)+'/seen',{method:'POST',credentials:'same-origin'}).catch(function(){});
+    window.__DOCSTATUS.seen=true; setDot(false);
+  }
+  fetch('/api/documents/'+encodeURIComponent(slug),{credentials:'same-origin'})
+    .then(function(r){ return r.ok?r.json():null; })
+    .then(function(d){ if(!d) return; window.__DOCSTATUS=d; setDot(d.status==='sent' && !d.seen); paintCard(d); if(window.__renderDocumente){ try{ window.__renderDocumente(); }catch(e){} } })
+    .catch(function(){});
+  if(docBtn) docBtn.addEventListener('click', markSeen);
 })();
 </script>
 </body>
