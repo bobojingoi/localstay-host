@@ -521,7 +521,9 @@ textarea.fb-in{resize:vertical}
     <button class="nav-i" data-tab="calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> Calendar</button>
     <button class="nav-i" data-tab="ical"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/></svg> Calendare iCal</button>
     <button class="nav-i" data-tab="galerie"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg> Galerie</button>
+    <button class="nav-i" data-tab="rezervari"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M9 15l2 2 4-4"/></svg> Rezervări</button>
     <button class="nav-i" data-tab="cereri"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Cereri</button>
+    <button class="nav-i" data-tab="clienti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0M17 7.5a3 3 0 0 1 0 6M16.5 20a5.5 5.5 0 0 0-2-4.3"/></svg> Clienți</button>
     <button class="nav-i" data-tab="oferte"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.6 13.4L13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.6z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg> Oferte</button>
     <button class="nav-i" data-tab="facebook"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg> Facebook</button>
     <button class="nav-i" data-tab="aprobari"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg> Aprobări</button>
@@ -638,14 +640,24 @@ textarea.fb-in{resize:vertical}
           </aside>
         </div>
       </section>
-      <section class="panel" id="panel-cereri">
+      <section class="panel" id="panel-rezervari">
         <div class="db-consent" id="dbConsent">
           <label class="checkline"><input type="checkbox" id="dbDirect"> <b>Permite rezervări directe</b></label>
-          <p class="muted" id="dbDirectNote" style="margin:6px 0 0">Când e activ, turistul poate <b>bloca datele instant</b> pe site (nu doar să trimită o cerere). Necesită cel puțin un calendar iCal valid configurat.</p>
+          <p class="muted" id="dbDirectNote" style="margin:6px 0 0">Când e activ, turistul poate <b>bloca datele instant</b> pe site (nu doar să trimită o cerere). Necesită cel puțin un calendar iCal valid configurat. Nu uita să salvezi.</p>
         </div>
-        <p class="intro">Rezervările și cererile trimise din formularul site-ului public. Datele clientului, perioada, oaspeții și camerele alese.</p>
+        <p class="intro">Rezervări confirmate — turistul a blocat datele direct de pe site.</p>
+        <div style="display:flex;gap:10px;margin-bottom:14px"><button class="btn ghost" id="rezervariReload">Reîmprospătează</button></div>
+        <div id="rezervariBox"><p class="muted">Se încarcă…</p></div>
+      </section>
+      <section class="panel" id="panel-cereri">
+        <p class="intro">Cereri de rezervare trimise din formularul site-ului public (necesită confirmarea ta). Datele clientului, perioada, oaspeții și camerele alese.</p>
         <div style="display:flex;gap:10px;margin-bottom:14px"><button class="btn ghost" id="cereriReload">Reîmprospătează</button></div>
         <div id="cereriBox"><p class="muted">Se încarcă…</p></div>
+      </section>
+      <section class="panel" id="panel-clienti">
+        <p class="intro">Toți clienții acestei proprietăți — persoanele care au rezervat sau au trimis o cerere, cu datele de contact și activitatea lor.</p>
+        <div style="display:flex;gap:10px;margin-bottom:14px"><button class="btn ghost" id="clientiReload">Reîmprospătează</button></div>
+        <div id="clientiBox"><p class="muted">Se încarcă…</p></div>
       </section>
 
       <section class="panel" id="panel-oferte">
@@ -2092,14 +2104,16 @@ $("#feedSave").onclick=()=>{
 };
 
 /* =================== NAV / INIT =================== */
-const TITLES={panou:"Panou",continut:"Conținut",preturi:"Prețuri",calendar:"Calendar",ical:"Calendare iCal",galerie:"Galerie",cereri:"Cereri de rezervare",oferte:"Oferte",aprobari:"Aprobări",facebook:"Facebook"};
+const TITLES={panou:"Panou",continut:"Conținut",preturi:"Prețuri",calendar:"Calendar",ical:"Calendare iCal",galerie:"Galerie",rezervari:"Rezervări",cereri:"Cereri de rezervare",clienti:"Clienți",oferte:"Oferte",aprobari:"Aprobări",facebook:"Facebook"};
 $$(".nav-i").forEach(b=>b.onclick=()=>{
   $$(".nav-i").forEach(x=>x.classList.remove("on"));b.classList.add("on");
   $$(".panel").forEach(p=>p.classList.remove("on"));$("#panel-"+b.dataset.tab).classList.add("on");
   $("#pageTitle").textContent=TITLES[b.dataset.tab];$("#side").classList.remove("open");
   const ct=document.querySelector(".content"); if(ct) ct.classList.toggle("wide", b.dataset.tab==="galerie");
   if(b.dataset.tab==="galerie") renderGalerie();
+  if(b.dataset.tab==="rezervari") renderRezervari();
   if(b.dataset.tab==="cereri") renderCereri();
+  if(b.dataset.tab==="clienti") renderClienti();
   if(b.dataset.tab==="panou" && window.__renderDash) window.__renderDash();
   if(b.dataset.tab==="oferte" && window.__renderDeals) window.__renderDeals();
   if(b.dataset.tab==="aprobari" && window.__renderAppr) window.__renderAppr();
@@ -2399,41 +2413,67 @@ function galleryBlock(o){
   });
   return block;
 }
-function renderCereri(){
-  const box=$("#cereriBox"); if(!box) return;
+function _creqCard(r,E){
+  const fmt=d=>d?new Date(d).toLocaleDateString("ro-RO",{day:"numeric",month:"short",year:"numeric"}):"—";
+  const fmtDT=d=>d?new Date(d).toLocaleString("ro-RO",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}):"";
+  const g=[]; if(r.adults)g.push(r.adults+" adulți"); if(r.children)g.push(r.children+" copii"); if(r.infants)g.push(r.infants+" bebeluși"); if(r.pets)g.push(r.pets+" animale");
+  const rooms=(Array.isArray(r.rooms)?r.rooms:[]).map(x=>(x.qty>1?x.qty+"× ":"")+(x.name||"")).join(", ");
+  const wa=(r.phone||"").replace(/[^0-9]/g,"");
+  const direct=r.kind==="direct";
+  const badge=direct?'<span class="creq-badge ok">Confirmată · datele blocate</span>':'<span class="creq-badge req">Cerere</span>';
+  return '<div class="creq'+(direct?' creq-direct':'')+'"><div class="creq-h"><b>'+E(r.name||"—")+'</b> '+badge+'<span class="creq-date">'+fmtDT(r.created_at)+'</span></div>'+
+    '<div class="creq-grid">'+
+    '<div><label>Telefon</label><a href="tel:'+E(r.phone||"")+'">'+E(r.phone||"—")+'</a></div>'+
+    '<div><label>Email</label>'+(r.email?'<a href="mailto:'+E(r.email)+'">'+E(r.email)+'</a>':"—")+'</div>'+
+    '<div><label>Check-in</label>'+fmt(r.checkin)+'</div>'+
+    '<div><label>Check-out</label>'+fmt(r.checkout)+'</div>'+
+    '<div><label>Oaspeți</label>'+E(g.join(", ")||"—")+'</div>'+
+    '<div><label>Camere</label>'+E(rooms||"—")+'</div>'+
+    '</div>'+
+    (wa?'<a class="btn small" href="https://wa.me/'+wa+'" target="_blank" rel="noopener" style="margin-top:10px">'+(direct?'Contactează oaspetele':'Răspunde pe WhatsApp')+'</a>':"")+
+    '</div>';
+}
+function _loadBookings(boxId,filterFn,emptyMsg){
+  const box=$("#"+boxId); if(!box) return;
   const E=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
-  // direct-booking consent toggle (persisted in state.property, saved with the normal Save button)
+  box.innerHTML='<p class="muted">Se încarcă…</p>';
+  fetch("/api/host/"+encodeURIComponent(SLUG)+"/booking-requests").then(r=>r.ok?r.json():Promise.reject()).then(rows=>{
+    const list=rows.filter(filterFn);
+    if(!list.length){ box.innerHTML='<p class="muted">'+emptyMsg+'</p>'; return; }
+    box.innerHTML=list.map(r=>_creqCard(r,E)).join("");
+  }).catch(()=>{ box.innerHTML='<p class="muted">Nu am putut încărca datele (verifică conexiunea / baza de date).</p>'; });
+}
+function renderRezervari(){
   const dbc=$("#dbDirect");
   if(dbc){
     dbc.checked=!!(state.property&&state.property.acceptDirectBooking);
     dbc.onchange=()=>{ if(!state.property) state.property={}; state.property.acceptDirectBooking=dbc.checked; markDirty(); };
   }
-  box.innerHTML='<p class="muted">Se încarcă…</p>';
-  fetch("/api/host/"+encodeURIComponent(SLUG)+"/booking-requests").then(r=>r.ok?r.json():Promise.reject()).then(rows=>{
-    if(!rows.length){ box.innerHTML='<p class="muted">Nicio rezervare încă. Vor apărea aici rezervările și cererile trimise din formularul site-ului public.</p>'; return; }
-    const fmt=d=>d?new Date(d).toLocaleDateString("ro-RO",{day:"numeric",month:"short",year:"numeric"}):"—";
-    const fmtDT=d=>d?new Date(d).toLocaleString("ro-RO",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}):"";
-    box.innerHTML=rows.map(r=>{
-      const g=[]; if(r.adults)g.push(r.adults+" adulți"); if(r.children)g.push(r.children+" copii"); if(r.infants)g.push(r.infants+" bebeluși"); if(r.pets)g.push(r.pets+" animale");
-      const rooms=(Array.isArray(r.rooms)?r.rooms:[]).map(x=>(x.qty>1?x.qty+"× ":"")+(x.name||"")).join(", ");
-      const wa=(r.phone||"").replace(/[^0-9]/g,"");
-      const direct=r.kind==="direct";
-      const badge=direct?'<span class="creq-badge ok">Rezervare confirmată · datele blocate</span>':'<span class="creq-badge req">Cerere</span>';
-      return '<div class="creq'+(direct?' creq-direct':'')+'"><div class="creq-h"><b>'+E(r.name||"—")+'</b> '+badge+'<span class="creq-date">'+fmtDT(r.created_at)+'</span></div>'+
-        '<div class="creq-grid">'+
-        '<div><label>Telefon</label><a href="tel:'+E(r.phone||"")+'">'+E(r.phone||"—")+'</a></div>'+
-        '<div><label>Email</label>'+(r.email?'<a href="mailto:'+E(r.email)+'">'+E(r.email)+'</a>':"—")+'</div>'+
-        '<div><label>Check-in</label>'+fmt(r.checkin)+'</div>'+
-        '<div><label>Check-out</label>'+fmt(r.checkout)+'</div>'+
-        '<div><label>Oaspeți</label>'+E(g.join(", ")||"—")+'</div>'+
-        '<div><label>Camere</label>'+E(rooms||"—")+'</div>'+
-        '</div>'+
-        (wa?'<a class="btn small" href="https://wa.me/'+wa+'" target="_blank" rel="noopener" style="margin-top:10px">'+(direct?'Contactează oaspetele':'Răspunde pe WhatsApp')+'</a>':"")+
-        '</div>';
-    }).join("");
-  }).catch(()=>{ box.innerHTML='<p class="muted">Nu am putut încărca rezervările (verifică conexiunea / baza de date).</p>'; });
+  _loadBookings("rezervariBox", r=>r.kind==="direct", "Nicio rezervare directă încă. Apar aici când turiștii blochează datele de pe site (necesită „Permite rezervări directe” activ).");
 }
-document.addEventListener("click",e=>{ if(e.target&&e.target.id==="cereriReload") renderCereri(); });
+function renderCereri(){
+  _loadBookings("cereriBox", r=>r.kind!=="direct", "Nicio cerere încă. Vor apărea aici cererile trimise din formularul site-ului public.");
+}
+function renderClienti(){
+  const box=$("#clientiBox"); if(!box) return;
+  const E=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+  const fmt=d=>d?new Date(d).toLocaleDateString("ro-RO",{day:"numeric",month:"short",year:"numeric"}):"—";
+  box.innerHTML='<p class="muted">Se încarcă…</p>';
+  fetch("/api/clients?slug="+encodeURIComponent(SLUG)).then(r=>r.ok?r.json():Promise.reject()).then(rows=>{
+    if(!rows.length){ box.innerHTML='<p class="muted">Niciun client încă.</p>'; return; }
+    box.innerHTML='<div class="muted" style="margin-bottom:10px">'+rows.length+' clienți</div>'+
+      '<table class="clitbl"><thead><tr><th>Client</th><th>Contact</th><th>Rezervări</th><th>Cereri</th><th>Nopți</th><th>Ultima activitate</th></tr></thead><tbody>'+
+      rows.map(c=>'<tr><td><b>'+E(c.name||"—")+'</b></td>'+
+        '<td>'+(c.phone?'<a href="tel:'+E(c.phone)+'">'+E(c.phone)+'</a>':"")+(c.email?'<br><a href="mailto:'+E(c.email)+'">'+E(c.email)+'</a>':(c.phone?"":"—"))+'</td>'+
+        '<td>'+(c.reservations||0)+'</td><td>'+(c.requests||0)+'</td><td>'+(c.nights||0)+'</td><td>'+fmt(c.last)+'</td></tr>').join("")+
+      '</tbody></table>';
+  }).catch(()=>{ box.innerHTML='<p class="muted">Nu am putut încărca clienții.</p>'; });
+}
+document.addEventListener("click",e=>{ if(!e.target) return;
+  if(e.target.id==="cereriReload") renderCereri();
+  if(e.target.id==="rezervariReload") renderRezervari();
+  if(e.target.id==="clientiReload") renderClienti();
+});
 
 function renderGalerie(){
   if(!state.galleries) state.galleries={};
@@ -2510,6 +2550,7 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
 
   var ICONS = {
     bed:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6M3 14h18M3 18v2M21 18v2M7 10V8a2 2 0 0 1 2-2h2"/></svg>',
+    cal:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M9 15l2 2 4-4"/></svg>',
     inbox:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h5l2 3h4l2-3h5M5 5h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg>',
     phone:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>',
     gauge:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 13a3 3 0 0 1 3-3M3.5 18a9 9 0 1 1 17 0M12 13l4-4"/></svg>',
@@ -2534,7 +2575,8 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
       ((o.properties>1) ? tile(ICONS.bed, o.properties, 'proprietăți') : '')
       + tile(ICONS.gauge, o.occupancy+'%', 'grad de ocupare · următoarele '+days+' zile')
       + tile(ICONS.money, money(o.estRevenue,o.currency), 'venit estimat · următoarele '+days+' zile')
-      + tile(ICONS.inbox, o.requests, 'cereri de rezervare · ultimele '+days+' zile')
+      + tile(ICONS.cal, o.reservations||0, 'rezervări · ultimele '+days+' zile')
+      + tile(ICONS.inbox, o.requestsOnly!=null?o.requestsOnly:o.requests, 'cereri · ultimele '+days+' zile')
       + tile(ICONS.eye, o.views, 'vizualizări · ultimele '+days+' zile')
       + tile(ICONS.phone, o.reveals, 'dezvăluiri telefon · ultimele '+days+' zile');
 
