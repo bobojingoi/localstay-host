@@ -77,3 +77,14 @@ create table if not exists site_events (
 );
 create index if not exists site_events_type_idx on site_events(type, created_at desc);
 create index if not exists site_events_slug_idx on site_events(slug, created_at desc);
+
+-- Facebook groups the hotelier wants to post to (per property). Used by the
+-- Facebook module to generate a slightly different ready-to-post text per group.
+create table if not exists fb_groups (
+  id         uuid primary key default gen_random_uuid(),
+  slug       text not null,
+  name       text not null,
+  url        text default '',
+  created_at timestamptz default now()
+);
+create index if not exists fb_groups_slug_idx on fb_groups(slug, created_at);
