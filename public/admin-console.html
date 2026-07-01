@@ -551,7 +551,6 @@ textarea.inp{min-height:70px;resize:vertical;line-height:1.5}
         <div id="icalUnits"></div>
       </section>
       <section class="panel" id="panel-galerie">
-        <p class="intro">Galeria principală a proprietății plus o galerie separată pentru fiecare variantă (toată unitatea și fiecare cameră). Încarcă mai multe poze deodată — fiecare e optimizată automat (WebP) și stocată pe CDN. Bifează pentru ștergere în masă. <b>În dreapta ai optimizatorul AI</b>: trage mai multe poze, le optimizează în masă, apoi <b>click pe o poză optimizată o deschide în editor</b> (cu buton înainte/după), iar tragerea ei într-o galerie o adaugă acolo.</p>
         <div class="gal-layout">
           <div id="galerieBox"></div>
           <aside class="gal-dock" id="galDock">
@@ -2387,14 +2386,15 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
         var thumb=p.thumb||p.dataUrl;
         var color=p.status==="done"?"var(--brand)":p.status==="err"?"#cf4b4b":"var(--muted)";
         var done=!!p.url;
-        var img='<div data-pzidx="'+idx+'" '+(done?'data-pzedit="1" title="Click: editează" style="cursor:pointer;':'style="')+'aspect-ratio:4/3;background:#f0f2f5 center/cover;background-image:url('+JSON.stringify(thumb)+')"></div>';
+        var img='<div data-pzidx="'+idx+'" '+(done?'data-pzedit="1" title="Click: editează" ':'')+'style="aspect-ratio:4/3;background:#f0f2f5;overflow:hidden;'+(done?'cursor:pointer':'')+'"><img src="'+esc(thumb)+'" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block"></div>';
         var cmp=done?('<button type="button" data-pzcmp="1" data-pzidx="'+idx+'" title="Înainte / după" style="position:absolute;right:6px;bottom:6px;background:rgba(0,0,0,.62);color:#fff;border:0;border-radius:7px;padding:3px 8px;font-size:12px;font-weight:700;cursor:pointer">⇆ Î/D</button>'):'';
         var link=done?('<a href="'+esc(p.url)+'" target="_blank" style="font-size:11px;color:var(--brand);word-break:break-all">'+esc(p.url)+'</a>'):"";
+        var aiTag = done ? (p.enhanced ? ' · <span style="color:var(--brand)">AI</span>' : ' · <span style="color:#cf4b4b" title="'+esc(p.aiError||"")+'">fără AI</span>') : "";
         return '<div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card)">'+
           '<div style="position:relative">'+img+cmp+'</div>'+
           '<div style="padding:8px 10px">'+
             '<div style="font-size:12px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(p.name)+'</div>'+
-            '<div style="font-size:11.5px;color:'+color+';margin:2px 0 3px">'+statLabel(p.status)+(p.enhanced?" · AI":"")+(p.err?(" · "+esc(p.err)):"")+'</div>'+
+            '<div style="font-size:11.5px;color:'+color+';margin:2px 0 3px">'+statLabel(p.status)+aiTag+(p.err?(" · "+esc(p.err)):"")+'</div>'+
             link+(p.alt?('<div style="font-size:11px;color:var(--muted);margin-top:3px">'+esc(p.alt)+'</div>'):"")+
           '</div></div>';
       }).join("");
@@ -2428,7 +2428,7 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
           var d=await res.json().catch(function(){ return {}; });
           if(!res.ok){ p.status="err"; p.err=d.error||("HTTP "+res.status); }
           else {
-            p.status="done"; p.url=d.url; p.thumb=d.thumb||p.thumb; p.alt=d.alt||""; p.enhanced=!!d.enhanced;
+            p.status="done"; p.url=d.url; p.thumb=d.thumb||p.thumb; p.alt=d.alt||""; p.enhanced=!!d.enhanced; p.aiError=d.aiError||"";
             if(d.cost){ session+=Number(d.cost); byId("pzSession").textContent=moneyLei(session); }
             if(d.spent!=null) byId("pzSpent").textContent=moneyLei(d.spent);
             if(d.count!=null) byId("pzCount").textContent=d.count+" poze";
