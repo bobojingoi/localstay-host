@@ -124,3 +124,33 @@ create index if not exists documents_slug_idx on documents(slug);
 -- each property row stores the version it received (for individual + bulk send that
 -- skips hoteliers who already have the current version).
 alter table documents add column if not exists version int default 0;
+
+-- ---------------------------------------------------------------------------
+-- Roots Leads: qualified clients from the ROOTS Villas Google Form, matched to
+-- LocalStay units by roots.js. The form pushes each submission (Apps Script) to
+-- POST /api/roots-leads/ingest, which computes the client profile + top matches.
+-- Dedup is by email OR phone (upsert), so returning respondents update in place.
+-- ---------------------------------------------------------------------------
+
+-- Per-property enrichment (profile_scores, environment, quality, capacity,
+-- region, price band, constraints) computed from the imported master at import.
+alter table properties add column if not exists enrichment jsonb;
+
+create table if not exists roots_leads (
+  id           uuid primary key default gen_random_uuid(),
+  name         text,
+  phone        text,
+  email        text,
+  origin_city  text,
+  consent      text,
+  raw          jsonb not null default '{}'::jsonb,   -- canonical answers {key:value}
+  profile      jsonb,                                -- profileLead() output
+  matches      jsonb default '[]'::jsonb,            -- [{slug, score, reasons, penalties}]
+  source       text default 'roots_form',
+  submissions  int default 1,                        -- how many times they've submitted
+  created_at   timestamptz default now(),
+  updated_at   timestamptz default now()
+);
+create index if not exists roots_leads_email_idx on roots_leads(lower(email));
+create index if not exists roots_leads_phone_idx on roots_leads(phone);
+create index if not exists roots_leads_created_idx on roots_leads(created_at desc);
