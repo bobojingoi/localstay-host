@@ -544,13 +544,14 @@ app.post("/api/ai-optimize", AUTH.requireAuth, async (req, res) => {
       if (!m) return res.status(400).json({ error: "bad image" });
       mime = m[1]; b64 = m[2];
     }
-    let enhanced = false;
+    let enhanced = false, aiError = null;
     // 1) AI enhance — best-effort; if it fails we still optimize+upload the original
     if (req.body.enhance !== false) {
       try {
         const out = await enhanceImage(b64, mime);
         if (out && out.image) { b64 = out.image; mime = out.mime || mime; enhanced = true; }
-      } catch (e) { /* fall back to plain optimize */ }
+        else aiError = "AI nu a returnat o imagine";
+      } catch (e) { aiError = e.message; } // e.g. OpenAI 429 (credit epuizat)
     }
     const input = Buffer.from(b64, "base64");
     const main = await sharp(input).rotate()
@@ -583,7 +584,7 @@ app.post("/api/ai-optimize", AUTH.requireAuth, async (req, res) => {
         if (pr.rows.length) { cost = Number(pr.rows[0].price); spent = Number(pr.rows[0].photo_spent); count = Number(pr.rows[0].photos_optimized); }
       } catch (e) { /* billing is best-effort; never fail the optimize */ }
     }
-    res.json({ url, thumb: thumbUrl, alt, description, enhanced, cost, spent, count });
+    res.json({ url, thumb: thumbUrl, alt, description, enhanced, aiError, cost, spent, count });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
