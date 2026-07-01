@@ -1298,12 +1298,14 @@ app.get("/api/host/overview", AUTH.requireAuth, async (req, res) => {
     let events=[], reqsBack=[], stays=[];
     if (slugs.length){
       events=(await pool.query("select type, meta, slug, to_char(created_at,'YYYY-MM-DD') as day from site_events where slug = ANY($1) and created_at >= $2 and type in ('page_view','phone_reveal')", [slugs, backStart])).rows;
-      reqsBack=(await pool.query("select status, slug, to_char(created_at,'YYYY-MM-DD') as day from booking_requests where slug = ANY($1) and created_at >= $2", [slugs, backStart])).rows;
+      reqsBack=(await pool.query("select status, kind, slug, to_char(created_at,'YYYY-MM-DD') as day from booking_requests where slug = ANY($1) and created_at >= $2", [slugs, backStart])).rows;
       stays=(await pool.query("select slug, name, phone, to_char(checkin,'YYYY-MM-DD') as checkin, to_char(checkout,'YYYY-MM-DD') as checkout, adults, children, status from booking_requests where slug = ANY($1) and ((checkin >= $2 and checkin < $3) or (checkout >= $2 and checkout < $3)) order by checkin asc limit 100", [slugs, today, fwdEnd])).rows;
     }
     const views=events.filter(e=>e.type==="page_view").length;
     const reveals=events.filter(e=>e.type==="phone_reveal").length;
     const requests=reqsBack.length;
+    const reservations=reqsBack.filter(r=>r.kind==="direct").length;
+    const requestsOnly=requests-reservations;
     const byStatus={}; reqsBack.forEach(r=>{ const s=r.status||"nou"; byStatus[s]=(byStatus[s]||0)+1; });
 
     // traffic sources (from page_view referrer/utm) — analytics without GA
@@ -1312,16 +1314,16 @@ app.get("/api/host/overview", AUTH.requireAuth, async (req, res) => {
     events.forEach(e => { if (e.type === "page_view") { const s = classifySource(e.meta, ownHosts); srcCounts[s] = (srcCounts[s] || 0) + 1; } });
     const sources = Object.keys(srcCounts).map(k => ({ source: k, count: srcCounts[k] })).sort((a, b) => b.count - a.count);
 
-    const trend=rangeDates(backStart, addDaysIso(today,1)).map(d=>({ date:d, views:0, requests:0 }));
+    const trend=rangeDates(backStart, addDaysIso(today,1)).map(d=>({ date:d, views:0, requests:0, reservations:0, cereri:0 }));
     const tindex={}; trend.forEach(t=>{ tindex[t.date]=t; });
     events.forEach(e=>{ if (e.type==="page_view" && tindex[e.day]) tindex[e.day].views++; });
-    reqsBack.forEach(r=>{ if (tindex[r.day]) tindex[r.day].requests++; });
+    reqsBack.forEach(r=>{ if (tindex[r.day]){ tindex[r.day].requests++; if(r.kind==="direct") tindex[r.day].reservations++; else tindex[r.day].cereri++; } });
 
     // per-property traffic + requests (platform view for master admin)
-    const viewsBySlug={}, reqBySlug={};
+    const viewsBySlug={}, reqBySlug={}, resBySlug={};
     events.forEach(e=>{ if (e.type==="page_view") viewsBySlug[e.slug]=(viewsBySlug[e.slug]||0)+1; });
-    reqsBack.forEach(r=>{ reqBySlug[r.slug]=(reqBySlug[r.slug]||0)+1; });
-    perProperty.forEach(pp=>{ pp.views=viewsBySlug[pp.slug]||0; pp.requests=reqBySlug[pp.slug]||0; });
+    reqsBack.forEach(r=>{ reqBySlug[r.slug]=(reqBySlug[r.slug]||0)+1; if(r.kind==="direct") resBySlug[r.slug]=(resBySlug[r.slug]||0)+1; });
+    perProperty.forEach(pp=>{ pp.views=viewsBySlug[pp.slug]||0; pp.requests=reqBySlug[pp.slug]||0; pp.reservations=resBySlug[pp.slug]||0; });
 
     const fmt=s=>({ name:s.name||"—", phone:s.phone||"", property:nameOf[s.slug]||s.slug, checkin:s.checkin, checkout:s.checkout, guests:(s.adults||0)+(s.children||0), status:s.status||"nou" });
     const arrivals=stays.filter(s=>s.checkin && s.checkin>=today && s.checkin<fwdEnd).map(fmt);
@@ -1331,20 +1333,110 @@ app.get("/api/host/overview", AUTH.requireAuth, async (req, res) => {
     let leadRows=[];
     if (slugs.length) {
       leadRows=(await pool.query(
-        "select slug, name, phone, email, to_char(checkin,'YYYY-MM-DD') as checkin, to_char(checkout,'YYYY-MM-DD') as checkout, adults, children, status, to_char(created_at,'YYYY-MM-DD') as day from booking_requests where slug = ANY($1) order by created_at desc limit 60",
+        "select slug, name, phone, email, to_char(checkin,'YYYY-MM-DD') as checkin, to_char(checkout,'YYYY-MM-DD') as checkout, adults, children, status, kind, to_char(created_at,'YYYY-MM-DD') as day from booking_requests where slug = ANY($1) order by created_at desc limit 60",
         [slugs])).rows;
     }
-    const leads = leadRows.map(r=>({ name:r.name||"—", phone:r.phone||"", email:r.email||"", property:nameOf[r.slug]||r.slug, checkin:r.checkin, checkout:r.checkout, guests:(r.adults||0)+(r.children||0), status:r.status||"nou", day:r.day }));
+    const leads = leadRows.map(r=>({ name:r.name||"—", phone:r.phone||"", email:r.email||"", property:nameOf[r.slug]||r.slug, checkin:r.checkin, checkout:r.checkout, guests:(r.adults||0)+(r.children||0), status:r.status||"nou", kind:r.kind||"request", day:r.day }));
     const leadsTotal = leadRows.length;
 
     res.json({
       days, properties: perProperty.length,
       occupancy: total?Math.round(occ/total*100):0, occNights:occ, totalNights:total,
       estRevenue:Math.round(rev), currency,
-      views, reveals, requests, byStatus,
+      views, reveals, requests, reservations, requestsOnly, byStatus,
       conv: { viewToReveal: views?Math.round(reveals/views*100):0, revealToRequest: reveals?Math.round(requests/reveals*100):0, viewToRequest: views?Math.round(requests/views*100):0 },
       trend, arrivals, departures, perProperty, leads, leadsTotal, sources
     });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* Full bookings list (role-aware) for the Rezervări / Cereri tabs. ?slug= scopes to one property, ?kind=direct|request filters. */
+app.get("/api/bookings", AUTH.requireAuth, async (req, res) => {
+  try {
+    const isAdmin = req.user.role === "admin";
+    const wantSlug = req.query.slug ? String(req.query.slug) : null;
+    const kind = req.query.kind === "direct" ? "direct" : (req.query.kind === "request" ? "request" : null);
+    const propsQ = isAdmin
+      ? await pool.query("select slug, admin_state->'property'->'basicInfo'->>'name' as name from properties")
+      : await pool.query("select slug, admin_state->'property'->'basicInfo'->>'name' as name from properties where owner_id=$1", [req.user.id]);
+    const nameOf = {}; propsQ.rows.forEach(p => { nameOf[p.slug] = p.name || p.slug; });
+    let slugs = propsQ.rows.map(p => p.slug);
+    if (wantSlug) slugs = slugs.filter(s => s === wantSlug);
+    if (!slugs.length) return res.json([]);
+    let q = "select id, slug, name, phone, email, to_char(checkin,'YYYY-MM-DD') as checkin, to_char(checkout,'YYYY-MM-DD') as checkout, adults, children, infants, pets, rooms, message, status, coalesce(kind,'request') as kind, created_at from booking_requests where slug = ANY($1)";
+    if (kind === "direct") q += " and kind='direct'";
+    else if (kind === "request") q += " and coalesce(kind,'request')<>'direct'";
+    q += " order by created_at desc limit 500";
+    const r = await pool.query(q, [slugs]);
+    res.json(r.rows.map(x => ({ ...x, property: nameOf[x.slug] || x.slug })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* Clients (role-aware) — every person who booked or requested, aggregated by phone/email. */
+app.get("/api/clients", AUTH.requireAuth, async (req, res) => {
+  try {
+    const isAdmin = req.user.role === "admin";
+    const wantSlug = req.query.slug ? String(req.query.slug) : null;
+    const propsQ = isAdmin
+      ? await pool.query("select slug, admin_state->'property'->'basicInfo'->>'name' as name from properties")
+      : await pool.query("select slug, admin_state->'property'->'basicInfo'->>'name' as name from properties where owner_id=$1", [req.user.id]);
+    const nameOf = {}; propsQ.rows.forEach(p => { nameOf[p.slug] = p.name || p.slug; });
+    let slugs = propsQ.rows.map(p => p.slug);
+    if (wantSlug) slugs = slugs.filter(s => s === wantSlug);
+    if (!slugs.length) return res.json([]);
+    const r = await pool.query(
+      "select slug, name, phone, email, to_char(checkin,'YYYY-MM-DD') as checkin, to_char(checkout,'YYYY-MM-DD') as checkout, adults, children, coalesce(kind,'request') as kind, created_at from booking_requests where slug = ANY($1) order by created_at desc",
+      [slugs]
+    );
+    const map = new Map();
+    for (const x of r.rows) {
+      const key = (x.phone && x.phone.replace(/\D/g, "")) || (x.email && x.email.toLowerCase()) || (x.name && x.name.toLowerCase()) || ("_" + Math.random());
+      let c = map.get(key);
+      if (!c) { c = { name: x.name || "—", phone: x.phone || "", email: x.email || "", reservations: 0, requests: 0, nights: 0, properties: new Set(), first: x.created_at, last: x.created_at }; map.set(key, c); }
+      if (x.kind === "direct") c.reservations++; else c.requests++;
+      c.properties.add(nameOf[x.slug] || x.slug);
+      if (x.email && !c.email) c.email = x.email;
+      if (x.name && (!c.name || c.name === "—")) c.name = x.name;
+      if (x.checkin && x.checkout) { const n = Math.round((new Date(x.checkout) - new Date(x.checkin)) / 864e5); if (n > 0) c.nights += n; }
+      if (new Date(x.created_at) < new Date(c.first)) c.first = x.created_at;
+      if (new Date(x.created_at) > new Date(c.last)) c.last = x.created_at;
+    }
+    const out = [...map.values()].map(c => ({ name: c.name, phone: c.phone, email: c.email, reservations: c.reservations, requests: c.requests, total: c.reservations + c.requests, nights: c.nights, properties: [...c.properties], first: c.first, last: c.last }))
+      .sort((a, b) => b.total - a.total || new Date(b.last) - new Date(a.last));
+    res.json(out);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* County leaderboard — top units by bookings in the county of the accessible property(ies). */
+app.get("/api/leaderboard", AUTH.requireAuth, async (req, res) => {
+  try {
+    const isAdmin = req.user.role === "admin";
+    const wantSlug = req.query.slug ? String(req.query.slug) : null;
+    const mineQ = isAdmin
+      ? await pool.query("select slug, admin_state->'property'->'basicInfo'->>'county' as county from properties")
+      : await pool.query("select slug, admin_state->'property'->'basicInfo'->>'county' as county from properties where owner_id=$1", [req.user.id]);
+    let mineRows = mineQ.rows;
+    if (wantSlug) mineRows = mineRows.filter(p => p.slug === wantSlug);
+    const mySlugs = new Set(mineRows.map(p => p.slug));
+    const counties = [...new Set(mineRows.map(p => (p.county || "").trim()).filter(Boolean))];
+    if (!counties.length) return res.json({ counties: [] });
+    const all = await pool.query(
+      "select p.slug, p.admin_state->'property'->'basicInfo'->>'name' as name, trim(p.admin_state->'property'->'basicInfo'->>'county') as county, " +
+      "  (select count(*) from booking_requests b where b.slug=p.slug) as bookings, " +
+      "  (select count(*) from booking_requests b where b.slug=p.slug and b.kind='direct') as reservations " +
+      "from properties p where trim(p.admin_state->'property'->'basicInfo'->>'county') = ANY($1)",
+      [counties]
+    );
+    const byCounty = {};
+    all.rows.forEach(r => {
+      const c = (r.county || "").trim(); if (!c) return;
+      (byCounty[c] || (byCounty[c] = [])).push({ name: r.name || r.slug, bookings: +r.bookings, reservations: +r.reservations, mine: mySlugs.has(r.slug) });
+    });
+    const out = Object.keys(byCounty).map(c => ({
+      county: c,
+      units: byCounty[c].sort((a, b) => b.bookings - a.bookings || b.reservations - a.reservations).slice(0, 15).map((u, i) => ({ rank: i + 1, ...u }))
+    }));
+    res.json({ counties: out });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
