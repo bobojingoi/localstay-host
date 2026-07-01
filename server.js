@@ -1145,6 +1145,16 @@ app.get("/s/:slug", async (req, res) => {
   res.send(renderSite(p.site, p.slug));
 });
 
+/* Embeddable per-room availability calendar widget (for the hotelier's own site) */
+app.get("/w/:slug", async (req, res) => {
+  const p = await getProp(req.params.slug);
+  if (!p) return res.status(404).send("Proprietate negăsită");
+  const tpl = fs.readFileSync(path.join(PUBLIC, "widget.html"), "utf8");
+  const url = siteUrl(p.slug);
+  const html = inject(tpl, "window.STAY_PROPERTY=" + JSON.stringify(p.site) + ";window.STAY_SLUG=" + JSON.stringify(p.slug || "") + ";window.STAY_URL=" + JSON.stringify(url) + ";");
+  res.send(html);
+});
+
 /* iCal export per unit — paste this URL into Booking/Airbnb */
 app.get("/ical/:slug/:file", async (req, res) => {
   const p = await getProp(req.params.slug);
