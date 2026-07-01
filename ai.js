@@ -224,15 +224,19 @@ async function generateFbPosts(opts) {
   const groupNames = Array.isArray(o.groups) ? o.groups.slice(0, count) : [];
   const sys =
     "Ești copywriter de marketing pentru cazări turistice din România. Scrii postări pentru grupuri de Facebook, în limba română — atractive, calde, credibile și conforme cu regulile grupurilor (fără clickbait agresiv, fără MAJUSCULE excesive, fără promisiuni exagerate). " +
+    "Integrezi natural 2-4 dintre cele mai relevante facilități (prioritizează-le pe primele din listă — sunt cele mai apreciate) și menționezi locația, dar NU inventa facilități sau detalii care nu sunt date. " +
     "Generezi un text de bază și mai multe VARIANTE ușor diferite ale aceleiași postări: deschidere diferită, alte emoji, altă ordine a frazelor, sinonime — ca să NU pară duplicate când sunt postate în grupuri diferite. Miezul ofertei rămâne identic în toate.";
   const brief = [
     "Proprietate: " + (o.propertyName || "cazare"),
     o.location ? ("Locație: " + o.location) : "",
+    (o.capacity ? ("Capacitate: până la " + o.capacity + " oaspeți") : ""),
+    (Array.isArray(o.facilities) && o.facilities.length) ? ("Facilități (folosește-le pe cele mai relevante, mai ales primele — cele mai apreciate; NU inventa altele): " + o.facilities.join(", ")) : "",
     "Ocazie / tip postare: " + (o.occasion || "ofertă"),
     o.details ? ("Ce vrea hotelierul să transmită (preț, reducere, perioadă, mesaj): " + o.details) : "",
     "Ton: " + (o.tone || "prietenos"),
     (o.emoji === false) ? "Fără emoji." : "Folosește câteva emoji potrivite, cu măsură.",
-    (o.includeLink && o.url) ? ("Include acest link la final: " + o.url) : "Nu include niciun link.",
+    (o.includeLink && o.url) ? ("Include acest link către site la finalul postării: " + o.url) : "Nu include link către site.",
+    (o.includeCalendar && o.calendarUrl) ? ("Adaugă un îndemn de a verifica disponibilitatea în calendar și include acest link: " + o.calendarUrl) : "",
     "Număr de variante necesare: " + count + (groupNames.length ? (". Nume grupuri (doar pentru context, NU le scrie în postare): " + groupNames.join("; ")) : "")
   ].filter(Boolean).join("\n");
   const user = brief +
