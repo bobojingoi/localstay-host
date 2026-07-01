@@ -210,4 +210,56 @@ async function enhanceImage(base64, mime) {
   return enhanceImageOpenAI(base64, mime);
 }
 
-module.exports = { describeImage, enhanceImage, enhanceImageOpenAI, analyzePhoto, analyzeForEnhance, analyzeOpenAI, makeApiSize };
+/* =====================================================================
+   Facebook group posts — generate a base post + N slightly different
+   variants (one per group) so they are not flagged as duplicate spam.
+   ===================================================================== */
+const OPENAI_TEXT_MODEL = process.env.OPENAI_TEXT_MODEL || "gpt-4o-mini";
+
+async function generateFbPosts(opts) {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) throw new Error("OPENAI_API_KEY missing — generarea textului necesită OpenAI");
+  const o = opts || {};
+  const count = Math.max(1, Math.min(30, +o.count || 1));
+  const groupNames = Array.isArray(o.groups) ? o.groups.slice(0, count) : [];
+  const sys =
+    "Ești copywriter de marketing pentru cazări turistice din România. Scrii postări pentru grupuri de Facebook, în limba română — atractive, calde, credibile și conforme cu regulile grupurilor (fără clickbait agresiv, fără MAJUSCULE excesive, fără promisiuni exagerate). " +
+    "Generezi un text de bază și mai multe VARIANTE ușor diferite ale aceleiași postări: deschidere diferită, alte emoji, altă ordine a frazelor, sinonime — ca să NU pară duplicate când sunt postate în grupuri diferite. Miezul ofertei rămâne identic în toate.";
+  const brief = [
+    "Proprietate: " + (o.propertyName || "cazare"),
+    o.location ? ("Locație: " + o.location) : "",
+    "Ocazie / tip postare: " + (o.occasion || "ofertă"),
+    o.details ? ("Ce vrea hotelierul să transmită (preț, reducere, perioadă, mesaj): " + o.details) : "",
+    "Ton: " + (o.tone || "prietenos"),
+    (o.emoji === false) ? "Fără emoji." : "Folosește câteva emoji potrivite, cu măsură.",
+    (o.includeLink && o.url) ? ("Include acest link la final: " + o.url) : "Nu include niciun link.",
+    "Număr de variante necesare: " + count + (groupNames.length ? (". Nume grupuri (doar pentru context, NU le scrie în postare): " + groupNames.join("; ")) : "")
+  ].filter(Boolean).join("\n");
+  const user = brief +
+    '\n\nRăspunde DOAR cu JSON valid, fără alt text: {"base":"<postarea de bază>","variants":["<varianta 1>","<varianta 2>", ...]} cu exact ' + count + " variante în array.";
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 60000);
+  try {
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
+      body: JSON.stringify({
+        model: OPENAI_TEXT_MODEL,
+        messages: [{ role: "system", content: sys }, { role: "user", content: user }],
+        response_format: { type: "json_object" }, temperature: 0.9, max_tokens: 1800,
+      }),
+      signal: ctrl.signal,
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error("OpenAI " + r.status + ": " + JSON.stringify(j).slice(0, 200));
+    const txt = (((j.choices || [])[0] || {}).message || {}).content || "";
+    const mt = String(txt).match(/\{[\s\S]*\}/);
+    const parsed = JSON.parse(mt ? mt[0] : txt);
+    let variants = Array.isArray(parsed.variants) ? parsed.variants.filter(v => typeof v === "string" && v.trim()) : [];
+    const base = (parsed.base && String(parsed.base).trim()) || variants[0] || "";
+    if (!variants.length && base) variants = [base];
+    while (variants.length < count) variants.push(variants[variants.length % variants.length] || base); // pad if the model returned fewer
+    return { base, variants: variants.slice(0, count) };
+  } finally { clearTimeout(t); }
+}
+
+module.exports = { describeImage, enhanceImage, enhanceImageOpenAI, analyzePhoto, analyzeForEnhance, analyzeOpenAI, makeApiSize, generateFbPosts };
