@@ -938,15 +938,32 @@ app.post("/api/host/:slug/fb-generate", AUTH.requireSlugAccess(pool), async (req
     if (!p) return res.status(404).json({ error: "not found" });
     const b = req.body || {};
     const site = p.site || {};
+    // absolute URLs (Render is behind a proxy; trust proxy is set so req.protocol is correct)
+    const origin = req.protocol + "://" + req.get("host");
+    const pubUrl = BASE_DOMAIN ? siteUrl(req.params.slug) : (origin + "/s/" + req.params.slug);
+    const calUrl = origin + "/w/" + req.params.slug;
+    // facilities: most-appreciated first, then the rest (deduped) — from the real site data only
+    const amen = Array.isArray(site.amenities) ? site.amenities : [];
+    const nm = x => (x && (x.name || x.label)) || (typeof x === "string" ? x : "");
+    const mostApp = ((amen.find(a => /apreciat/i.test(a.title || "")) || {}).items || []).map(nm).filter(Boolean);
+    const rest = amen.filter(a => !/apreciat/i.test(a.title || ""))
+      .reduce((acc, a) => acc.concat((a.items || []).map(nm)), []).filter(Boolean);
+    const facilities = mostApp.concat(rest.filter(f => mostApp.indexOf(f) < 0)).slice(0, 14);
+    const loc = site.location || {};
+    const location = [loc.area, loc.county].filter(Boolean).join(", ");
     const out = await generateFbPosts({
       propertyName: site.name || "",
-      location: (site.location && (site.location.area || site.location.city)) || "",
-      url: siteUrl(req.params.slug),
+      location,
+      capacity: site.capacity || (site.basicInfo && site.basicInfo.unitCapacity) || "",
+      facilities,
+      url: pubUrl,
+      calendarUrl: calUrl,
       occasion: b.occasion || "ofertă",
       details: b.details || "",
       tone: b.tone || "prietenos",
       emoji: b.emoji !== false,
       includeLink: !!b.includeLink,
+      includeCalendar: !!b.includeCalendar,
       count: Math.max(1, Math.min(30, +b.count || (Array.isArray(b.groups) ? b.groups.length : 1) || 1)),
       groups: Array.isArray(b.groups) ? b.groups : [],
     });
