@@ -111,16 +111,17 @@ function contractHtml(d){
   const signed = ap.status === "approved";
   const fmt = iso => { if(!iso) return "—"; try{ return new Date(iso).toLocaleDateString("ro-RO",{day:"numeric",month:"long",year:"numeric"}); }catch(e){ return iso; } };
   const signBlock = signed
-    ? '<p class="sig-ok"><b>Semnat electronic</b> de către Client la data de <b>' + E(fmt(ap.decidedAt)) + '</b>, prin aprobarea unității în platforma LocalStay.</p>'
+    ? '<p class="sig-ok"><b>Semnat electronic</b> de către Client la data de <b>' + E(fmt(ap.decidedAt)) + '</b>, prin aprobarea unității în platforma LocalStay.' + (ap.photoConsent ? ' Clientul și-a exprimat acordul pentru publicarea fotografiilor proprietății.' : '') + '</p>'
     : '<p class="sig-no">Contract <b>nesemnat</b>. Se consideră semnat electronic în momentul în care Clientul aprobă unitatea publicată în platforma LocalStay.</p>';
   const clauses = [
     ["1. Obiectul contractului", "Prestatorul (LocalStay) oferă Clientului serviciul de listare și promovare a proprietății de mai sus prin generarea unui site de prezentare dedicat (pe subdomeniu propriu), a unei zone de administrare, sincronizarea calendarului de disponibilitate prin iCal cu platforme terțe (ex. Booking.com, Airbnb), generarea de conținut (texte, optimizare foto) și instrumente de promovare."],
     ["2. Durata", "Contractul intră în vigoare la data semnării electronice (aprobarea unității) și se derulează pe perioadă nedeterminată, putând fi încetat de oricare dintre părți cu o notificare prealabilă de 30 de zile."],
     ["3. Obligațiile Prestatorului", "Menținerea în stare de funcționare a site-ului și a instrumentelor, sincronizarea periodică a calendarelor, protejarea datelor conform legislației aplicabile și oferirea de suport rezonabil pentru utilizarea platformei."],
     ["4. Obligațiile Clientului", "Furnizarea de informații corecte și actuale despre proprietate, gestionarea disponibilității și a prețurilor, respectarea obligațiilor față de turiști și a legislației în vigoare privind cazarea turistică."],
-    ["5. Rezervări", "În funcție de setările alese de Client, platforma poate funcționa în regim de cerere de rezervare (turistul trimite o solicitare pe care Clientul o confirmă) sau de rezervare directă (turistul blochează datele), acesta din urmă doar cu acordul explicit al Clientului activat în zona de administrare."],
-    ["6. Date și confidențialitate", "Datele turiștilor și ale Clientului sunt prelucrate exclusiv pentru operarea serviciului, conform Regulamentului (UE) 2016/679 (GDPR). Părțile păstrează confidențialitatea informațiilor la care au acces."],
-    ["7. Dispoziții finale", "Prezentul document este un model-cadru pus la dispoziție de platformă și poate fi completat cu anexe specifice. Semnarea electronică prin aprobarea unității confirmă acceptarea acestor termeni."]
+    ["5. Publicarea fotografiilor", "Prin aprobarea unității, Clientul își exprimă acordul ca Prestatorul să publice și să folosească fotografiile proprietății (inclusiv variante optimizate) în site-ul de prezentare și în materialele de promovare a cazării. Clientul declară că deține drepturile asupra fotografiilor furnizate."],
+    ["6. Rezervări", "În funcție de setările alese de Client, platforma poate funcționa în regim de cerere de rezervare (turistul trimite o solicitare pe care Clientul o confirmă) sau de rezervare directă (turistul blochează datele), acesta din urmă doar cu acordul explicit al Clientului activat în zona de administrare."],
+    ["7. Date și confidențialitate", "Datele turiștilor și ale Clientului sunt prelucrate exclusiv pentru operarea serviciului, conform Regulamentului (UE) 2016/679 (GDPR). Părțile păstrează confidențialitatea informațiilor la care au acces."],
+    ["8. Dispoziții finale", "Prezentul document este un model-cadru pus la dispoziție de platformă și poate fi completat cu anexe specifice. Semnarea electronică prin aprobarea unității confirmă acceptarea acestor termeni."]
   ];
   return '<!doctype html><html lang="ro"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
     + '<title>Contract LocalStay · ' + E(d.propertyName) + '</title><style>'
@@ -788,6 +789,7 @@ app.post("/api/approval/:token", async (req, res) => {
     const decision = parseDecision(req.body);
     if (!decision) return res.status(400).json({ error: "Decizie invalidă." });
     const patch = { status: decision, note: String((req.body && req.body.note) || "").slice(0, 500), decidedAt: new Date().toISOString() };
+    if (req.body && req.body.photoConsent) patch.photoConsent = true;
     const r = await pool.query(
       "update properties set approval = coalesce(approval,'{}'::jsonb) || $2::jsonb where approval->>'token' = $1 returning slug",
       [req.params.token, JSON.stringify(patch)]
@@ -804,6 +806,7 @@ app.post("/api/host/approval", AUTH.requireAuth, async (req, res) => {
     const decision = parseDecision(req.body);
     if (!slug || !decision) return res.status(400).json({ error: "Date lipsă." });
     const patch = { status: decision, note: String((req.body && req.body.note) || "").slice(0, 500), decidedAt: new Date().toISOString() };
+    if (req.body && req.body.photoConsent) patch.photoConsent = true;
     const isAdmin = req.user.role === "admin";
     const where = isAdmin ? "slug=$1" : "slug=$1 and owner_id=$3";
     const params = isAdmin ? [slug, JSON.stringify(patch)] : [slug, JSON.stringify(patch), req.user.id];
@@ -1028,6 +1031,32 @@ app.get("/contract/:slug", AUTH.requireSlugAccess(pool), async (req, res) => {
       owner, approval: p.approval || {}
     }));
   } catch (e) { res.status(500).send("Eroare: " + e.message); }
+});
+
+/* Google reviews for a property, via its Google Place ID (stored in state.property.googlePlaceId).
+   Requires GOOGLE_PLACES_API_KEY in the environment. */
+app.get("/api/host/:slug/google-reviews", AUTH.requireSlugAccess(pool), async (req, res) => {
+  try {
+    const p = await getProp(req.params.slug);
+    if (!p) return res.status(404).json({ error: "not found" });
+    const placeId = String(req.query.placeId || (p.admin_state && p.admin_state.property && p.admin_state.property.googlePlaceId) || "").trim();
+    if (!placeId) return res.json({ configured: false });
+    const key = process.env.GOOGLE_PLACES_API_KEY;
+    if (!key) return res.json({ configured: true, error: "Cheia Google Places nu este configurată pe server (GOOGLE_PLACES_API_KEY)." });
+    const url = "https://maps.googleapis.com/maps/api/place/details/json?place_id=" + encodeURIComponent(placeId) +
+      "&fields=name,rating,user_ratings_total,url,reviews&reviews_sort=newest&language=ro&key=" + encodeURIComponent(key);
+    const r = await fetch(url);
+    const d = await r.json();
+    if (d.status !== "OK") return res.json({ configured: true, error: d.error_message || d.status || "Eroare Google Places." });
+    const g = d.result || {};
+    res.json({
+      configured: true, name: g.name || "", rating: g.rating || null, total: g.user_ratings_total || 0, url: g.url || "",
+      reviews: (g.reviews || []).map(rv => ({
+        author: rv.author_name || "", rating: rv.rating || 0, text: rv.text || "",
+        time: rv.time ? rv.time * 1000 : null, relative: rv.relative_time_description || "", photo: rv.profile_photo_url || ""
+      }))
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 /* ---------- booking requests (from the public booking form) ---------- */
