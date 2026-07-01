@@ -2392,7 +2392,7 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
         var thumb=p.thumb||p.dataUrl;
         var color=p.status==="done"?"var(--brand)":p.status==="err"?"#cf4b4b":"var(--muted)";
         var done=!!p.url;
-        var img='<div data-pzidx="'+idx+'" '+(done?'data-pzedit="1" title="Click: editează" ':'')+'style="aspect-ratio:4/3;background:#f0f2f5;overflow:hidden;'+(done?'cursor:pointer':'')+'"><img src="'+esc(thumb)+'" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block"></div>';
+        var img='<div data-pzidx="'+idx+'" '+(done?'data-pzedit="1" draggable="true" title="Click: editează · trage în galerie" ':'')+'style="aspect-ratio:4/3;background:#f0f2f5;overflow:hidden;'+(done?'cursor:pointer':'')+'"><img src="'+esc(thumb)+'" alt="" loading="lazy" draggable="false" style="width:100%;height:100%;object-fit:cover;display:block"></div>';
         var cmp=done?('<button type="button" data-pzcmp="1" data-pzidx="'+idx+'" title="Înainte / după" style="position:absolute;right:6px;bottom:6px;background:rgba(0,0,0,.62);color:#fff;border:0;border-radius:7px;padding:3px 8px;font-size:12px;font-weight:700;cursor:pointer">⇆ Î/D</button>'):'';
         var link=done?('<a href="'+esc(p.url)+'" target="_blank" style="font-size:11px;color:var(--brand);word-break:break-all">'+esc(p.url)+'</a>'):"";
         var aiTag;
@@ -2485,6 +2485,15 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
         }
         var ed=e.target.closest("[data-pzedit]");
         if(ed){ var pp=PZ[+ed.getAttribute("data-pzidx")]; if(pp&&pp.url&&window.openPhotoEditor){ window.openPhotoEditor(pp.url, function(newUrl, meta){ pp.url=newUrl; pp.thumb=newUrl; if(meta&&meta.alt) pp.alt=meta.alt; render(); note("Poză actualizată"); }); } }
+      });
+      byId("pzGrid").addEventListener("dragstart", function(e){
+        var host=e.target.closest("[data-pzidx]"); if(!host) return;
+        var p=PZ[+host.getAttribute("data-pzidx")]; if(!p||!p.url) return;
+        if(typeof galDragState!=="undefined") galDragState={kind:"photo", url:p.url};
+        try{ e.dataTransfer.effectAllowed="copy"; e.dataTransfer.setData("text/plain", p.url); }catch(_){}
+      });
+      byId("pzGrid").addEventListener("dragend", function(){
+        if(typeof galDragState!=="undefined" && galDragState && galDragState.kind==="photo") galDragState=null;
       });
     }
     window.__initPoze=function(){ wire(); loadBilling(); render(); };
