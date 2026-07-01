@@ -54,6 +54,17 @@ input,select,button,textarea{font-family:inherit}
 .creq-direct{border-color:#cfe9db;background:#f6fbf8}
 .creq-badge{display:inline-block;font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:100px;margin-left:6px;vertical-align:middle}
 .creq-badge.ok{background:#eef7f1;color:#1c5c3e}.creq-badge.req{background:#eef1f7;color:#3a4a63}
+.cli-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+.cli-search{flex:1;min-width:180px;max-width:340px;padding:9px 13px;border:1px solid var(--line,#e6e9f0);border-radius:10px;font-size:14px}
+.clic{border:1px solid var(--line,#e6e9f0);border-radius:14px;padding:14px 16px;margin-bottom:10px;background:var(--card,#fff)}
+.clic-top{display:flex;justify-content:space-between;gap:12px;align-items:baseline;flex-wrap:wrap}
+.clic-id b{font-size:15.5px;color:var(--ink)}
+.clic-contact{color:var(--muted);font-size:13px;margin-top:3px}
+.clic-contact a{color:var(--brand,#2f7d5b)}.clic-contact .dot{margin:0 8px;color:#c7ccd6}
+.clic-when{color:var(--muted);font-size:12.5px;white-space:nowrap}
+.clic-mut{color:var(--muted)}
+.clic-stats{display:flex;gap:20px;flex-wrap:wrap;align-items:center;margin-top:12px;padding-top:12px;border-top:1px solid var(--line,#f1f3f7);font-size:13px;color:var(--muted)}
+.clic-stats>span b{color:var(--ink);font-size:16px;margin-right:2px;font-weight:800}
 .creq-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px}
 .creq-h b{font-size:16px;color:var(--ink,#1a2238)}
 .creq-date{font-size:12.5px;color:var(--muted,#8a92a6)}
@@ -442,6 +453,7 @@ textarea.fb-in{resize:vertical}
 .trend .tb{flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:1px;min-width:0}
 .trend .tb .v{background:var(--brand);border-radius:2px 2px 0 0;min-height:1px}
 .trend .tb .r{background:#f0a23b;border-radius:2px 2px 0 0;min-height:0}
+.trend .tb .tb-seg{border-radius:2px 2px 0 0;min-height:0;width:100%}
 .tlegend{display:flex;gap:16px;font-size:12px;color:var(--muted);margin-top:9px}
 .tlegend i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px;vertical-align:middle}
 .dempty{font-size:13px;color:var(--muted);padding:8px 0}
@@ -2461,12 +2473,14 @@ function renderClienti(){
   box.innerHTML='<p class="muted">Se încarcă…</p>';
   fetch("/api/clients?slug="+encodeURIComponent(SLUG)).then(r=>r.ok?r.json():Promise.reject()).then(rows=>{
     if(!rows.length){ box.innerHTML='<p class="muted">Niciun client încă.</p>'; return; }
-    box.innerHTML='<div class="muted" style="margin-bottom:10px">'+rows.length+' clienți</div>'+
-      '<table class="clitbl"><thead><tr><th>Client</th><th>Contact</th><th>Rezervări</th><th>Cereri</th><th>Nopți</th><th>Ultima activitate</th></tr></thead><tbody>'+
-      rows.map(c=>'<tr><td><b>'+E(c.name||"—")+'</b></td>'+
-        '<td>'+(c.phone?'<a href="tel:'+E(c.phone)+'">'+E(c.phone)+'</a>':"")+(c.email?'<br><a href="mailto:'+E(c.email)+'">'+E(c.email)+'</a>':(c.phone?"":"—"))+'</td>'+
-        '<td>'+(c.reservations||0)+'</td><td>'+(c.requests||0)+'</td><td>'+(c.nights||0)+'</td><td>'+fmt(c.last)+'</td></tr>').join("")+
-      '</tbody></table>';
+    const card=c=>{
+      const contact=[c.phone?('<a href="tel:'+E(c.phone)+'">'+E(c.phone)+'</a>'):'', c.email?('<a href="mailto:'+E(c.email)+'">'+E(c.email)+'</a>'):''].filter(Boolean).join('<span class="dot">·</span>')||'<span class="clic-mut">fără contact</span>';
+      return '<div class="clic"><div class="clic-top"><div class="clic-id"><b>'+E(c.name||"—")+'</b><div class="clic-contact">'+contact+'</div></div><div class="clic-when">'+fmt(c.last)+'</div></div>'+
+        '<div class="clic-stats"><span><b>'+(c.reservations||0)+'</b> rezervări</span><span><b>'+(c.requests||0)+'</b> cereri</span><span><b>'+(c.nights||0)+'</b> nopți</span></div></div>';
+    };
+    box.innerHTML='<div class="cli-bar"><span class="muted">'+rows.length+' clienți</span><input id="cliSearch" class="cli-search" placeholder="Caută după nume, telefon, email…"></div><div id="cliCards">'+rows.map(card).join("")+'</div>';
+    const inp=$("#cliSearch");
+    if(inp) inp.oninput=()=>{ const q=inp.value.trim().toLowerCase(); const f=q?rows.filter(c=>((c.name||"")+" "+(c.phone||"")+" "+(c.email||"")).toLowerCase().indexOf(q)>=0):rows; $("#cliCards").innerHTML=f.length?f.map(card).join(""):'<p class="muted">Niciun rezultat.</p>'; };
   }).catch(()=>{ box.innerHTML='<p class="muted">Nu am putut încărca clienții.</p>'; });
 }
 document.addEventListener("click",e=>{ if(!e.target) return;
@@ -2563,6 +2577,7 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
   function money(n,cur){ try{ return new Intl.NumberFormat('ro-RO').format(Math.round(n||0))+' '+(cur||'RON'); }catch(e){ return (n||0)+' '+(cur||'RON'); } }
   function dmShort(ds){ if(!ds) return '—'; var p=ds.split('-'); var mn=['ian','feb','mar','apr','mai','iun','iul','aug','sep','oct','noi','dec']; return (+p[2])+' '+(mn[(+p[1])-1]||''); }
   var DASH_DAYS = 30;
+  var DASH_METRIC = 'all';
 
   async function renderHostDash(days){
     var kb=document.getElementById('dashKpis'), hostBox=document.getElementById('dashHost');
@@ -2585,11 +2600,18 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
     function fbar(label,val){ return '<div class="frow"><span class="fl">'+label+'</span><div class="fbar"><span style="width:'+Math.round(val/maxF*100)+'%"></span></div><span class="fv">'+val+'</span></div>'; }
 
     // trend bars
-    var tr=o.trend||[]; var maxT=Math.max.apply(null,tr.map(function(x){return Math.max(x.views,x.requests);}).concat([1]));
-    var bars=tr.map(function(x){
-      var vh=Math.round(x.views/maxT*70), rh=Math.round(x.requests/maxT*70);
-      return '<div class="tb" title="'+dmShort(x.date)+': '+x.views+' vizualizări, '+x.requests+' cereri"><div class="r" style="height:'+rh+'px"></div><div class="v" style="height:'+vh+'px"></div></div>';
-    }).join('');
+    var tr=o.trend||[];
+    function drawTrend(){
+      var m=DASH_METRIC;
+      var keys = m==='views'?['views'] : m==='cereri'?['cereri'] : m==='rezervari'?['reservations'] : ['views','cereri','reservations'];
+      var colors={views:'var(--brand)',cereri:'#f0a23b',reservations:'#2f7d5b'};
+      var maxT=Math.max.apply(null, tr.map(function(x){ return keys.reduce(function(s,k){return s+(x[k]||0);},0); }).concat([1]));
+      var html=tr.map(function(x){
+        var segs=keys.map(function(k){ var hh=Math.round((x[k]||0)/maxT*70); return hh>0?'<div class="tb-seg" style="height:'+hh+'px;background:'+colors[k]+'"></div>':''; }).join('');
+        return '<div class="tb" title="'+dmShort(x.date)+': '+(x.views||0)+' viz · '+(x.cereri||0)+' cereri · '+(x.reservations||0)+' rezerv.">'+segs+'</div>';
+      }).join('');
+      var el=document.getElementById('dashTrend'); if(el) el.innerHTML=html;
+    }
 
     // check-ins / check-outs
     function stayRow(s,kind){
@@ -2615,9 +2637,11 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
           '<div class="funnel">'+fbar('Vizualizări',o.views)+fbar('Dezvăluiri telefon',o.reveals)+fbar('Cereri rezervare',o.requests)+'</div>'+
           '<div class="fconv">Vizualizare → dezvăluire: <b>'+o.conv.viewToReveal+'%</b> · dezvăluire → cerere: <b>'+o.conv.revealToRequest+'%</b></div>'+
         '</div>'+
-        '<div class="dcard"><h3>Trafic și cereri</h3><p class="sub">pe zi · ultimele '+days+' zile</p>'+
-          '<div class="trend">'+bars+'</div>'+
-          '<div class="tlegend"><span><i style="background:var(--brand)"></i>Vizualizări</span><span><i style="background:#f0a23b"></i>Cereri</span></div>'+
+        '<div class="dcard"><h3>Cum crește traficul</h3>'+
+          '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap"><p class="sub" style="margin:0">activitate pe zi · ultimele '+days+' zile</p>'+
+          '<select id="dashMetric" style="padding:6px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;background:var(--card)"><option value="all">Toate</option><option value="views">Vizualizări</option><option value="cereri">Cereri</option><option value="rezervari">Rezervări</option></select></div>'+
+          '<div class="trend" id="dashTrend"></div>'+
+          '<div class="tlegend"><span><i style="background:var(--brand)"></i>Vizualizări</span><span><i style="background:#f0a23b"></i>Cereri</span><span><i style="background:#2f7d5b"></i>Rezervări</span></div>'+
         '</div>'+
         '<div class="dcard"><h3>Check-in-uri ce urmează</h3><p class="sub">următoarele '+days+' zile</p><div class="stays">'+arrHtml+'</div></div>'+
         '<div class="dcard"><h3>Check-out-uri ce urmează</h3><p class="sub">următoarele '+days+' zile</p><div class="stays">'+depHtml+'</div></div>'+
@@ -2630,6 +2654,9 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
           '</tbody></table>' : '<div class="dempty">Niciun lead \u00eenc\u0103.</div>')+
       '</div>')+
       '<div class="estnote">Gradul de ocupare și venitul estimat se calculează din calendarul de disponibilitate (blocări manuale + sincronizări Booking/Airbnb) și din prețurile setate. Venitul este o <b>estimare</b> a nopților ocupate × tarif — platforma nu procesează plăți. Traficul se înregistrează din momentul activării.</div>';
+
+    var ms=document.getElementById('dashMetric'); if(ms){ ms.value=DASH_METRIC; ms.onchange=function(){ DASH_METRIC=ms.value; drawTrend(); }; }
+    drawTrend();
   }
 
   window.__renderDash = function(){ renderHostDash(DASH_DAYS); };
