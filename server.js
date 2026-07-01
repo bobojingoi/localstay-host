@@ -1191,10 +1191,10 @@ async function getTemplate(){
 // The property's own document (what was sent to that hotelier); falls back to the template.
 app.get("/api/documents/:slug", AUTH.requireSlugAccess(pool), async (req, res) => {
   try {
-    const r = await pool.query("select content, status, sent_at, version from documents where slug=$1", [req.params.slug]);
-    if (r.rows[0]) { const d = r.rows[0]; return res.json({ slug: req.params.slug, content: d.content || DEFAULT_DOC(await propName(req.params.slug)), status: d.status || "draft", sentAt: d.sent_at || null, version: d.version || 0 }); }
+    const r = await pool.query("select content, status, sent_at, version, seen_at from documents where slug=$1", [req.params.slug]);
+    if (r.rows[0]) { const d = r.rows[0]; return res.json({ slug: req.params.slug, content: d.content || DEFAULT_DOC(await propName(req.params.slug)), status: d.status || "draft", sentAt: d.sent_at || null, version: d.version || 0, seen: !!d.seen_at }); }
     const t = await getTemplate();
-    res.json({ slug: req.params.slug, content: t.content, status: "draft", sentAt: null, version: 0 });
+    res.json({ slug: req.params.slug, content: t.content, status: "draft", sentAt: null, version: 0, seen: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1229,7 +1229,7 @@ app.post("/api/doc-template/send-bulk", AUTH.requireAdmin, async (req, res) => {
     const r = await pool.query(
       "insert into documents (slug, content, status, version, sent_at, updated_at) " +
       "select p.slug, $1, 'sent', $2, now(), now() from properties p " +
-      "on conflict (slug) do update set content=$1, status='sent', version=$2, sent_at=now(), updated_at=now() " +
+      "on conflict (slug) do update set content=$1, status='sent', version=$2, sent_at=now(), seen_at=null, updated_at=now() " +
       "where documents.version is distinct from $2 returning slug",
       [t.content, t.version]
     );
@@ -1243,10 +1243,18 @@ app.post("/api/documents/:slug/send", AUTH.requireAdmin, async (req, res) => {
     const version = t.version || 1;
     await pool.query(
       "insert into documents (slug, content, status, version, sent_at, updated_at) values ($1,$2,'sent',$3,now(),now()) " +
-      "on conflict (slug) do update set content=$2, status='sent', version=$3, sent_at=now(), updated_at=now()",
+      "on conflict (slug) do update set content=$2, status='sent', version=$3, sent_at=now(), seen_at=null, updated_at=now()",
       [req.params.slug, t.content, version]
     );
     res.json({ ok: true, status: "sent", version });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// The hotelier opened the Documents tab — mark the sent contract as read (clears the unread dot).
+app.post("/api/documents/:slug/seen", AUTH.requireSlugAccess(pool), async (req, res) => {
+  try {
+    await pool.query("update documents set seen_at=now() where slug=$1 and status='sent' and seen_at is null", [req.params.slug]);
+    res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
