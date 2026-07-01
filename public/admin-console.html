@@ -477,8 +477,20 @@ textarea.fb-in{resize:vertical}
 .amodal .btn{flex:0 0 auto}
 </style>
 <style>
-/* approvals tab */
-.appr-item{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:12px;box-shadow:var(--shadow)}
+/* approvals tab */.appr-item{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:12px;box-shadow:var(--shadow)}
+.appr-consent{display:flex;gap:10px;align-items:flex-start;background:#f8faf9;border:1px solid var(--line);border-radius:12px;padding:13px 16px;margin-bottom:12px;font-size:14px;color:var(--ink);cursor:pointer}
+.appr-consent input{width:18px;height:18px;margin-top:1px;accent-color:var(--brand)}
+.doc-line{font-size:13.5px;color:var(--muted);padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:#fafbfc}
+.doc-line.ok{color:#1c5c3e;background:#eef7f1;border-color:#cfe9db}
+.rev-head{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:14px}
+.rev-score{text-align:center}.rev-num{font-size:34px;font-weight:800;color:var(--ink);line-height:1}
+.rev-stars{color:#f5a623;letter-spacing:1px}
+.rev{border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:10px;background:#fff}
+.rev-h{display:flex;align-items:center;gap:10px}
+.rev-av{width:38px;height:38px;border-radius:50%;object-fit:cover;flex:none}
+.rev-h b{color:var(--ink);font-size:14.5px}
+.rev-meta{font-size:12.5px;color:var(--muted)}
+.rev-t{margin:9px 0 0;color:#2c3444;font-size:14px;line-height:1.55}
 .appr-item .ai{width:40px;height:40px;border-radius:10px;background:var(--brand-soft);display:grid;place-items:center;flex:none}
 .appr-item .ai svg{width:19px;height:19px;color:var(--brand)}
 .appr-item .at{flex:1;min-width:0}
@@ -539,6 +551,8 @@ textarea.fb-in{resize:vertical}
     <button class="nav-i" data-tab="oferte"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.6 13.4L13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.6z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg> Oferte</button>
     <button class="nav-i" data-tab="facebook"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg> Facebook</button>
     <button class="nav-i" data-tab="aprobari"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg> Aprobări</button>
+    <button class="nav-i" data-tab="reviews"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l2.9 6.3 6.9.7-5.1 4.6 1.4 6.8L12 17.8 5.9 20.4l1.4-6.8L2.2 9l6.9-.7z"/></svg> Reviews</button>
+    <button class="nav-i" data-tab="documente"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3v5h5M14 3l5 5v11a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zM9 13h6M9 17h6"/></svg> Documente</button>
     <div class="sp"></div>
     <div class="prop"><b id="propName">Vila Maria Rustic Predeal</b>Predeal · jud. Brașov<a href="#" target="_blank" id="viewSite">Vizualizează site-ul <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M7 7h10v10"/></svg></a></div>
   </aside>
@@ -615,6 +629,11 @@ textarea.fb-in{resize:vertical}
             <button class="btn btn-out" id="clearManual" style="width:100%"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg> Deblochează toate (această unitate)</button>
           </div>
         </div>
+        <div class="dcard" style="margin-top:18px"><b style="color:var(--ink)">Widget pentru site-ul tău</b>
+          <p class="sub" style="margin-top:4px;margin-bottom:10px">Încorporează calendarul de disponibilitate pe camere direct în site-ul tău. Se actualizează automat (inclusiv din Booking/Airbnb via iCal). Copiază codul de mai jos în sursa paginii tale.</p>
+          <textarea id="embedCode" readonly style="width:100%;height:84px;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font:inherit;font-size:12.5px;color:var(--ink);background:#f6f7fb;resize:vertical"></textarea>
+          <div style="margin-top:10px;display:flex;gap:8px"><button class="btn btn-pri" id="embedCopy" type="button" style="padding:8px 14px">Copiază codul</button><a class="btn btn-out" id="embedPreview" target="_blank" style="padding:8px 14px">Previzualizează</a></div>
+        </div>
       </section>
 
       <section class="panel" id="panel-ical">
@@ -681,6 +700,25 @@ textarea.fb-in{resize:vertical}
       <section class="panel" id="panel-aprobari">
         <p class="intro">Verifică și aprobă materialele unității înainte de publicare.</p>
         <div id="apprBox"><p class="muted">Se încarcă…</p></div>
+      </section>
+
+      <section class="panel" id="panel-reviews">
+        <p class="intro">Integrează recenziile din Google. Lipește <b>Google Place ID</b>-ul proprietății, salvează, apoi încarcă recenziile. <a href="https://developers.google.com/maps/documentation/places/web-service/place-id" target="_blank" rel="noopener">Cum găsesc Place ID-ul?</a></p>
+        <div class="dcard" style="margin-bottom:16px">
+          <label class="fb-lbl">Google Place ID</label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <input id="gplaceId" class="fb-in" style="flex:1;min-width:220px" placeholder="ex. ChIJ...">
+            <button class="btn btn-out" id="gplaceSave" type="button" style="padding:9px 16px">Salvează</button>
+            <button class="btn btn-pri" id="gplaceLoad" type="button" style="padding:9px 16px">Încarcă recenziile</button>
+          </div>
+          <p class="muted" style="margin:8px 0 0;font-size:12.5px">Place ID-ul se salvează cu proprietatea. Necesită o cheie Google Places configurată pe server.</p>
+        </div>
+        <div id="reviewsBox"></div>
+      </section>
+
+      <section class="panel" id="panel-documente">
+        <p class="intro">Contractul de colaborare cu LocalStay pentru această unitate. Se semnează electronic în momentul în care aprobi publicarea unității (inclusiv acordul pentru publicarea fotografiilor).</p>
+        <div id="documenteBox"><p class="muted">Se încarcă…</p></div>
       </section>
 
       <section class="panel" id="panel-facebook">
@@ -2116,7 +2154,7 @@ $("#feedSave").onclick=()=>{
 };
 
 /* =================== NAV / INIT =================== */
-const TITLES={panou:"Panou",continut:"Conținut",preturi:"Prețuri",calendar:"Calendar",ical:"Calendare iCal",galerie:"Galerie",rezervari:"Rezervări",cereri:"Cereri de rezervare",clienti:"Clienți",oferte:"Oferte",aprobari:"Aprobări",facebook:"Facebook"};
+const TITLES={panou:"Panou",continut:"Conținut",preturi:"Prețuri",calendar:"Calendar",ical:"Calendare iCal",galerie:"Galerie",rezervari:"Rezervări",cereri:"Cereri de rezervare",clienti:"Clienți",oferte:"Oferte",reviews:"Reviews",documente:"Documente",aprobari:"Aprobări",facebook:"Facebook"};
 $$(".nav-i").forEach(b=>b.onclick=()=>{
   $$(".nav-i").forEach(x=>x.classList.remove("on"));b.classList.add("on");
   $$(".panel").forEach(p=>p.classList.remove("on"));$("#panel-"+b.dataset.tab).classList.add("on");
@@ -2126,6 +2164,8 @@ $$(".nav-i").forEach(b=>b.onclick=()=>{
   if(b.dataset.tab==="rezervari") renderRezervari();
   if(b.dataset.tab==="cereri") renderCereri();
   if(b.dataset.tab==="clienti") renderClienti();
+  if(b.dataset.tab==="reviews" && window.__renderReviews) window.__renderReviews();
+  if(b.dataset.tab==="documente" && window.__renderDocumente) window.__renderDocumente();
   if(b.dataset.tab==="panou" && window.__renderDash) window.__renderDash();
   if(b.dataset.tab==="oferte" && window.__renderDeals) window.__renderDeals();
   if(b.dataset.tab==="aprobari" && window.__renderAppr) window.__renderAppr();
@@ -3002,33 +3042,73 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
       '<div class="appr-item"><div class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg></div>'+
         '<div class="at"><b>Site-ul generat</b><span>pagina publică a unității</span></div>'+
         '<div class="actions"><a class="lnk-btn" target="_blank" id="aSiteView">Vezi</a>'+siteBtns+'</div></div>'+
+      (st==="pending" ? '<label class="appr-consent"><input type="checkbox" id="aPhotoConsent"> <span>Sunt de acord cu publicarea unității și cu <b>publicarea fotografiilor</b> proprietății pe LocalStay și în materialele de promovare.</span></label>' : '')+
       '<div class="appr-item"><div class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18M3 12h18M3 17h18"/></svg></div>'+
         '<div class="at"><b>Pagina TravelScan</b><span>se va conecta în curând</span></div>'+
-        '<div class="actions"><span class="sbadge soon">În curând</span></div></div>'+
-      '<div class="dcard" style="margin-top:8px"><b style="color:var(--ink)">Widget pentru site-ul tău</b>'+
-        '<p class="sub" style="margin-top:4px;margin-bottom:10px">Încorporează calendarul de disponibilitate pe camere direct în site-ul tău. Se actualizează automat (inclusiv din Booking/Airbnb via iCal). Copiază codul de mai jos în sursa paginii tale.</p>'+
-        '<textarea id="embedCode" readonly style="width:100%;height:84px;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font:inherit;font-size:12.5px;color:var(--ink);background:#f6f7fb;resize:vertical"></textarea>'+
-        '<div style="margin-top:10px;display:flex;gap:8px"><button class="btn btn-pri" id="embedCopy" type="button" style="padding:8px 14px">Copiază codul</button><a class="btn btn-out" id="embedPreview" target="_blank" style="padding:8px 14px">Previzualizează</a></div></div>';
+        '<div class="actions"><span class="sbadge soon">În curând</span></div></div>';
     var view=byId("aSiteView"); if(view){ view.href = (window.__pubUrl||("/s/"+_slug)); }
-    var origin = location.origin;
-    var wid = origin + "/w/" + _slug;
-    var embed = '<iframe src="'+wid+'" title="Disponibilitate LocalStay" loading="lazy" style="width:100%;max-width:560px;min-height:600px;border:0;border-radius:14px"></iframe>';
-    var ec=byId("embedCode"); if(ec) ec.value=embed;
-    var ep=byId("embedPreview"); if(ep) ep.href=wid;
-    var cp=byId("embedCopy"); if(cp) cp.onclick=function(){ try{ ec.select(); if(navigator.clipboard) navigator.clipboard.writeText(embed); else document.execCommand("copy"); note("Cod copiat"); }catch(e){ note("Selectează și copiază manual"); } };
     var ok=byId("aSiteOk"), no=byId("aSiteNo"), reset=byId("aSiteReset");
-    if(ok) ok.onclick=function(){ apprDecide("approved"); };
+    if(ok) ok.onclick=function(){ var pc=byId("aPhotoConsent"); if(pc && !pc.checked){ note("Bifează acordul pentru publicarea fotografiilor înainte de a aproba."); return; } apprDecide("approved", "", true); };
     if(no) no.onclick=function(){ var n=prompt("Motivul respingerii (opțional):")||""; apprDecide("rejected", n); };
     if(reset) reset.onclick=function(){ window.__APPROVAL.status="pending"; window.__renderAppr(); };
   };
-  async function apprDecide(decision, rnote){
+  function wireEmbed(){
+    var ec=byId("embedCode"); if(!ec) return;
+    var wid = location.origin + "/w/" + _slug;
+    var embed = '<iframe src="'+wid+'" title="Disponibilitate LocalStay" loading="lazy" style="width:100%;max-width:560px;min-height:600px;border:0;border-radius:14px"></iframe>';
+    ec.value=embed;
+    var ep=byId("embedPreview"); if(ep) ep.href=wid;
+    var cp=byId("embedCopy"); if(cp) cp.onclick=function(){ try{ ec.select(); if(navigator.clipboard) navigator.clipboard.writeText(embed); else document.execCommand("copy"); note("Cod copiat"); }catch(e){ note("Selectează și copiază manual"); } };
+  }
+  wireEmbed();
+  async function apprDecide(decision, rnote, photoConsent){
     try{
-      var r=await fetch("/api/host/approval",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({slug:_slug,decision:decision,note:rnote||""})});
-      if(r.ok){ (window.__APPROVAL=window.__APPROVAL||{}).status=decision; window.__renderAppr(); note(decision==="approved"?"Unitate aprobată":"Unitate respinsă"); }
+      var r=await fetch("/api/host/approval",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({slug:_slug,decision:decision,note:rnote||"",photoConsent:!!photoConsent})});
+      if(r.ok){ var ap=(window.__APPROVAL=window.__APPROVAL||{}); ap.status=decision; if(photoConsent) ap.photoConsent=true; ap.decidedAt=new Date().toISOString(); window.__renderAppr(); note(decision==="approved"?"Unitate aprobată":"Unitate respinsă"); }
     }catch(e){}
   }
   // expose the public URL for the approvals "Vezi" link
   fetch("/api/config").then(function(r){return r.json();}).then(function(c){ window.__pubUrl = (c&&c.baseDomain) ? ("https://"+_slug+"."+c.baseDomain) : ("/s/"+_slug); }).catch(function(){});
+
+  // ===== DOCUMENTE (contract) =====
+  window.__renderDocumente = function(){
+    var box=byId("documenteBox"); if(!box) return;
+    var ap=window.__APPROVAL||{status:"pending"};
+    var signed=ap.status==="approved";
+    var fmt=function(iso){ if(!iso) return "—"; try{ return new Date(iso).toLocaleDateString("ro-RO",{day:"numeric",month:"long",year:"numeric"}); }catch(e){ return iso; } };
+    var badge = signed ? '<span class="sbadge approved">Semnat · '+fmt(ap.decidedAt)+'</span>' : (ap.status==="rejected"?'<span class="sbadge rejected">Respins</span>':'<span class="sbadge">Nesemnat</span>');
+    var photo = ap.photoConsent ? '<div class="doc-line ok">✓ Acord pentru publicarea fotografiilor</div>' : '<div class="doc-line">Fără acord explicit pentru publicarea fotografiilor — îl bifezi în tab-ul <b>Aprobări</b> la aprobare.</div>';
+    box.innerHTML =
+      '<div class="dcard"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px"><b style="color:var(--ink);font-size:16px">Contract de colaborare LocalStay</b>'+badge+'</div>'+
+        '<p class="sub" style="margin:0 0 12px">Se semnează electronic prin aprobarea publicării unității (include acordul pentru publicarea fotografiilor).</p>'+
+        photo+
+        '<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap"><a class="btn btn-pri" href="/contract/'+encodeURIComponent(_slug)+'" target="_blank" rel="noopener" style="padding:9px 16px">Deschide contractul</a></div>'+
+      '</div>';
+  };
+
+  // ===== REVIEWS (Google) =====
+  window.__renderReviews = function(){
+    var inp=byId("gplaceId"); if(inp) inp.value=(state.property&&state.property.googlePlaceId)||"";
+    var save=byId("gplaceSave"), load=byId("gplaceLoad"), box=byId("reviewsBox");
+    if(save) save.onclick=function(){ if(!state.property) state.property={}; state.property.googlePlaceId=(byId("gplaceId").value||"").trim(); markDirty(); note("Place ID salvat — apasă Salvează modificările sus."); };
+    if(load) load.onclick=loadReviews;
+    function stars(n){ n=Math.round(n||0); var s=""; for(var i=0;i<5;i++) s+=(i<n?"★":"☆"); return s; }
+    function loadReviews(){
+      if(!box) return;
+      var pid=(byId("gplaceId").value||"").trim();
+      box.innerHTML='<p class="muted">Se încarcă recenziile…</p>';
+      fetch("/api/host/"+encodeURIComponent(SLUG)+"/google-reviews"+(pid?("?placeId="+encodeURIComponent(pid)):"")).then(function(r){return r.json();}).then(function(d){
+        if(!d || d.configured===false){ box.innerHTML='<p class="muted">Adaugă un Google Place ID și apasă „Încarcă recenziile”.</p>'; return; }
+        if(d.error){ box.innerHTML='<div class="dcard"><p class="muted">'+esc(d.error)+'</p></div>'; return; }
+        var head='<div class="dcard rev-head"><div class="rev-score"><div class="rev-num">'+(d.rating!=null?d.rating:"—")+'</div><div class="rev-stars">'+stars(d.rating)+'</div></div><div><b style="color:var(--ink)">'+esc(d.name||"")+'</b><div class="muted" style="font-size:13px">'+(d.total||0)+' recenzii pe Google</div>'+(d.url?'<a href="'+esc(d.url)+'" target="_blank" rel="noopener" style="font-size:13px">Vezi pe Google</a>':"")+'</div></div>';
+        var revs=(d.reviews||[]);
+        var list = revs.length ? revs.map(function(rv){
+          return '<div class="rev"><div class="rev-h">'+(rv.photo?'<img class="rev-av" src="'+esc(rv.photo)+'" alt="" referrerpolicy="no-referrer">':'')+'<div><b>'+esc(rv.author||"Anonim")+'</b><div class="rev-meta"><span class="rev-stars">'+stars(rv.rating)+'</span> · '+esc(rv.relative||"")+'</div></div></div>'+(rv.text?'<p class="rev-t">'+esc(rv.text)+'</p>':"")+'</div>';
+        }).join("") : '<p class="muted">Google nu a returnat recenzii pentru acest loc.</p>';
+        box.innerHTML=head+'<p class="muted" style="font-size:12px;margin:0 0 10px">Google afișează maximum 5 recenzii prin API.</p>'+list;
+      }).catch(function(){ box.innerHTML='<div class="dcard"><p class="muted">Nu am putut încărca recenziile.</p></div>'; });
+    }
+  };
 
   /* ---- Facebook module: saved groups + AI-generated ready-to-post text (one slightly different variant per group) ---- */
   (function(){
