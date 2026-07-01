@@ -551,7 +551,7 @@ app.post("/api/ai-optimize", AUTH.requireAuth, async (req, res) => {
         const out = await enhanceImage(b64, mime);
         if (out && out.image) { b64 = out.image; mime = out.mime || mime; enhanced = true; }
         else aiError = "AI nu a returnat o imagine";
-      } catch (e) { aiError = e.message; } // e.g. OpenAI 429 (credit epuizat)
+      } catch (e) { aiError = e.message; console.error("ai-optimize enhance failed:", e.message); } // e.g. OpenAI 429 (credit epuizat)
     }
     const input = Buffer.from(b64, "base64");
     const main = await sharp(input).rotate()
