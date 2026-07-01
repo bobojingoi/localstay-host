@@ -168,19 +168,27 @@ async function fetchText(url){
     return await r.text();
   } finally { clearTimeout(t); }
 }
+// Record a calendar sync event (import feed pull / export .ics fetch) for stats.
+async function logSync(slug, unitId, direction, status){
+  try{ await pool.query("insert into sync_events(slug,unit_id,direction,status) values($1,$2,$3,$4)",[slug,String(unitId||""),direction,status||"ok"]); }
+  catch(e){ /* stats are best-effort; never break sync */ }
+}
 // Fetch every URL feed for a property, fill its blocked dates, save.
 async function syncProperty(slug){
   const p=await getProp(slug); if(!p) return {error:"not found"};
   const admin=p.admin_state; let changed=false, total=0;
   for(const u of (admin.units||[])){
+    let hadFeed=false, unitStatus="ok";
     for(const f of (u.feeds||[])){
       if(!f.url) continue;
+      hadFeed=true;
       try{
         const dates=eventsToDates(parseICS(await fetchText(f.url)));
         f.blocks=dates; f.count=dates.length; f.lastSync=Date.now(); f.lastStatus="ok";
         total+=dates.length; changed=true;
-      }catch(e){ f.lastStatus="error: "+e.message; f.lastSync=Date.now(); changed=true; }
+      }catch(e){ f.lastStatus="error: "+e.message; f.lastSync=Date.now(); changed=true; unitStatus="error"; }
     }
+    if(hadFeed) logSync(slug, u.id, "import", unitStatus); // one import event per room per run
   }
   if(changed) await pool.query("update properties set admin_state=$2, updated_at=now() where slug=$1",[slug,admin]);
   return { ok:true, total, admin_state:admin };
@@ -189,6 +197,7 @@ async function syncAll(){
   try{
     const r=await pool.query("select slug from properties");
     for(const row of r.rows){ await syncProperty(row.slug).catch(e=>console.error("sync",row.slug,e.message)); }
+    try{ await pool.query("delete from sync_events where created_at < now() - interval '7 days'"); }catch(e){}
     console.log("iCal sync run: "+r.rows.length+" properties");
   }catch(e){ console.error("syncAll failed:",e.message); }
 }
@@ -472,6 +481,64 @@ app.delete("/api/admin/hosts/:id", AUTH.requireAdmin, async (req, res) => {
   try {
     await pool.query("delete from users where id=$1 and role='host'", [req.params.id]);
     res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* Calendar sync cadence per room per property — average interval + rate/hour of
+   iCal import (feed pulls) and export (.ics fetches by Booking/Airbnb). */
+app.get("/api/admin/sync-stats", AUTH.requireAdmin, async (req, res) => {
+  try {
+    const agg = await pool.query(
+      "select slug, unit_id, direction, " +
+      "  count(*) filter (where created_at > now() - interval '1 hour')   as c1h, " +
+      "  count(*) filter (where created_at > now() - interval '24 hours') as c24h, " +
+      "  count(*)                                                          as c7d, " +
+      "  min(created_at) filter (where created_at > now() - interval '24 hours') as first24, " +
+      "  max(created_at) filter (where created_at > now() - interval '24 hours') as last24, " +
+      "  max(created_at) as last_ev " +
+      "from sync_events where created_at > now() - interval '7 days' " +
+      "group by slug, unit_id, direction"
+    );
+    const props = await pool.query("select slug, site from properties");
+    const nameBySlug = {}, roomsBySlug = {};
+    for (const p of props.rows) {
+      const site = p.site || {};
+      nameBySlug[p.slug] = site.name || p.slug;
+      const m = {}; (site.rentals || []).forEach(r => { if (r && r.id) m[r.id] = r.name || r.id; });
+      roomsBySlug[p.slug] = m;
+    }
+    const S = {};
+    for (const r of agg.rows) {
+      const c24 = +r.c24h;
+      let avgMin = null, perHour = null;
+      if (c24 > 1 && r.first24 && r.last24) {
+        const spanMin = (new Date(r.last24) - new Date(r.first24)) / 60000;
+        if (spanMin > 0) { avgMin = spanMin / (c24 - 1); perHour = 60 / avgMin; }
+      }
+      (S[r.slug] || (S[r.slug] = {}));
+      (S[r.slug][r.unit_id] || (S[r.slug][r.unit_id] = {}));
+      S[r.slug][r.unit_id][r.direction] = {
+        c1h: +r.c1h, c24h: c24, c7d: +r.c7d,
+        avgIntervalMin: avgMin != null ? Math.round(avgMin * 10) / 10 : null,
+        perHour: perHour != null ? Math.round(perHour * 100) / 100 : null,
+        last: r.last_ev ? new Date(r.last_ev).getTime() : null
+      };
+    }
+    const out = [];
+    for (const slug of Object.keys(roomsBySlug)) {
+      const rooms = roomsBySlug[slug];
+      const unitIds = new Set(Object.keys(rooms));
+      if (S[slug]) Object.keys(S[slug]).forEach(u => unitIds.add(u));
+      const roomRows = [...unitIds].map(uid => ({
+        unitId: uid, name: rooms[uid] || uid,
+        import: (S[slug] && S[slug][uid] && S[slug][uid].import) || null,
+        export: (S[slug] && S[slug][uid] && S[slug][uid].export) || null
+      })).sort((a, b) => String(a.name).localeCompare(b.name));
+      const hasAny = roomRows.some(r => r.import || r.export);
+      out.push({ slug, name: nameBySlug[slug] || slug, rooms: roomRows, hasAny });
+    }
+    out.sort((a, b) => (b.hasAny - a.hasAny) || String(a.name).localeCompare(b.name));
+    res.json({ properties: out, now: Date.now() });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1253,6 +1320,7 @@ app.get("/ical/:slug/:file", async (req, res) => {
   if (!p) return res.status(404).send("Not found");
   const unitId = req.params.file.replace(/\.ics$/i, "");
   const dates = effectiveBlocked(p.admin_state, unitId);
+  logSync(req.params.slug, unitId, "export", "ok"); // Booking/Airbnb pulled our calendar
   res.set("Content-Type", "text/calendar; charset=utf-8");
   res.send(buildICS(dates, "Indisponibil"));
 });
