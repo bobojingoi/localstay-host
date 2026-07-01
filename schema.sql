@@ -154,3 +154,8 @@ create table if not exists roots_leads (
 create index if not exists roots_leads_email_idx on roots_leads(lower(email));
 create index if not exists roots_leads_phone_idx on roots_leads(phone);
 create index if not exists roots_leads_created_idx on roots_leads(created_at desc);
+
+-- Contract "unread" tracking: when the master admin sends a document to a hotelier,
+-- seen_at is reset to NULL. The hotelier console shows an unread dot + dashboard
+-- prompt until they open the Documents tab (marks seen) / approve the unit (signs).
+alter table documents add column if not exists seen_at timestamptz;
