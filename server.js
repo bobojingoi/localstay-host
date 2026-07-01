@@ -573,17 +573,15 @@ app.post("/api/ai-optimize", AUTH.requireAuth, async (req, res) => {
       alt = ai.alt; description = ai.description;
     } catch (e) {}
 
-    // Billing: hotelieri are charged their per-account price per optimized photo.
+    // Billing: charge the account its per-account price per optimized photo (works for hosts and admins).
     let cost = 0, spent = null, count = null;
-    if (req.user.role === "host") {
-      try {
-        const pr = await pool.query(
-          "update users set photos_optimized = coalesce(photos_optimized,0)+1, photo_spent = coalesce(photo_spent,0)+coalesce(photo_price,3) where id=$1 returning coalesce(photo_price,3) as price, photo_spent, photos_optimized",
-          [req.user.id]
-        );
-        if (pr.rows.length) { cost = Number(pr.rows[0].price); spent = Number(pr.rows[0].photo_spent); count = Number(pr.rows[0].photos_optimized); }
-      } catch (e) { /* billing is best-effort; never fail the optimize */ }
-    }
+    try {
+      const pr = await pool.query(
+        "update users set photos_optimized = coalesce(photos_optimized,0)+1, photo_spent = coalesce(photo_spent,0)+coalesce(photo_price,3) where id=$1 returning coalesce(photo_price,3) as price, photo_spent, photos_optimized",
+        [req.user.id]
+      );
+      if (pr.rows.length) { cost = Number(pr.rows[0].price); spent = Number(pr.rows[0].photo_spent); count = Number(pr.rows[0].photos_optimized); }
+    } catch (e) { /* billing is best-effort; never fail the optimize */ }
     res.json({ url, thumb: thumbUrl, alt, description, enhanced, aiError, cost, spent, count });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
