@@ -679,6 +679,7 @@ textarea.fb-in{resize:vertical}
               <div class="fb-checks">
                 <label><input type="checkbox" id="fbEmoji" checked> Emoji</label>
                 <label><input type="checkbox" id="fbLink" checked> Include link către site</label>
+                <label><input type="checkbox" id="fbCalendar" checked> Include calendar disponibilitate</label>
               </div>
               <button class="btn btn-pri" id="fbGen" type="button" style="margin-top:12px;width:100%">Generează postările</button>
             </div>
@@ -3035,7 +3036,7 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
       var details=byId("fbDetails").value.trim();
       if(!details){ toast("Scrie câteva detalii despre postare"); return; }
       var payload={ occasion:byId("fbOccasion").value, details:details, tone:byId("fbTone").value,
-        emoji:byId("fbEmoji").checked, includeLink:byId("fbLink").checked,
+        emoji:byId("fbEmoji").checked, includeLink:byId("fbLink").checked, includeCalendar:byId("fbCalendar").checked,
         groups:groups.map(function(g){return g.name;}), count:Math.max(1,groups.length) };
       btn.disabled=true; var ol=btn.textContent; btn.textContent="Se generează…";
       box.innerHTML='<p class="muted">Se generează postările…</p>';
