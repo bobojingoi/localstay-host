@@ -2826,15 +2826,15 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
         '<div class="at"><b>Pagina TravelScan</b><span>se va conecta în curând</span></div>'+
         '<div class="actions"><span class="sbadge soon">În curând</span></div></div>'+
       '<div class="dcard" style="margin-top:8px"><b style="color:var(--ink)">Widget pentru site-ul tău</b>'+
-        '<p class="sub" style="margin-top:4px;margin-bottom:10px">Dacă preferi să nu folosești site-ul generat de noi, poți încorpora unitatea direct în site-ul tău. Copiază codul de mai jos în sursa paginii tale.</p>'+
+        '<p class="sub" style="margin-top:4px;margin-bottom:10px">Încorporează calendarul de disponibilitate pe camere direct în site-ul tău. Se actualizează automat (inclusiv din Booking/Airbnb via iCal). Copiază codul de mai jos în sursa paginii tale.</p>'+
         '<textarea id="embedCode" readonly style="width:100%;height:84px;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font:inherit;font-size:12.5px;color:var(--ink);background:#f6f7fb;resize:vertical"></textarea>'+
         '<div style="margin-top:10px;display:flex;gap:8px"><button class="btn btn-pri" id="embedCopy" type="button" style="padding:8px 14px">Copiază codul</button><a class="btn btn-out" id="embedPreview" target="_blank" style="padding:8px 14px">Previzualizează</a></div></div>';
     var view=byId("aSiteView"); if(view){ view.href = (window.__pubUrl||("/s/"+_slug)); }
-    var pub = window.__pubUrl || (location.origin + "/s/" + _slug);
-    if(pub.charAt(0)==="/") pub = location.origin + pub;
-    var embed = '<iframe src="'+pub+'" title="Unitate LocalStay" loading="lazy" style="width:100%;min-height:900px;border:0;border-radius:12px"></iframe>';
+    var origin = location.origin;
+    var wid = origin + "/w/" + _slug;
+    var embed = '<iframe src="'+wid+'" title="Disponibilitate LocalStay" loading="lazy" style="width:100%;max-width:560px;min-height:600px;border:0;border-radius:14px"></iframe>';
     var ec=byId("embedCode"); if(ec) ec.value=embed;
-    var ep=byId("embedPreview"); if(ep) ep.href=pub;
+    var ep=byId("embedPreview"); if(ep) ep.href=wid;
     var cp=byId("embedCopy"); if(cp) cp.onclick=function(){ try{ ec.select(); if(navigator.clipboard) navigator.clipboard.writeText(embed); else document.execCommand("copy"); note("Cod copiat"); }catch(e){ note("Selectează și copiază manual"); } };
     var ok=byId("aSiteOk"), no=byId("aSiteNo"), reset=byId("aSiteReset");
     if(ok) ok.onclick=function(){ apprDecide("approved"); };
