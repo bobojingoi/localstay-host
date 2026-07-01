@@ -1081,6 +1081,28 @@ app.get("/api/roots-leads", AUTH.requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Recompute matches for all existing leads against the current enriched units.
+// Uses each lead's stored profile (no re-parsing of answers). Leaves updated_at
+// untouched so lead recency isn't disturbed.
+app.post("/api/roots-leads/rematch", AUTH.requireAdmin, async (req, res) => {
+  try {
+    const up = await pool.query(
+      "select slug, enrichment, admin_state->'property'->'basicInfo'->>'name' as name from properties where enrichment is not null"
+    );
+    const nameBySlug = {};
+    const units = up.rows.map((r) => { nameBySlug[r.slug] = r.name || r.slug; return { slug: r.slug, enrichment: r.enrichment }; });
+    const leads = await pool.query("select id, profile from roots_leads");
+    let updated = 0;
+    for (const l of leads.rows) {
+      const matches = ROOTS.matchLeadToUnits(l.profile || {}, units, { limit: 8 });
+      matches.forEach((m) => { m.name = nameBySlug[m.slug] || m.slug; });
+      await pool.query("update roots_leads set matches=$2::jsonb where id=$1", [l.id, JSON.stringify(matches)]);
+      updated++;
+    }
+    res.json({ ok: true, leads: updated, units: units.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get("/api/properties", AUTH.requireAuth, async (req, res) => {
   const isAdmin = req.user.role === "admin";
   const r = await pool.query(
