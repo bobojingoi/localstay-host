@@ -1,1231 +1,2747 @@
-require("dotenv").config();
-const express = require("express");
-const path = require("path");
-const fs = require("fs");
-const crypto = require("crypto");
-const { pool, init } = require("./db");
-const { STAY } = require("./transform");
-const sharp = require("sharp");
-const { r2put, r2ready } = require("./r2");
-const { describeImage, enhanceImage } = require("./ai");
-const AUTH = require("./auth");
-
-const app = express();
-app.set("trust proxy", 1); // Render runs behind a proxy — needed for Secure cookies + req.secure
-app.use(express.json({ limit: "25mb" }));
-app.use(AUTH.attachUser); // sets req.user (or null) from the auth cookie on every request
-
-// While the project is not yet validated, keep every page out of search indexes.
-// Controlled by the NOINDEX env var (ON by default). Set NOINDEX=false to allow
-// indexing once you're ready — no code change needed.
-app.use((req, res, next) => {
-  if (NOINDEX) res.set("X-Robots-Tag", "noindex, nofollow");
-  next();
-});
-app.get("/robots.txt", (req, res) => {
-  res.type("text/plain").send(NOINDEX ? "User-agent: *\nDisallow: /\n" : "User-agent: *\nAllow: /\n");
-});
-
-// Safety net: never let a request hang forever (e.g. if the DB is briefly down).
-// If a handler hasn't responded in time, return 503 instead of spinning.
-// AI image editing and uploads are legitimately slow, so they get longer budgets.
-app.use((req, res, next) => {
-  const p = req.path || "";
-  let ms = 12000;
-  if (p.indexOf("/api/ai-enhance") === 0 || p.indexOf("/api/ai-optimize") === 0) ms = 250000;   // gpt-image-2 / Gemini image edit is slow
-  else if (p.indexOf("/api/upload") === 0) ms = 60000;   // image processing + R2 upload
-  const t = setTimeout(() => {
-    if (!res.headersSent && !res.writableEnded) {
-      try { res.status(503).json({ error: "Serviciul este momentan ocupat. Reîncearcă în câteva momente." }); } catch (e) {}
-    }
-  }, ms);
-  res.on("finish", () => clearTimeout(t));
-  res.on("close", () => clearTimeout(t));
-  next();
-});
-
-// Diagnostic: shows DB + R2 status without exposing secrets. Visit /api/health.
-app.get("/api/health", async (req, res) => {
-  let db = false, dbErr = null;
-  try { await pool.query("select 1"); db = true; } catch (e) { dbErr = e.message; }
-  res.json({
-    db, dbErr,
-    r2: {
-      ready: r2ready(),
-      endpoint: process.env.R2_ENDPOINT || null,       // not secret — check for typos
-      bucket: process.env.R2_BUCKET || null,            // not secret
-      publicUrl: process.env.R2_PUBLIC_URL || null,     // not secret
-      hasAccessKey: !!process.env.R2_ACCESS_KEY_ID,
-      hasSecretKey: !!process.env.R2_SECRET_ACCESS_KEY,
-    },
-  });
-});
-
-const PUBLIC = path.join(__dirname, "public");
-const BASE_DOMAIN = (process.env.BASE_DOMAIN || "").toLowerCase(); // e.g. localstay.ro
-// Search-engine indexing switch. ON by default (everything noindex) until the
-// project is validated; set NOINDEX=false (or 0/off/no) to allow indexing.
-const NOINDEX = !/^(false|0|off|no)$/i.test(String(process.env.NOINDEX || "").trim());
-// Optional Google Analytics 4 measurement ID (e.g. G-XXXXXXXXXX). When set, the
-// gtag snippet is injected into every public unit page so traffic flows to GA4.
-const GA4_ID = (process.env.GA4_MEASUREMENT_ID || "").trim();
-// Canonical public URL for a unit: pensiunea-crocus.localstay.ro when a base
-// domain is configured, otherwise the path form on the Render host.
-function siteUrl(slug) {
-  return BASE_DOMAIN ? ("https://" + slug + "." + BASE_DOMAIN) : ("/s/" + slug);
+<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin · Vila Maria Rustic Predeal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f4f6f8;--card:#fff;--line:#e6e9ee;--line-2:#eef1f4;
+  --ink:#1c2430;--text:#566072;--muted:#8b94a3;
+  --brand:#2f7355;--brand-d:#255c44;--brand-soft:#e8f2ec;
+  --amber:#c98a2e;--amber-soft:#fbf2e2;--red:#cf4b4b;--red-soft:#fbecec;
+  --shadow:0 1px 2px rgba(16,24,40,.04),0 10px 30px -20px rgba(16,24,40,.22);--r:14px;
 }
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:"Inter",system-ui,sans-serif;font-size:14.5px;line-height:1.55;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{margin:0;color:var(--ink);font-weight:700;letter-spacing:-.01em;line-height:1.2}
+a{color:inherit;text-decoration:none}
+input,select,button,textarea{font-family:inherit}
+.app{display:grid;grid-template-columns:248px 1fr;min-height:100vh}
+.side{background:#15201a;color:#cfe0d6;padding:22px 16px;display:flex;flex-direction:column;gap:6px;position:sticky;top:0;height:100vh}
+.side .logo{display:flex;align-items:center;gap:10px;padding:6px 8px 20px;color:#fff}
+.side .logo .dot{width:32px;height:32px;border-radius:9px;background:var(--brand);display:grid;place-items:center}
+.side .logo b{font-weight:700;font-size:16px}
+.side .logo small{display:block;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:#7fa890;margin-top:2px}
+.nav-i{display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:10px;color:#bcd0c4;font-weight:500;font-size:14px;cursor:pointer;transition:.15s;border:0;background:none;width:100%;text-align:left}
+.nav-i svg{width:18px;height:18px;flex:none;opacity:.85}
+.nav-i:hover{background:rgba(255,255,255,.06);color:#fff}
+.nav-i.on{background:var(--brand);color:#fff}
+.side .sp{flex:1}
+.side .prop{background:rgba(255,255,255,.05);border-radius:10px;padding:12px;font-size:12.5px;color:#9fbaab}
+.side .prop b{display:block;color:#fff;font-size:13.5px;margin-bottom:2px}
+.side .prop a{color:#7fc4a0;font-weight:600;display:inline-flex;align-items:center;gap:5px;margin-top:8px}
+.main{min-width:0}
+.top{background:#fff;border-bottom:1px solid var(--line);padding:0 32px;height:64px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:20}
+.top h1{font-size:18px}
+.top .right{display:flex;align-items:center;gap:12px}
+.tb-link{display:inline-flex;align-items:center;gap:6px;font:inherit;font-size:13.5px;font-weight:600;color:var(--muted);background:none;border:0;cursor:pointer;padding:7px 10px;border-radius:8px;text-decoration:none}
+.tb-link:hover{background:#f2f4f7;color:var(--ink)}
+.save-state{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:7px;user-select:none}
+.save-state.dirty{color:var(--amber,#c8861a);font-weight:600}
+.save-state.dirty:hover{text-decoration:underline}
+.save-state .dot{width:8px;height:8px;border-radius:50%;background:#3aa76d}
+.content{padding:26px 32px 70px;max-width:1080px}
+.content.wide{max-width:none}
+.panel{display:none}.panel.on{display:block;animation:fade .25s ease}
+.creq{border:1px solid var(--line,#e6e9f0);border-radius:14px;padding:16px 18px;margin-bottom:12px;background:#fff}
+.creq-h{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:12px}
+.creq-h b{font-size:16px;color:var(--ink,#1a2238)}
+.creq-date{font-size:12.5px;color:var(--muted,#8a92a6)}
+.creq-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px 18px}
+.creq-grid label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted,#8a92a6);margin-bottom:2px}
+.creq-grid a{color:var(--brand,#1faa57);text-decoration:none}
+.creq-grid a:hover{text-decoration:underline}
+@media(max-width:640px){.creq-grid{grid-template-columns:1fr 1fr}}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:600;font-size:14px;border-radius:10px;padding:10px 18px;cursor:pointer;border:1px solid transparent;transition:.18s}
+.btn-pri{background:var(--brand);color:#fff}.btn-pri:hover{background:var(--brand-d)}
+.btn-out{background:#fff;border-color:var(--line);color:var(--ink)}.btn-out:hover{border-color:var(--muted)}
+.btn-ghost{background:none;color:var(--brand);padding:7px 10px;font-size:13px}.btn-ghost:hover{background:var(--brand-soft)}
+.btn svg{width:16px;height:16px}.btn.sm{padding:7px 12px;font-size:13px}
+.bar{display:flex;gap:10px;flex-wrap:wrap;position:sticky;bottom:16px;margin-top:24px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);margin-bottom:18px;overflow:hidden}
+.card .hd{padding:18px 22px;border-bottom:1px solid var(--line-2);display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.card .hd h2{font-size:16px}.card .hd p{margin:3px 0 0;font-size:12.5px;color:var(--muted)}
+.card .bd{padding:20px 22px}
+.intro{font-size:14px;color:var(--text);margin:0 0 20px;max-width:74ch}
+/* accordion */
+.acc .hd{cursor:pointer;user-select:none}
+.acc .hd .chev{width:18px;height:18px;color:var(--muted);transition:.25s}
+.acc.open .hd .chev{transform:rotate(180deg)}
+.acc .bd{display:none}.acc.open .bd{display:block}
+/* fields */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.field label{display:block;font-size:12px;font-weight:600;color:var(--ink);margin-bottom:5px}
+.inp,.sel,textarea.inp{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font-size:14px;color:var(--ink);background:#fff}
+.inp:focus,.sel:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+textarea.inp{min-height:70px;resize:vertical;line-height:1.5}
+.with-sfx{position:relative}.with-sfx .sfx{position:absolute;right:11px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--muted);font-weight:600}
+/* repeater */
+.rep{border:1px solid var(--line);border-radius:11px;padding:12px;margin-bottom:10px;background:#fcfdfe;position:relative;display:flex;gap:10px;align-items:flex-start}
+.rep-fields{flex:1;display:flex;flex-wrap:wrap;gap:10px}
+.rep-fields .field{flex:1;min-width:120px}
+.rep-del{background:none;border:0;cursor:pointer;color:var(--muted);padding:6px;border-radius:7px;flex:none}
+.rep-del:hover{background:var(--red-soft);color:var(--red)}
+.rep-sub{flex-basis:100%;background:#fff;border:1px dashed var(--line);border-radius:10px;padding:12px;margin-top:4px}
+.rep-sublabel{font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:10px}
+.rep-add{margin-top:2px}
+.checkline{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--text);white-space:nowrap}
+.checkline input{width:16px;height:16px;accent-color:var(--brand)}
+/* room price rows */
+.room-row{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:16px;align-items:end;padding:16px 0;border-bottom:1px solid var(--line-2)}
+.room-row:last-child{border-bottom:0}
+.room-row .rn b{color:var(--ink);font-size:15px}.room-row .rn small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px}
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{text-align:left;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:0 10px 10px}
+.tbl td{padding:9px 10px;border-top:1px solid var(--line-2)}.tbl tr:first-child td{border-top:0}
+.icon-btn{background:none;border:0;cursor:pointer;color:var(--muted);padding:6px;border-radius:7px}.icon-btn:hover{background:var(--red-soft);color:var(--red)}
+.inp.short{width:110px}
+/* unit selector */
+.units{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+.unit-chip{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:#fff;border-radius:100px;padding:9px 16px;font-size:13.5px;font-weight:600;color:var(--text);cursor:pointer;transition:.15s}
+.unit-chip:hover{border-color:var(--brand)}
+.unit-chip.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+.unit-chip .tag{font-size:10.5px;font-weight:700;background:rgba(255,255,255,.25);padding:1px 7px;border-radius:100px}
+.unit-chip:not(.on) .tag{background:var(--brand-soft);color:var(--brand)}
+/* calendar */
+.cal-wrap{display:grid;grid-template-columns:1fr 290px;gap:22px;align-items:start}
+.cal{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:16px;box-shadow:var(--shadow)}
+.cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}.cal-head h3{font-size:16px}
+.cal-nav{display:flex;gap:8px}.cal-nav button{width:34px;height:34px;border-radius:8px;border:1px solid var(--line);background:#fff;cursor:pointer;color:var(--ink);display:grid;place-items:center}.cal-nav button:hover{border-color:var(--muted)}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.cal-dow{text-align:center;font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;padding:6px 0}
+.day{aspect-ratio:1/1;border-radius:9px;border:1px solid transparent;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;position:relative;font-size:13.5px;color:var(--ink);font-weight:500;transition:.12s;background:#fff;overflow:hidden}
+.day:hover{border-color:var(--brand);background:var(--brand-soft)}
+.day.out,.day.out:hover{color:#c4cbd6;cursor:default;background:transparent;border-color:transparent}
+.day.past,.day.past:hover{color:#c4cbd6;cursor:not-allowed;background:#fafbfc;border-color:transparent}
+.day .pr{font-size:9px;color:var(--muted);font-weight:600;margin-top:1px}
+.day .day-price{width:90%;border:1px solid transparent;background:transparent;text-align:center;font-size:11px;color:var(--muted);font-weight:700;font-family:inherit;padding:1px 0;margin-top:1px;border-radius:5px;-moz-appearance:textfield;cursor:text}
+.day .day-price::-webkit-outer-spin-button,.day .day-price::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.day .day-price:hover{border-color:var(--line)}
+.day .day-price:focus{outline:none;border-color:var(--brand);background:#fff;color:var(--ink)}
+.day.custom .day-price{color:var(--brand)}
+.day.own{background:var(--red-soft);color:var(--red);border-color:#f1d3d3}.day.own .pr{color:var(--red)}
+.day.ical{color:#fff;border-color:transparent}.day.ical .pr{color:rgba(255,255,255,.85)}
+.day.overlap{background:repeating-linear-gradient(45deg,#fbf2e2,#fbf2e2 5px,#fff5e2 5px,#fff5e2 10px);color:var(--amber);border-color:#f0dfc0}.day.overlap .pr{color:var(--amber)}
+.day.custom::after{content:"";position:absolute;top:4px;right:4px;width:6px;height:6px;border-radius:50%;background:var(--brand);box-shadow:0 0 0 2px #fff}
+.legend{display:flex;flex-direction:column;gap:9px}.legend .li{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--text)}
+.legend .sw{width:15px;height:15px;border-radius:5px;flex:none;border:1px solid var(--line)}
+.side-card{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:16px;box-shadow:var(--shadow);margin-bottom:16px}
+.side-card h4{font-size:13.5px;margin-bottom:12px}
+.stat{display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--line-2)}.stat:last-child{border:0}.stat b{color:var(--ink)}
+.range{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;box-shadow:var(--shadow);margin-top:16px}
+/* calendar modes + bulk editing */
+.cal-modes{display:inline-flex;gap:4px;background:#f1f3f8;border-radius:11px;padding:4px;margin:6px 0 14px}
+.cal-mode{display:inline-flex;align-items:center;gap:7px;border:0;background:none;border-radius:8px;padding:8px 16px;font-size:13.5px;font-weight:600;color:var(--muted);cursor:pointer}
+.cal-mode svg{width:15px;height:15px}
+.cal-mode.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(20,28,52,.12)}
+.day.sel{outline:2px solid var(--brand);outline-offset:-2px;background:var(--brand-soft)}
+.cal-selbar{display:flex;align-items:center;gap:10px;background:var(--brand-soft);border:1px solid var(--brand);border-radius:var(--r);padding:10px 14px;margin-top:12px;font-size:13.5px}
+.cal-selbar #calSelInfo{font-weight:600;color:var(--ink)}
+.cal-bulk{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:16px;box-shadow:var(--shadow);margin-top:14px}
+.cal-bulk-h{margin-bottom:12px}.cal-bulk-h b{font-size:14px;color:var(--ink)}
+.cal-bulk-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}.cal-bulk-row .field{flex:1;min-width:130px}
+.cal-dows{display:flex;gap:6px;flex-wrap:wrap}
+.dow-b{border:1px solid var(--line);background:#fff;border-radius:9px;width:42px;height:38px;font-size:13px;font-weight:600;color:var(--text);cursor:pointer}
+.dow-b.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+.cal-bulk-act{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:12px}
+/* feeds */
+.feed{display:flex;align-items:center;gap:12px;padding:13px 15px;border:1px solid var(--line);border-radius:11px;margin-bottom:10px;background:#fff}
+.feed .clr{width:9px;height:34px;border-radius:5px;flex:none}
+.feed .meta{flex:1;min-width:0}.feed .meta b{color:var(--ink);font-size:14px}.feed .meta .u{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.feed .st{font-size:11.5px;font-weight:600;display:flex;align-items:center;gap:6px}.feed .st.ok{color:var(--brand)}.feed .st.warn{color:var(--amber)}.feed .st .d{width:7px;height:7px;border-radius:50%;background:currentColor}
+.unit-block{border:1px solid var(--line);border-radius:var(--r);margin-bottom:16px;overflow:hidden}
+.unit-block .uh{padding:14px 18px;background:#fafbfc;border-bottom:1px solid var(--line-2);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.unit-block .uh b{color:var(--ink);font-size:14.5px}.unit-block .uh .tag{font-size:10.5px;font-weight:700;background:var(--brand-soft);color:var(--brand);padding:2px 8px;border-radius:100px;margin-left:8px}
+.unit-block .ub{padding:16px 18px}
+.export-box{background:var(--brand-soft);border:1px solid #cfe4d8;border-radius:11px;padding:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px}
+.export-url{flex:1;min-width:220px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-family:ui-monospace,monospace;font-size:12px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.note{display:flex;gap:9px;align-items:flex-start;background:var(--amber-soft);border:1px solid #f0dfc0;border-radius:10px;padding:11px 13px;font-size:12.5px;color:#8a6520}.note svg{width:16px;height:16px;flex:none;margin-top:1px}
+.overlay{position:fixed;inset:0;background:rgba(20,28,24,.45);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}.overlay.on{display:flex}
+.modal{background:#fff;border-radius:16px;width:100%;max-width:520px;box-shadow:0 30px 80px -20px rgba(0,0,0,.4);overflow:hidden}
+.modal .mh{padding:18px 22px;border-bottom:1px solid var(--line-2);display:flex;justify-content:space-between;align-items:center}.modal .mh h3{font-size:16px}
+.modal .mb{padding:20px 22px;display:flex;flex-direction:column;gap:14px}.modal .mf{padding:14px 22px;border-top:1px solid var(--line-2);display:flex;justify-content:flex-end;gap:10px;background:#fafbfc}
+.modal .x{background:none;border:0;cursor:pointer;color:var(--muted);font-size:22px}
+.fac-block{margin-bottom:16px}
+.fac-label{font-size:12.5px;font-weight:700;color:var(--ink);margin-bottom:7px}
+.ms-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.ms-chip{display:inline-flex;align-items:center;gap:6px;background:var(--brand-soft);color:var(--brand);border-radius:8px;padding:5px 9px;font-size:12.5px;font-weight:600}
+.ms-chip .x{cursor:pointer;opacity:.6;font-size:15px;line-height:1}.ms-chip .x:hover{opacity:1}
+.ms-rule{font-size:10px;font-weight:700;border-radius:5px;padding:1px 5px;cursor:pointer;background:#fff;border:1px solid currentColor;color:var(--muted)}
+.ms-rule.on{background:var(--amber);color:#fff;border-color:var(--amber)}
+.ms-search{position:relative}
+.ms-drop{position:absolute;top:100%;left:0;right:0;z-index:15;background:#fff;border:1px solid var(--line);border-radius:9px;box-shadow:var(--shadow);max-height:240px;overflow:auto;margin-top:4px;display:none}
+.ms-drop.on{display:block}.ms-opt{padding:8px 11px;font-size:13px;cursor:pointer}.ms-opt:hover{background:var(--brand-soft)}
+.ms-empty{padding:9px 11px;color:var(--muted);font-size:12px}
+.img-prev{width:96px;height:72px;border-radius:9px;overflow:hidden;background:#f0f2f5;border:1px solid var(--line);display:grid;place-items:center;flex:none}
+.img-prev img{width:100%;height:100%;object-fit:cover}
+.img-empty{font-size:11px;color:var(--muted)}
+.img-row{display:flex;gap:12px;align-items:center}
+.img-acts{display:flex;gap:8px;flex-wrap:wrap}
+.photo-card{border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px;background:#fcfdfe;position:relative}
+.photo-tag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--brand);margin-bottom:8px}
+.photo-acts{display:flex;gap:6px;margin-top:10px}
 
-/* ---------- helpers ---------- */
-async function getProp(slug) {
-  const r = await pool.query("select * from properties where slug=$1", [slug]);
-  return r.rows[0];
+.photo-toolbar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.btn-ai-bulk{background:linear-gradient(135deg,#7c4dff,#b14dff);color:#fff;border:0}
+.btn-ai-bulk:disabled{opacity:.5;cursor:default}
+.photo-pick{position:absolute;top:10px;right:10px;display:flex;align-items:center;gap:5px;background:#fff;border:1px solid var(--line);border-radius:8px;padding:4px 8px;font-size:11px;font-weight:700;color:var(--brand);cursor:pointer;z-index:2}
+.photo-chk{width:16px;height:16px;accent-color:#7c4dff;cursor:pointer;margin:0}
+.cmp-overlay{position:fixed;inset:0;background:rgba(16,24,20,.65);display:none;align-items:center;justify-content:center;z-index:90;padding:16px}
+.cmp-overlay.on{display:flex}
+.cmp-modal{background:#fff;border-radius:16px;width:100%;max-width:820px;max-height:94vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 80px -20px rgba(0,0,0,.5)}
+.cmp-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--line-2)}
+.cmp-head b{font-size:15px;color:var(--ink)}
+.cmp-count{font-size:12.5px;color:var(--muted);font-weight:600}
+.cmp-stage{padding:16px;background:#0f1512;display:grid;place-items:center}
+.cmp-box{position:relative;width:100%;max-width:760px;line-height:0;user-select:none;touch-action:none;cursor:ew-resize;border-radius:8px;overflow:hidden}
+.cmp-box img{display:block;width:100%;height:auto;-webkit-user-drag:none}
+.cmp-before{position:absolute;inset:0;clip-path:inset(0 50% 0 0)}
+.cmp-handle{position:absolute;top:0;bottom:0;left:50%;width:2px;background:#fff;transform:translateX(-1px);box-shadow:0 0 0 1px rgba(0,0,0,.2)}
+.cmp-grip{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:34px;height:34px;border-radius:50%;background:#fff;color:#333;display:grid;place-items:center;font-size:15px;box-shadow:0 2px 10px rgba(0,0,0,.35)}
+.cmp-tag{position:absolute;top:10px;font-size:10.5px;font-weight:700;letter-spacing:.05em;color:#fff;background:rgba(0,0,0,.55);padding:3px 8px;border-radius:6px;line-height:1.2}
+.cmp-tagL{left:10px}.cmp-tagR{right:10px}
+.cmp-hint{text-align:center;font-size:12px;color:var(--muted);padding:8px}
+.cmp-foot{display:flex;align-items:center;gap:10px;padding:12px 18px;border-top:1px solid var(--line-2)}
+
+
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+@media(max-width:680px){.grid4{grid-template-columns:repeat(2,1fr)}}
+.room-block{border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px;background:#fafbfc}
+.room-head{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.room-head b{font-size:15px;color:var(--ink)}
+.room-tag{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--brand);background:var(--brand-soft);padding:3px 8px;border-radius:6px}
+.gal-hero-badge{position:absolute;bottom:7px;left:7px;background:var(--brand);color:#fff;font-size:9.5px;font-weight:700;letter-spacing:.05em;padding:3px 7px;border-radius:6px}
+.gal-sub{color:var(--muted);font-size:12.5px;margin:-4px 0 12px}
+.gal-block{border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px;background:#fff}
+.gal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.gal-head b{font-size:16px;color:var(--ink)}
+.gal-tag{display:inline-block;margin-left:8px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--brand);background:var(--brand-soft);padding:3px 8px;border-radius:6px;vertical-align:middle}
+.gal-count{font-size:13px;color:var(--muted)}
+.gal-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+.gal-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.gal-empty{grid-column:1/-1;text-align:center;color:var(--muted);font-size:13.5px;padding:28px;border:1px dashed var(--line);border-radius:12px}
+.gal-cell{position:relative;border-radius:11px;overflow:hidden;aspect-ratio:4/3;background:#f0f2f5;border:2px solid transparent}
+.gal-cell.on{border-color:#7c4dff;box-shadow:0 0 0 3px color-mix(in srgb,#7c4dff 18%,transparent)}
+.gal-cell img{width:100%;height:100%;object-fit:cover;display:block}
+.gal-pick{position:absolute;top:7px;left:7px;background:rgba(255,255,255,.92);border-radius:7px;padding:4px;display:flex;cursor:pointer}
+.gal-chk{width:17px;height:17px;accent-color:#7c4dff;cursor:pointer;margin:0}
+.gal-edit{position:absolute;top:7px;right:7px;background:rgba(255,255,255,.92);border:0;border-radius:7px;width:28px;height:28px;display:grid;place-items:center;cursor:pointer;color:var(--ink)}
+.gal-edit:hover{color:var(--brand)}
+.gal-cell img{cursor:grab}
+.gal-cell.dragging{opacity:.45}
+/* gallery 2-col layout + editor dock */
+.gal-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;align-items:start}
+.gal-dock{position:sticky;top:18px}
+.gal-block.drop-on{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+@media(max-width:1080px){.gal-layout{grid-template-columns:1fr}.gal-dock{position:static}}
+/* docked inline editor */
+.de{border:1px solid var(--line);border-radius:14px;background:#fff;overflow:hidden;display:flex;flex-direction:column}
+.de-h{padding:13px 16px;border-bottom:1px solid var(--line-2);display:flex;align-items:center;justify-content:space-between}
+.de-h b{font-size:14.5px}.de-h .de-hint{font-size:11px;color:var(--muted)}
+.de-stage{position:relative;background:#0f1512;aspect-ratio:16/9;min-height:240px;display:grid;place-items:center;background-image:linear-gradient(45deg,#171f1b 25%,transparent 25%),linear-gradient(-45deg,#171f1b 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#171f1b 75%),linear-gradient(-45deg,transparent 75%,#171f1b 75%);background-size:18px 18px;background-position:0 0,0 9px,9px -9px,-9px 0}
+.de-stage.has-img{aspect-ratio:auto;min-height:240px}
+.de-stage.over{outline:3px dashed var(--brand);outline-offset:-6px}
+.de-canvas{max-width:100%;max-height:72vh;display:block}
+.de-cmp{position:absolute;left:50%;transform:translateX(-50%);bottom:8px;z-index:3;border:1px solid rgba(255,255,255,.55);background:rgba(0,0,0,.5);color:#fff;border-radius:8px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer}
+.de-cmp:hover{background:rgba(0,0,0,.7)}
+.de-cmp.on{background:var(--brand);border-color:var(--brand)}
+.de-cmp[hidden]{display:none}
+.de-lbl{position:absolute;top:9px;z-index:3;font-size:10px;font-weight:700;letter-spacing:.05em;color:#fff;background:rgba(0,0,0,.55);padding:3px 7px;border-radius:6px;pointer-events:none}
+.de-lbl-b{left:9px}.de-lbl-a{right:9px}
+.de-lbl[hidden]{display:none}
+.de-empty{color:#9fb2a8;display:flex;flex-direction:column;align-items:center;gap:9px;font-size:12.5px;padding:30px 18px;text-align:center;cursor:pointer}
+.de-empty svg{width:34px;height:34px}
+.de-empty[hidden]{display:none}
+.de-body{padding:12px 14px;display:flex;flex-direction:column;gap:11px}
+.de-ai{width:100%;justify-content:center}
+.de-rowb{display:flex;gap:6px;flex-wrap:wrap}
+.de-mini{flex:1;min-width:0;border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 4px;font-size:12px;cursor:pointer;color:var(--ink)}
+.de-mini:hover{border-color:var(--brand);color:var(--brand)}
+.de-mini.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+.de-gl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:5px}
+.de-adj{display:flex;flex-direction:column;gap:2px}
+.de-al{display:flex;justify-content:space-between;font-size:12px;color:var(--ink)}
+.de-al .de-av{color:var(--muted)}
+.de-range{width:100%;accent-color:var(--brand)}
+.de-foot{padding:12px 14px;border-top:1px solid var(--line-2);background:#fafbfc;display:flex;flex-direction:column;gap:9px}
+.de-out{display:flex;align-items:center;gap:9px;border:1.5px dashed var(--brand);border-radius:10px;padding:10px;background:var(--brand-soft);cursor:grab}
+.de-out svg{width:18px;height:18px;color:var(--brand);flex:none}
+.de-out span{font-size:12px;color:var(--brand);font-weight:600;line-height:1.3}
+.de-out.disabled{opacity:.45;cursor:not-allowed;border-color:var(--line);background:#f4f6f8}
+.de-out.disabled svg,.de-out.disabled span{color:var(--muted)}
+.pe-overlay{position:fixed;inset:0;background:rgba(16,24,20,.6);display:none;align-items:center;justify-content:center;z-index:80;padding:16px}
+.pe-overlay.on{display:flex}
+.pe-modal{background:#fff;border-radius:16px;width:100%;max-width:920px;max-height:94vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 80px -20px rgba(0,0,0,.5)}
+.pe-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--line-2)}
+.pe-head b{font-size:15px;color:var(--ink)}
+.pe-x{background:none;border:0;font-size:24px;cursor:pointer;color:var(--muted);line-height:1}
+.pe-body{display:flex;gap:0;min-height:0;flex:1}
+.pe-stage{flex:1;background:#0f1512;display:grid;place-items:center;position:relative;min-height:340px;background-image:linear-gradient(45deg,#171f1b 25%,transparent 25%),linear-gradient(-45deg,#171f1b 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#171f1b 75%),linear-gradient(-45deg,transparent 75%,#171f1b 75%);background-size:18px 18px;background-position:0 0,0 9px,9px -9px,-9px 0}
+.pe-stage.over{outline:3px dashed var(--brand);outline-offset:-6px}
+.pe-canwrap{position:relative;line-height:0}
+.pe-canvas{max-width:100%;max-height:62vh;border-radius:6px;touch-action:none;cursor:crosshair;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+.pe-stage:not(.cropping) .pe-canvas{cursor:default}
+.pe-cropbox{position:absolute;border:1.5px solid #fff;box-shadow:0 0 0 9999px rgba(0,0,0,.45);pointer-events:none}
+.pe-empty{color:#9fb2a8;display:flex;flex-direction:column;align-items:center;gap:10px;cursor:pointer;font-size:13.5px;padding:30px}
+.pe-empty svg{width:40px;height:40px}
+.pe-empty[hidden],.pe-tctrl[hidden],.pe-mini[hidden]{display:none}
+.pe-side{width:280px;flex:none;padding:14px;overflow:auto;border-left:1px solid var(--line-2);background:#fafbfc;display:flex;flex-direction:column;gap:12px}
+.pe-group{border-bottom:1px solid var(--line-2);padding-bottom:12px}
+.pe-gl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:8px}
+.pe-rowb{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.pe-mini{flex:1;min-width:42px;border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 6px;font-size:13px;font-weight:600;cursor:pointer;color:var(--ink)}
+.pe-mini:hover{border-color:var(--brand);color:var(--brand)}
+.pe-mini.pe-apply{background:var(--brand);color:#fff;border-color:var(--brand)}
+.pe-adj{margin-bottom:9px}
+.pe-al{display:flex;justify-content:space-between;font-size:12px;color:var(--text);margin-bottom:3px}
+.pe-av{color:var(--ink);font-weight:600}
+.pe-range{width:100%;accent-color:var(--brand)}
+.pe-filters{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.pe-fbtn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--ink)}
+.pe-fbtn.on{background:var(--brand);color:#fff;border-color:var(--brand)}
+.pe-tin{flex:1;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px}
+.pe-tctrl{margin-top:8px}.pe-tcolor{width:40px;height:34px;border:1px solid var(--line);border-radius:8px;padding:2px;cursor:pointer}.pe-tsize{flex:1}
+.pe-btn{border:0;border-radius:9px;padding:10px 16px;font-size:14px;font-weight:600;cursor:pointer}
+.pe-up{background:var(--brand-soft);color:var(--brand);width:100%}
+.pe-ai{background:linear-gradient(135deg,#7c4dff,#b14dff);color:#fff;width:100%}
+.pe-ai:disabled{opacity:.7;cursor:default}
+.pe-pri{background:var(--brand);color:#fff}.pe-pri:disabled{opacity:.6;cursor:default}
+.pe-ghost{background:#fff;border:1px solid var(--line);color:var(--ink)}
+.pe-foot{display:flex;align-items:center;gap:10px;padding:12px 18px;border-top:1px solid var(--line-2)}
+@media(max-width:760px){.pe-body{flex-direction:column}.pe-side{width:100%;border-left:0;border-top:1px solid var(--line-2)}}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:12px 20px;border-radius:11px;font-size:13.5px;font-weight:500;opacity:0;transition:.3s;z-index:60;box-shadow:0 16px 40px -12px rgba(0,0,0,.4)}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.menu-btn{display:none;width:38px;height:38px;border:1px solid var(--line);border-radius:9px;background:#fff;place-items:center;cursor:pointer}
+@media(max-width:880px){
+  .app{grid-template-columns:1fr}.side{position:fixed;left:-260px;z-index:40;transition:.25s;width:248px}.side.open{left:0}
+  .cal-wrap{grid-template-columns:1fr}.grid2,.grid3,.room-row{grid-template-columns:1fr}.menu-btn{display:grid}
 }
-function inject(html, js) {
-  return html.replace("</head>", "<script>" + js + "</script></head>");
-}
-function renderSite(site, slug) {
-  const tpl = fs.readFileSync(path.join(PUBLIC, "stay-property-template.html"), "utf8");
-  const c = site._contact || {};
-  const theme = { brandName: site.name || "", brandSub: (site.location && site.location.area) || "" };
-  if (c.phone) theme.booking = { phone: c.phone, whatsapp: (c.phone || "").replace(/[^0-9]/g, ""), url: "" };
-  const url = siteUrl(slug);
-  const html = inject(tpl, "window.STAY_PROPERTY=" + JSON.stringify(site) + ";window.STAY_THEME=" + JSON.stringify(theme) + ";window.STAY_SLUG=" + JSON.stringify(slug||"") + ";window.STAY_URL=" + JSON.stringify(url) + ";");
-  // robots noindex (until validated) + canonical subdomain URL for SEO / sharing
-  let headExtra = "";
-  if (NOINDEX) headExtra += '<meta name="robots" content="noindex, nofollow">';
-  if (BASE_DOMAIN) headExtra += '<link rel="canonical" href="' + url + '"><meta property="og:url" content="' + url + '">';
-  // Google Analytics 4 — collects real traffic into your GA4 property when GA4_MEASUREMENT_ID is set.
-  // The slug is sent as a custom dimension so you can segment traffic per unit in GA4.
-  if (GA4_ID) {
-    headExtra += '<script async src="https://www.googletagmanager.com/gtag/js?id=' + GA4_ID + '"></script>'
-      + '<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag("js",new Date());'
-      + 'gtag("config",' + JSON.stringify(GA4_ID) + ',{property_slug:' + JSON.stringify(slug||"") + '});</script>';
+</style>
+<style>
+/* ===== unified hotelier console: light sidebar (ss1) + dashboard + account ===== */
+.side{background:#fff;border-right:1px solid var(--line);color:var(--text);gap:4px}
+.side .logo{color:var(--ink)}
+.side .logo small{color:var(--muted)}
+.nav-i{color:var(--text);font-weight:600}
+.nav-i svg{color:var(--muted);opacity:1}
+.nav-i:hover{background:#f6f7fb;color:var(--ink)}
+.nav-i.on{background:var(--brand-soft);color:var(--brand-d)}
+.nav-i.on svg{color:var(--brand)}
+.side .prop{background:#f6f7fb;border:1px solid var(--line);color:var(--muted)}
+.side .prop b{color:var(--ink)}
+.side .prop a{color:var(--brand)}
+/* property switcher */
+.propswitch{margin:0 0 10px}
+.propswitch select{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 10px;font:inherit;font-size:13.5px;color:var(--ink);background:#fff}
+.propswitch label{display:block;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 2px 5px}
+/* panou header */
+.panou-head{padding:2px 0 18px}
+.panou-head h2{font-size:24px;color:var(--ink);margin:0}
+.panou-head p{margin:6px 0 0;color:var(--muted);font-size:14px}
+/* dashboard */
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px}
+.kpi{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:18px}
+.kpi .ic{width:36px;height:36px;border-radius:10px;background:var(--brand-soft);display:grid;place-items:center;margin-bottom:13px}
+.kpi .ic svg{width:18px;height:18px;color:var(--brand)}
+.kpi b{display:block;font-size:30px;color:var(--ink);font-weight:800;line-height:1}
+.kpi span{font-size:12.5px;color:var(--muted)}
+.qa{display:flex;gap:12px;flex-wrap:wrap}
+.period{display:inline-flex;gap:4px;margin-top:14px;background:#eef1f4;border-radius:10px;padding:4px}
+.period button{border:0;background:none;font:inherit;font-size:13px;font-weight:600;color:var(--muted);padding:6px 13px;border-radius:7px;cursor:pointer}
+.period button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(16,24,40,.12)}
+.dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.dcard{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:18px 18px}
+.dcard h3{font-size:14px;font-weight:700;color:var(--ink);margin:0 0 3px}
+.dcard .sub{font-size:12px;color:var(--muted);margin:0 0 14px}
+.funnel{display:flex;flex-direction:column;gap:9px}
+.frow{display:grid;grid-template-columns:120px 1fr auto;gap:10px;align-items:center;font-size:13px}
+.frow .fl{color:var(--muted)}
+.fbar{height:9px;border-radius:6px;background:var(--brand-soft);overflow:hidden}
+.fbar span{display:block;height:100%;background:var(--brand);border-radius:6px}
+.frow .fv{font-weight:700;color:var(--ink);min-width:34px;text-align:right}
+.fconv{font-size:12px;color:var(--muted);margin-top:10px}
+.stays{display:flex;flex-direction:column;gap:0}
+.stay{display:flex;align-items:center;gap:11px;padding:10px 0;border-top:1px solid #f0f2f5}
+.stay:first-child{border-top:0}
+.stay .sd{width:46px;height:46px;border-radius:11px;background:var(--brand-soft);display:flex;flex-direction:column;align-items:center;justify-content:center;flex:none;line-height:1}
+.stay .sd b{font-size:16px;color:var(--brand-d)}
+.stay .sd i{font-size:10px;color:var(--brand);font-style:normal;text-transform:uppercase}
+.stay .si{min-width:0;flex:1}
+.stay .si b{display:block;font-size:13.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stay .si span{font-size:12px;color:var(--muted)}
+.stay .sg{font-size:12px;color:var(--muted);flex:none}
+.dtable{width:100%;border-collapse:collapse;font-size:13px}
+.dtable th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:600;padding:0 8px 9px}
+.dtable td{padding:9px 8px;border-top:1px solid #f0f2f5}
+.dtable td:first-child,.dtable th:first-child{padding-left:0}
+.dtable td b{color:var(--ink)}
+.occbar{display:inline-block;width:56px;height:7px;border-radius:5px;background:#eef1f4;vertical-align:middle;margin-right:7px;overflow:hidden}
+.occbar span{display:block;height:100%;background:var(--brand);border-radius:5px}
+.trend{display:flex;align-items:flex-end;gap:2px;height:90px;margin-top:6px}
+.trend .tb{flex:1;display:flex;flex-direction:column;justify-content:flex-end;gap:1px;min-width:0}
+.trend .tb .v{background:var(--brand);border-radius:2px 2px 0 0;min-height:1px}
+.trend .tb .r{background:#f0a23b;border-radius:2px 2px 0 0;min-height:0}
+.tlegend{display:flex;gap:16px;font-size:12px;color:var(--muted);margin-top:9px}
+.tlegend i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px;vertical-align:middle}
+.dempty{font-size:13px;color:var(--muted);padding:8px 0}
+.estnote{font-size:11.5px;color:var(--muted);margin-top:10px;line-height:1.5}
+.kpis{grid-template-columns:1fr 1fr}
+@media(max-width:760px){.dash-grid{grid-template-columns:1fr}}
+/* account modal */
+.amodal{position:fixed;inset:0;background:rgba(16,24,40,.5);display:none;align-items:center;justify-content:center;z-index:90;padding:20px}
+.amodal.on{display:flex}
+.amodal-card{background:#fff;border-radius:16px;width:100%;max-width:420px;box-shadow:var(--shadow);overflow:hidden}
+.amodal-hd{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--line-2)}
+.amodal-hd h3{font-size:16px;margin:0}
+.amodal-x{background:none;border:0;font-size:22px;line-height:1;color:var(--muted);cursor:pointer}
+.amodal-bd{padding:18px 20px}
+.amodal-bd label{display:block;font-size:13px;font-weight:600;color:var(--ink);margin:12px 0 5px}
+.amodal-bd label:first-child{margin-top:0}
+.amodal-bd input{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font:inherit;font-size:14px;color:var(--ink)}
+.amodal-note{font-size:12.5px;color:var(--muted);margin:0 0 4px}
+.amodal-err{color:#c0392b;font-size:13px;margin-top:10px;display:none}
+.amodal-row{display:flex;gap:10px;margin-top:16px}
+.amodal .btn{flex:0 0 auto}
+</style>
+<style>
+/* approvals tab */
+.appr-item{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-bottom:12px;box-shadow:var(--shadow)}
+.appr-item .ai{width:40px;height:40px;border-radius:10px;background:var(--brand-soft);display:grid;place-items:center;flex:none}
+.appr-item .ai svg{width:19px;height:19px;color:var(--brand)}
+.appr-item .at{flex:1;min-width:0}
+.appr-item .at b{display:block;color:var(--ink);font-size:14.5px}
+.appr-item .at span{font-size:12.5px;color:var(--muted)}
+.appr-item .actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.sbadge{font-size:11.5px;font-weight:700;padding:4px 11px;border-radius:999px;white-space:nowrap}
+.sbadge.pending{background:#fdf4e3;color:#8a6516}
+.sbadge.approved{background:var(--brand-soft);color:var(--brand-d)}
+.sbadge.rejected{background:#fbeaea;color:#a23b3b}
+.sbadge.soon{background:#eef1f4;color:var(--muted)}
+/* deals tab */
+.deal-card{display:flex;align-items:flex-start;gap:14px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:15px 17px;margin-bottom:12px;box-shadow:var(--shadow)}
+.deal-card .di{width:40px;height:40px;border-radius:10px;background:var(--brand-soft);display:grid;place-items:center;flex:none}
+.deal-card .di svg{width:19px;height:19px;color:var(--brand)}
+.deal-card .dt{flex:1;min-width:0}
+.deal-card .dt b{display:block;color:var(--ink);font-size:14.5px}
+.deal-card .dt .meta{font-size:12.5px;color:var(--muted);margin-top:2px}
+.deal-card .dt .sum{font-size:13px;color:var(--brand-d);font-weight:600;margin-top:6px}
+.deal-card.off{opacity:.5}
+.deal-acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tgl{position:relative;width:38px;height:22px;border-radius:999px;background:#cfd6df;cursor:pointer;transition:.15s;border:0;flex:none;padding:0}
+.tgl.on{background:var(--brand)}
+.tgl::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.15s}
+.tgl.on::after{left:18px}
+.lnk-btn{font-size:12.5px;font-weight:600;border:1px solid var(--line);background:#fff;color:var(--text);border-radius:8px;padding:5px 11px;cursor:pointer}
+.lnk-btn:hover{border-color:var(--brand);color:var(--brand-d)}
+.lnk-btn.del:hover{border-color:#e0b4b4;color:#a23b3b}
+.dfield{margin-top:13px}
+.dfield label{display:block;font-size:13px;font-weight:600;color:var(--ink);margin-bottom:5px}
+.dfield input,.dfield select{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 11px;font:inherit;font-size:14px;color:var(--ink)}
+.dfield.row2{display:flex;gap:10px}.dfield.row2>div{flex:1}
+.dcheck{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13.5px;color:var(--ink)}
+.dcheck input{width:auto;margin:0}
+.dgrid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:6px}
+.dtype{border:1px solid var(--line);border-radius:11px;padding:11px 12px;cursor:pointer;text-align:left;background:#fff;font:inherit}
+.dtype:hover{border-color:var(--brand);background:var(--brand-soft)}
+.dtype.sel{border-color:var(--brand);background:var(--brand-soft)}
+.dtype b{display:block;font-size:13px;color:var(--ink)}
+.dtype span{font-size:11.5px;color:var(--muted)}
+.amodal-card.wide{max-width:520px}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side" id="side">
+    <div class="logo"><span class="dot"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M3 10l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></span><span><b>LocalStay</b><small>Panou hotelier</small></span></div>
+    <div class="propswitch" id="propSwitch" style="display:none"><label>Proprietate</label><select id="propSelect"></select></div>
+    <button class="nav-i on" data-tab="panou"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg> Panou</button>
+    <button class="nav-i" data-tab="continut"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg> Conținut</button>
+    <button class="nav-i" data-tab="preturi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Prețuri</button>
+    <button class="nav-i" data-tab="calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> Calendar</button>
+    <button class="nav-i" data-tab="ical"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/></svg> Calendare iCal</button>
+    <button class="nav-i" data-tab="galerie"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg> Galerie</button>
+    <button class="nav-i" data-tab="cereri"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> Cereri</button>
+    <button class="nav-i" data-tab="oferte"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.6 13.4L13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.6z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg> Oferte</button>
+    <button class="nav-i" data-tab="aprobari"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="9"/></svg> Aprobări</button>
+    <div class="sp"></div>
+    <div class="prop"><b id="propName">Vila Maria Rustic Predeal</b>Predeal · jud. Brașov<a href="#" target="_blank" id="viewSite">Vizualizează site-ul <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 17L17 7M7 7h10v10"/></svg></a></div>
+  </aside>
+  <div class="main">
+    <div class="top">
+      <div style="display:flex;align-items:center;gap:14px"><button class="menu-btn" id="menuBtn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button><h1 id="pageTitle">Panou</h1></div>
+      <div class="right"><a href="/" class="tb-link" id="cBack"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg> Proprietăți</a><button class="tb-link" id="cAccount"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg> Setări cont</button><button class="tb-link" id="cLogout"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg> Deconectare</button><span class="save-state" id="saveState"><span class="dot"></span> Salvat</span></div>
+    </div>
+    <div class="content">
+      <section class="panel on" id="panel-panou">
+        <div class="panou-head"><h2>Panou</h2><p>Privire de ansamblu asupra acestei proprietăți.</p>
+          <div class="period" id="dashPeriod"><button type="button" data-days="7">7 zile</button><button type="button" data-days="30" class="on">30 zile</button><button type="button" data-days="90">90 zile</button></div>
+        </div>
+        <div class="kpis" id="dashKpis"></div>
+        <div id="dashHost"></div>
+      </section>
+      <section class="panel" id="panel-continut">
+        <p class="intro">Editează tot ce apare pe pagina proprietății. Modificările alimentează direct site-ul (subdomeniul). Secțiunile goale nu apar pe site.</p>
+        <div id="contentEditor"></div>
+        <div class="bar"><button class="btn btn-pri" id="saveContent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg> Salvează conținutul</button><button class="btn btn-out" id="exportJson"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg> Exportă JSON</button></div>
+      </section>
+
+      <section class="panel" id="panel-preturi">
+        <p class="intro">Tarifele pe noapte pentru fiecare unitate, plus perioade sezoniere care suprascriu tariful de bază.</p>
+        <div class="card"><div class="hd"><div><h2>Tarife de bază</h2><p>Pe noapte, zi obișnuită și weekend.</p></div></div><div class="bd" id="roomsBox"></div></div>
+        <div class="card"><div class="hd"><div><h2>Perioade sezoniere</h2><p>Suprascriu tariful între datele alese.</p></div><button class="btn btn-out sm" id="addPeriod"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg> Adaugă perioadă</button></div><div class="bd"><table class="tbl"><thead><tr><th>Denumire</th><th>Unitate</th><th>De la</th><th>Până la</th><th>Zi obișn.</th><th>Weekend</th><th></th></tr></thead><tbody id="periodsBox"></tbody></table><div id="noPeriods" style="text-align:center;padding:22px;color:var(--muted);font-size:13.5px">Nicio perioadă. Tariful de bază se aplică tot anul.</div></div></div>
+        <div class="bar"><button class="btn btn-pri" id="savePrices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 13l4 4L19 7"/></svg> Salvează prețurile</button></div>
+      </section>
+
+      <section class="panel" id="panel-calendar">
+        <p class="intro">Channel manager. Alege unitatea și modul (<b>Prețuri</b> sau <b>Blocare</b>). Poți edita <b>o zi</b> (click pe ea), un <b>interval scurt</b> (trage cu mouse-ul peste zile) sau în <b>masă</b> (interval + zilele săptămânii) din panoul de jos.</p>
+        <div class="units" id="unitChips"></div>
+        <div class="cal-modes" id="calModes">
+          <button class="cal-mode on" data-mode="price"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> Prețuri</button>
+          <button class="cal-mode" data-mode="block"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M4.9 4.9l14.2 14.2"/></svg> Blocare</button>
+        </div>
+        <div class="cal-wrap">
+          <div>
+            <div class="cal">
+              <div class="cal-head"><h3 id="calTitle">—</h3><div class="cal-nav"><button id="calPrev"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg></button><button id="calNext"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></button></div></div>
+              <div class="cal-grid" id="dow"></div><div class="cal-grid" id="calGrid" style="margin-top:4px"></div>
+            </div>
+            <div class="cal-selbar" id="calSelBar" hidden>
+              <span id="calSelInfo"></span>
+              <input class="inp" type="number" id="selPrice" min="0" placeholder="Preț" style="display:none;max-width:110px">
+              <div style="flex:1"></div>
+              <button class="btn btn-out" id="selApply">Aplică</button>
+              <button class="btn btn-ghost" id="selCancel">Anulează</button>
+            </div>
+            <div class="cal-bulk">
+              <div class="cal-bulk-h"><b id="bulkTitle">Editare în masă — prețuri</b></div>
+              <div class="cal-bulk-row">
+                <div class="field"><label>De la</label><input class="inp" type="date" id="bkFrom"></div>
+                <div class="field"><label>Până la</label><input class="inp" type="date" id="bkTo"></div>
+              </div>
+              <div class="field"><label>Zilele săptămânii</label><div class="cal-dows" id="bkDows"></div></div>
+              <div class="cal-bulk-act">
+                <div class="field price-only" id="bkPriceWrap" style="flex:1;min-width:120px"><label>Preț / noapte</label><input class="inp" type="number" id="bkPrice" min="0" placeholder="ex. 350"></div>
+                <button class="btn btn-out" id="bkApply">Aplică</button>
+                <button class="btn btn-ghost price-only" id="bkResetPrice">Revino la tarif normal</button>
+                <button class="btn btn-ghost block-only" id="bkUnblock" style="display:none">Deblochează</button>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="side-card"><h4>Legendă</h4><div class="legend" id="legend"></div></div>
+            <div class="side-card"><h4 id="statTitle">Luna curentă</h4>
+              <div class="stat"><span>Disponibile</span><b id="statFree">—</b></div>
+              <div class="stat"><span>Blocate (această unitate)</span><b id="statOwn">—</b></div>
+              <div class="stat"><span>Din iCal</span><b id="statIcal">—</b></div>
+              <div class="stat"><span>Indirect (vilă/cameră)</span><b id="statOverlap">—</b></div>
+              <div class="stat"><span>Grad de ocupare</span><b id="statOcc">—</b></div>
+            </div>
+            <button class="btn btn-out" id="clearManual" style="width:100%"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg> Deblochează toate (această unitate)</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-ical">
+        <p class="intro">Fiecare unitate are propriul link iCal — pentru întreaga vilă și pentru fiecare cameră. Importă calendarele externe și exportă-le pe ale tale către Booking, Airbnb sau Google Calendar.</p>
+        <div id="icalUnits"></div>
+      </section>
+      <section class="panel" id="panel-galerie">
+        <div class="gal-layout">
+          <div id="galerieBox"></div>
+          <aside class="gal-dock" id="galDock">
+            <div class="pz-tool">
+              <div class="pz-bill" id="pzBill" style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px">
+                <div style="flex:1;min-width:120px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--card)"><div style="font-size:11px;color:var(--muted)">Preț/poză</div><b id="pzPrice" style="font-size:18px;color:var(--ink)">—</b></div>
+                <div style="flex:1;min-width:120px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--card)"><div style="font-size:11px;color:var(--muted)">Sesiune</div><b id="pzSession" style="font-size:18px;color:var(--brand)">0 lei</b></div>
+                <div style="flex:1;min-width:120px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--card)"><div style="font-size:11px;color:var(--muted)">Total cheltuit</div><b id="pzSpent" style="font-size:18px;color:var(--ink)">— lei</b><span id="pzCount" style="font-size:11px;color:var(--muted);display:block">— poze</span></div>
+              </div>
+              <div class="drop" id="pzDrop" style="border:2px dashed var(--line-2,var(--line));border-radius:14px;padding:22px;text-align:center;cursor:pointer;color:var(--muted)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:28px;height:28px"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                <div style="margin-top:6px;font-weight:600;color:var(--ink)">Trage pozele aici</div><div style="font-size:12.5px">mai multe deodată · optimizare AI + upload</div>
+                <input type="file" id="pzFile" accept="image/*" multiple style="display:none">
+              </div>
+              <div class="pz-progress" id="pzProgWrap" style="display:none;margin-top:14px">
+                <div style="height:9px;background:var(--brand-soft);border-radius:6px;overflow:hidden"><div id="pzBar" style="height:100%;width:0;background:var(--brand);transition:width .25s"></div></div>
+                <div id="pzProgText" style="font-size:12.5px;color:var(--muted);margin-top:6px;font-weight:600"></div>
+              </div>
+              <div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;align-items:center">
+                <button class="btn primary" id="pzRun" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M5 3l14 9-14 9z"/></svg> Optimizează</button>
+                <button class="btn ghost" id="pzCopy" disabled>Copiază linkurile</button>
+                <button class="btn ghost" id="pzClear" disabled>Golește</button>
+                <label style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);margin-left:auto"><input type="checkbox" id="pzEnhance" checked> AI</label>
+              </div>
+              <p class="gal-sub" style="margin-top:10px">Click pe o poză optimizată → editor. Butonul <b>⇆</b> arată înainte/după. Trage rezultatul într-o galerie sau folosește linkul.</p>
+              <div id="pzGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-top:6px"></div>
+            </div>
+          </aside>
+        </div>
+      </section>
+      <section class="panel" id="panel-cereri">
+        <p class="intro">Cererile de rezervare trimise din formularul site-ului public. Datele clientului, perioada, oaspeții și camerele alese.</p>
+        <div style="display:flex;gap:10px;margin-bottom:14px"><button class="btn ghost" id="cereriReload">Reîmprospătează</button></div>
+        <div id="cereriBox"><p class="muted">Se încarcă…</p></div>
+      </section>
+
+      <section class="panel" id="panel-oferte">
+        <p class="intro">Creează oferte și beneficii pe care le afișezi pe site. Oaspeții le văd când rezervă, iar tu le onorezi la confirmarea cererii.</p>
+        <div style="display:flex;gap:10px;margin-bottom:16px"><button class="btn btn-pri" id="dealAdd">+ Ofertă nouă</button></div>
+        <div id="dealsBox"><p class="muted">Se încarcă…</p></div>
+      </section>
+
+      <section class="panel" id="panel-aprobari">
+        <p class="intro">Verifică și aprobă materialele unității înainte de publicare.</p>
+        <div id="apprBox"><p class="muted">Se încarcă…</p></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="feedOverlay"><div class="modal">
+  <div class="mh"><h3 id="feedModalTitle">Conectează un calendar</h3><button class="x" id="feedClose">&times;</button></div>
+  <div class="mb">
+    <div class="field"><label>Sursă</label><select class="sel" id="fSource"><option>Booking.com</option><option>Airbnb</option><option>Google Calendar</option><option>Altă platformă</option></select></div>
+    <div class="field"><label>Link iCal (.ics)</label><input class="inp" id="fUrl" placeholder="https://...ical/....ics"></div>
+    <div class="note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v5M12 16h.01"/></svg><span>Linkurile externe se sincronizează de pe server (CORS). Pentru test, lipește conținutul .ics mai jos.</span></div>
+    <div class="field"><label>Sau lipește conținutul .ics (test)</label><textarea class="inp" id="fPaste" style="min-height:110px;font-family:ui-monospace,monospace;font-size:12px" placeholder="BEGIN:VCALENDAR&#10;..."></textarea></div>
+  </div>
+  <div class="mf"><button class="btn btn-out" id="feedCancel">Anulează</button><button class="btn btn-pri" id="feedSave">Conectează</button></div>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   STAY transform — shared by importer, admin, and site.
+   Turns a master-schema JSON (general.* + rooms/reviews/photos)
+   into: (a) the admin state {property, pricing, units}
+        (b) the site PROPERTY the template renders.
+   Exposed as window.STAY.
+   ============================================================ */
+(function(){
+  const RO={foodAndDrinks:"Mâncare & băutură",generalFacilities:"Facilități generale",wellness:"Wellness",exterior:"Exterior",cleaningServices:"Curățenie",businessFacilities:"Business",bathroom:"Baie",kitchen:"Bucătărie",bedroom:"Dormitor",comfort:"Confort & accesibilitate",commonAreas:"Zone comune",livingArea:"Zonă de zi",mediaTechnology:"Media & tehnologie",roomFacilities:"Facilitățile camerei",shops:"Magazine",skiing:"Schi",entertainmentAndFamilyServices:"Divertisment & familie",sportsAndRecreation:"Sport & recreere",receptionServices:"Recepție",servicesExtra:"Servicii extra",safety:"Siguranță",generalServices:"Servicii generale"};
+  const FAC_CATS=["foodAndDrinks","generalFacilities","wellness","exterior","cleaningServices","businessFacilities","bathroom","kitchen","bedroom","comfort","commonAreas","livingArea","mediaTechnology","roomFacilities","shops"];
+  const RULE_CATS={foodAndDrinks:1,generalFacilities:1,wellness:1,exterior:1,cleaningServices:1,businessFacilities:1};
+
+  function slugify(s){return (s||"unitate").toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,60)||"unitate";}
+  function nm(x){return typeof x==="string"?x:(x&&x.name)||"";}
+  function take(a,n){return (a||[]).slice(0,n);}
+  function icon(name){const s=(name||"").toLowerCase();
+    const M=[["piscin","pool"],["saun","sauna"],["masaj","massage"],["spa","massage"],["semineu","fire"],["șemineu","fire"],["foc","fire"],["gratar","fire"],["grătar","fire"],["teras","terrace"],["balcon","terrace"],["gradin","garden"],["grădin","garden"],["curte","garden"],["parc","parking"],["wifi","wifi"],["internet","wifi"],["restaurant","restaurant"],["bar","restaurant"],["cafea","coffee"],["ceai","coffee"],["tv","lounge"],["lounge","lounge"],["joaca","playground"],["joacă","playground"],["copii","playground"],["jocuri","games"],["joc","games"],["schi","slope"],["partie","slope"],["pârtie","slope"],["spalat vase","dishwasher"],["spălat vase","dishwasher"],["spalat rufe","washer"],["spălat rufe","washer"],["sport","ball"],["tenis","ball"],["badminton","ball"],["pat","bed"],["dormitor","bed"],["check-in","checkin"],["fumat","smoke"],["animal","pet"],["liniste","quiet"],["liniște","quiet"],["petrecer","quiet"]];
+    for(const[k,v]of M)if(s.includes(k))return v; return "view";}
+
+  /* ---- normalize master -> admin 'property' shape ---- */
+  function normFacilities(af){const o={};FAC_CATS.forEach(c=>{let v=af[c];if(!Array.isArray(v))v=[];o[c]=v;});return o;}
+  function normPolicies(p,cio){
+    const ci=(cio.checkIn)||{},co=(cio.checkOut)||{};
+    const eb=(p.extraBedAgeRates||[]).map(r=>({ageMin:(r.age&&r.age.min)??r.ageMin??0,ageMax:(r.age&&r.age.max)??r.ageMax??0,bedType:r.bedType||"",amount:(r.price&&r.price.amount)??r.amount??0,currency:(r.price&&r.price.currency)||r.currency||"RON",per:(r.price&&r.price.per)||r.per||""}));
+    return {checkIn:{startHour:ci.startHour||"",endHour:ci.endHour||""},checkOut:{startHour:co.startHour||"",endHour:co.endHour||""},
+      childrenPolicies:p.childrenPolicies||"",petsPolicy:p.petsPolicy||"",smokingPolicy:p.smokingUnitPolicy||p.smokingPolicy||"",parkingPolicy:p.parkingPolicy||"",internetPolicy:p.internetPolicy||"",mealPolicy:p.mealPolicy||"",noisePolicy:p.noisePolicy||"",partiesPolicy:p.partiesPolicy||"",groupsPolicy:p.groupsPolicy||"",ageRestriction:p.ageRestriction||"",damageDeposit:p.damageDeposit||"",extraBedAgeRates:eb};
   }
-  return headExtra ? html.replace("</head>", headExtra + "</head>") : html;
-}
-
-/* ---------- iCal export (effective blocks incl. entire/room overlap) ---------- */
-function pad(n){ return String(n).padStart(2,"0"); }
-function effectiveBlocked(adminState, unitId) {
-  const units = adminState.units || [];
-  const rooms = (adminState.pricing && adminState.pricing.rooms) || [];
-  const isEntire = id => { const r = rooms.find(x => x.id === id); return r ? !!r.isEntire : false; };
-  const feedDates = u => { const s = new Set(); (u.feeds||[]).forEach(f => (f.blocks||[]).forEach(d => s.add(d))); return s; };
-  const u = units.find(x => x.id === unitId) || { blocks: [], feeds: [] };
-  const set = new Set(u.blocks || []); feedDates(u).forEach(d => set.add(d));
-  const others = isEntire(unitId) ? units.filter(x => x.id !== unitId) : units.filter(x => isEntire(x.id));
-  others.forEach(o => { (o.blocks||[]).forEach(d => set.add(d)); feedDates(o).forEach(d => set.add(d)); });
-  return [...set].sort();
-}
-function buildICS(dates, label) {
-  const out = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//LocalStay//RO","CALSCALE:GREGORIAN","METHOD:PUBLISH"];
-  const now = new Date();
-  const stamp = now.getUTCFullYear()+pad(now.getUTCMonth()+1)+pad(now.getUTCDate())+"T"+pad(now.getUTCHours())+pad(now.getUTCMinutes())+"00Z";
-  const d = [...dates].sort(); let i = 0;
-  const fromIso = s => { const [y,m,dd] = s.split("-").map(Number); return new Date(Date.UTC(y, m-1, dd)); };
-  const iso = x => x.getUTCFullYear()+"-"+pad(x.getUTCMonth()+1)+"-"+pad(x.getUTCDate());
-  while (i < d.length) {
-    let start = d[i], j = i;
-    while (j+1 < d.length) { const nx = fromIso(d[j]); nx.setUTCDate(nx.getUTCDate()+1); if (iso(nx) === d[j+1]) j++; else break; }
-    const end = fromIso(d[j]); end.setUTCDate(end.getUTCDate()+1);
-    out.push("BEGIN:VEVENT","UID:"+start+"-"+Math.random().toString(36).slice(2)+"@localstay",
-      "DTSTAMP:"+stamp,"DTSTART;VALUE=DATE:"+start.replace(/-/g,""),"DTEND;VALUE=DATE:"+iso(end).replace(/-/g,""),
-      "SUMMARY:"+(label||"Indisponibil"),"END:VEVENT");
-    i = j+1;
+  function dist(a){return (a||[]).map(x=>({name:x.name||x.label||"",distance:x.distance??0})).filter(x=>x.name);}
+  function normLocation(L){
+    let slopes=[];(L.zones||[]).forEach(z=>{(z.slopes||[]).forEach(s=>slopes.push({name:s.name||s.label||nm(s),distance:s.distance??0}));});
+    return {mainAttractions:dist(L.mainAttractions),nearbyAttractions:dist(L.nearbyAttractions),slopes:slopes.filter(s=>s.name),publicTransport:dist(L.publicTransport),nearbyAirports:dist(L.nearbyAirports)};
   }
-  out.push("END:VCALENDAR");
-  return out.join("\r\n");
-}
+  function photoUrl(p){const v=p&&(p.photoName||p.url||p.src||"");return (typeof v==="string"&&(/^https?:/.test(v)||/^data:image\//.test(v)))?v:"";}
 
-/* ---------- iCal fetch + parse (server side — no CORS here) ---------- */
-function fromIso(s){ const [y,m,d]=s.split("-").map(Number); return new Date(Date.UTC(y,m-1,d)); }
-function iso(x){ return x.getUTCFullYear()+"-"+pad(x.getUTCMonth()+1)+"-"+pad(x.getUTCDate()); }
-function icd(v){ const m=v.match(/(\d{4})(\d{2})(\d{2})/); return m?(m[1]+"-"+m[2]+"-"+m[3]):null; }
-function parseICS(t){
-  const lines=String(t).replace(/\r\n[ \t]/g,"").replace(/\n[ \t]/g,"").split(/\r?\n/);
-  const ev=[]; let c=null;
-  for(const l of lines){
-    if(l==="BEGIN:VEVENT")c={};
-    else if(l==="END:VEVENT"){ if(c&&c.start)ev.push(c); c=null; }
-    else if(c){ const i=l.indexOf(":"); if(i<0)continue;
-      const n=l.slice(0,i).split(";")[0].toUpperCase(), v=l.slice(i+1).trim();
-      if(n==="DTSTART")c.start=icd(v); else if(n==="DTEND")c.end=icd(v); }
-  }
-  return ev;
-}
-function eventsToDates(ev){
-  const s=new Set();
-  for(const e of ev){ if(!e.start)continue;
-    const a=fromIso(e.start), b=e.end?fromIso(e.end):new Date(a.getTime()+864e5);
-    for(let d=new Date(a); d<b; d.setUTCDate(d.getUTCDate()+1)) s.add(iso(d)); }
-  return [...s];
-}
-async function fetchText(url){
-  const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),15000);
-  try{
-    const r=await fetch(url,{signal:ctrl.signal,headers:{"User-Agent":"LocalStay/1.0 (+ical-sync)"}});
-    if(!r.ok) throw new Error("HTTP "+r.status);
-    return await r.text();
-  } finally { clearTimeout(t); }
-}
-// Fetch every URL feed for a property, fill its blocked dates, save.
-async function syncProperty(slug){
-  const p=await getProp(slug); if(!p) return {error:"not found"};
-  const admin=p.admin_state; let changed=false, total=0;
-  for(const u of (admin.units||[])){
-    for(const f of (u.feeds||[])){
-      if(!f.url) continue;
-      try{
-        const dates=eventsToDates(parseICS(await fetchText(f.url)));
-        f.blocks=dates; f.count=dates.length; f.lastSync=Date.now(); f.lastStatus="ok";
-        total+=dates.length; changed=true;
-      }catch(e){ f.lastStatus="error: "+e.message; f.lastSync=Date.now(); changed=true; }
-    }
-  }
-  if(changed) await pool.query("update properties set admin_state=$2, updated_at=now() where slug=$1",[slug,admin]);
-  return { ok:true, total, admin_state:admin };
-}
-async function syncAll(){
-  try{
-    const r=await pool.query("select slug from properties");
-    for(const row of r.rows){ await syncProperty(row.slug).catch(e=>console.error("sync",row.slug,e.message)); }
-    console.log("iCal sync run: "+r.rows.length+" properties");
-  }catch(e){ console.error("syncAll failed:",e.message); }
-}
-
-/* ---------- subdomain routing: {slug}.BASE_DOMAIN -> public site ---------- */
-app.use(async (req, res, next) => {
-  try {
-    const host = (req.headers.host || "").split(":")[0].toLowerCase();
-    if (BASE_DOMAIN && host.endsWith("." + BASE_DOMAIN)) {
-      const slug = host.slice(0, host.length - BASE_DOMAIN.length - 1);
-      if (slug && slug !== "www" && slug !== "app") {
-        const p = await getProp(slug);
-        if (!p) return res.status(404).send("Proprietate negăsită");
-        return res.send(renderSite(p.site, p.slug));
-      }
-    }
-  } catch (e) { return next(e); }
-  next();
-});
-
-/* ---------- API ---------- */
-
-/* public client config (base domain for building unit URLs) */
-app.get("/api/config", (req, res) => res.json({ baseDomain: BASE_DOMAIN || "" }));
-
-/* ====================== AUTH ====================== */
-function normEmail(e) { return String(e || "").trim().toLowerCase(); }
-
-// Log in. Sets the auth cookie. Returns the user's role.
-app.post("/api/auth/login", async (req, res) => {
-  try {
-    const email = normEmail(req.body && req.body.email);
-    const password = (req.body && req.body.password) || "";
-    const remember = !!(req.body && req.body.remember);
-    if (!email || !password) return res.status(400).json({ error: "Email și parolă obligatorii" });
-    const r = await pool.query("select * from users where email=$1", [email]);
-    const u = r.rows[0];
-    if (!u || !(await AUTH.verifyPassword(password, u.password_hash)))
-      return res.status(401).json({ error: "Email sau parolă greșite" });
-    AUTH.setAuthCookie(req, res, u, remember);
-    res.json({ ok: true, role: u.role, email: u.email, name: u.name || "" });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-/* ---------- password recovery ---------- */
-// Pages
-app.get("/forgot", (req, res) => res.sendFile(path.join(PUBLIC, "forgot.html")));
-app.get("/reset/:token", (req, res) => res.sendFile(path.join(PUBLIC, "reset.html")));
-
-// Host asks for a reset: we store a token. Delivery is admin-relayed (no SMTP yet),
-// so we always answer generically and never reveal whether the email exists.
-app.post("/api/auth/forgot", async (req, res) => {
-  try {
-    const email = normEmail(req.body && req.body.email);
-    if (email) {
-      const r = await pool.query("select id from users where email=$1", [email]);
-      if (r.rows.length) {
-        const token = crypto.randomBytes(24).toString("hex");
-        const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-        await pool.query("update users set reset_token=$1, reset_expires=$2 where id=$3", [token, expires, r.rows[0].id]);
-      }
-    }
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Validate a reset token (so the reset page can show/hide the form).
-app.get("/api/auth/reset/:token", async (req, res) => {
-  try {
-    const r = await pool.query("select email from users where reset_token=$1 and reset_expires > now()", [req.params.token]);
-    if (!r.rows.length) return res.status(404).json({ error: "Link invalid sau expirat." });
-    res.json({ ok: true, email: r.rows[0].email });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Set a new password using a valid token.
-app.post("/api/auth/reset", async (req, res) => {
-  try {
-    const token = String((req.body && req.body.token) || "");
-    const password = String((req.body && req.body.password) || "");
-    if (password.length < 8) return res.status(400).json({ error: "Parola trebuie să aibă minim 8 caractere." });
-    const r = await pool.query("select id from users where reset_token=$1 and reset_expires > now()", [token]);
-    if (!r.rows.length) return res.status(404).json({ error: "Link invalid sau expirat." });
-    const hash = await AUTH.hashPassword(password);
-    await pool.query("update users set password_hash=$1, reset_token=null, reset_expires=null where id=$2", [hash, r.rows[0].id]);
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Admin: generate a reset link for a host (to relay by WhatsApp/email).
-app.post("/api/admin/hosts/:id/reset-link", AUTH.requireAdmin, async (req, res) => {
-  try {
-    const token = crypto.randomBytes(24).toString("hex");
-    const expires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h for admin-generated links
-    const r = await pool.query("update users set reset_token=$1, reset_expires=$2 where id=$3 and role='host' returning email", [token, expires, req.params.id]);
-    if (!r.rows.length) return res.status(404).json({ error: "Hotelier inexistent." });
-    res.json({ ok: true, token, email: r.rows[0].email, path: "/reset/" + token });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post("/api/auth/logout", (req, res) => {
-  AUTH.clearAuthCookie(req, res);
-  res.json({ ok: true });
-});
-
-// Who am I? Returns role + (for hosts) the slugs they own.
-app.get("/api/auth/me", async (req, res) => {
-  if (!req.user) return res.status(401).json({ error: "Neautentificat" });
-  try {
-    const u = await pool.query("select id,email,role,name from users where id=$1", [req.user.id]);
-    if (!u.rows.length) return res.status(401).json({ error: "Neautentificat" });
-    const me = u.rows[0];
-    let slugs = [];
-    if (me.role !== "admin") {
-      const ps = await pool.query("select slug from properties where owner_id=$1 order by updated_at desc", [me.id]);
-      slugs = ps.rows.map((r) => r.slug);
-    }
-    res.json({ id: me.id, email: me.email, role: me.role, name: me.name || "", slugs, imp: !!req.user.imp });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Change own email and/or password (any logged-in user). Requires current password.
-app.post("/api/auth/change-credentials", AUTH.requireAuth, async (req, res) => {
-  try {
-    const b = req.body || {};
-    const cur = b.currentPassword || "";
-    const r = await pool.query("select * from users where id=$1", [req.user.id]);
-    const u = r.rows[0];
-    if (!u || !(await AUTH.verifyPassword(cur, u.password_hash)))
-      return res.status(401).json({ error: "Parola actuală este greșită" });
-    const newEmail = b.newEmail != null ? normEmail(b.newEmail) : null;
-    const newPassword = b.newPassword || null;
-    if (newEmail && newEmail !== u.email) {
-      const dup = await pool.query("select 1 from users where email=$1 and id<>$2", [newEmail, u.id]);
-      if (dup.rows.length) return res.status(409).json({ error: "Acest email este deja folosit" });
-    }
-    if (newPassword && String(newPassword).length < 8)
-      return res.status(400).json({ error: "Parola nouă trebuie să aibă minim 8 caractere" });
-    const email = newEmail || u.email;
-    const hash = newPassword ? await AUTH.hashPassword(newPassword) : u.password_hash;
-    await pool.query("update users set email=$1, password_hash=$2, updated_at=now() where id=$3", [email, hash, u.id]);
-    AUTH.setAuthCookie(req, res, { id: u.id, role: u.role, email }); // refresh token with new email
-    res.json({ ok: true, email });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-/* ============== ADMIN: manage hotelier accounts ============== */
-
-// Admin enters a hotelier's console without their password (impersonation).
-app.post("/api/admin/impersonate/:hostId", AUTH.requireAdmin, async (req, res) => {
-  try {
-    const r = await pool.query("select id, email, role from users where id=$1 and role='host'", [req.params.hostId]);
-    if (!r.rows.length) return res.status(404).json({ error: "Hotelier inexistent." });
-    AUTH.setAuthCookie(req, res, r.rows[0], false, req.user.id); // imp = admin uid; session cookie
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Return to the admin account after impersonating a hotelier.
-app.post("/api/auth/stop-impersonation", AUTH.requireAuth, async (req, res) => {
-  try {
-    if (!req.user.imp) return res.status(400).json({ error: "Nu ești în modul impersonare." });
-    const r = await pool.query("select id, email, role from users where id=$1 and role='admin'", [req.user.imp]);
-    if (!r.rows.length) return res.status(404).json({ error: "Cont admin inexistent." });
-    AUTH.setAuthCookie(req, res, r.rows[0], false); // back to admin (no imp)
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// List host accounts + the slugs each owns.
-app.get("/api/admin/hosts", AUTH.requireAdmin, async (req, res) => {
-  try {
-    const r = await pool.query(
-      `select u.id, u.email, u.name, u.created_at,
-              (u.reset_token is not null and u.reset_expires > now()) as reset_pending,
-              coalesce(u.photo_price,3) as photo_price,
-              coalesce(u.photo_spent,0) as photo_spent,
-              coalesce(u.photos_optimized,0) as photos_optimized,
-              coalesce(json_agg(p.slug) filter (where p.slug is not null), '[]') as slugs,
-              coalesce(json_agg(json_build_object(
-                'slug', p.slug,
-                'name', p.admin_state->'property'->'basicInfo'->>'name',
-                'status', coalesce(p.approval->>'status','pending'),
-                'token', p.approval->>'token'
-              ) order by p.created_at) filter (where p.slug is not null), '[]') as units
-       from users u
-       left join properties p on p.owner_id = u.id
-       where u.role='host'
-       group by u.id order by u.created_at desc`
-    );
-    res.json(r.rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Create a hotelier account and (optionally) assign properties to it.
-app.post("/api/admin/hosts", AUTH.requireAdmin, async (req, res) => {
-  try {
-    const b = req.body || {};
-    const email = normEmail(b.email);
-    const password = b.password || "";
-    const name = (b.name || "").trim() || null;
-    const slugs = Array.isArray(b.slugs) ? b.slugs : [];
-    if (!email || !password) return res.status(400).json({ error: "Email și parolă obligatorii" });
-    if (String(password).length < 8) return res.status(400).json({ error: "Parola trebuie să aibă minim 8 caractere" });
-    const dup = await pool.query("select 1 from users where email=$1", [email]);
-    if (dup.rows.length) return res.status(409).json({ error: "Acest email este deja folosit" });
-    const hash = await AUTH.hashPassword(password);
-    const ins = await pool.query(
-      "insert into users(email,password_hash,role,name) values($1,$2,'host',$3) returning id,email,name",
-      [email, hash, name]
-    );
-    const host = ins.rows[0];
-    if (slugs.length)
-      await pool.query("update properties set owner_id=$1 where slug = any($2::text[])", [host.id, slugs]);
-    res.json({ ok: true, host: { ...host, slugs } });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Update a host's email and/or name (admin manages credentials from Hotelieri).
-app.post("/api/admin/hosts/:id", AUTH.requireAdmin, async (req, res) => {
-  try {
-    const id = req.params.id;
-    const b = req.body || {};
-    const email = normEmail(b.email);
-    const name = (b.name || "").trim() || null;
-    if (!email) return res.status(400).json({ error: "Email obligatoriu" });
-    const dup = await pool.query("select 1 from users where email=$1 and id<>$2", [email, id]);
-    if (dup.rows.length) return res.status(409).json({ error: "Acest email este deja folosit" });
-    const r = await pool.query(
-      "update users set email=$1, name=$2 where id=$3 and role='host' returning id, email, name",
-      [email, name, id]
-    );
-    if (!r.rows.length) return res.status(404).json({ error: "Hotelier negăsit" });
-    res.json(r.rows[0]);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Replace the set of properties a host owns.
-app.post("/api/admin/hosts/:id/properties", AUTH.requireAdmin, async (req, res) => {
-  try {
-    const id = req.params.id;
-    const slugs = Array.isArray(req.body && req.body.slugs) ? req.body.slugs : [];
-    await pool.query("update properties set owner_id=null where owner_id=$1", [id]); // clear current
-    if (slugs.length)
-      await pool.query("update properties set owner_id=$1 where slug = any($2::text[])", [id, slugs]);
-    res.json({ ok: true, slugs });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Admin resets a host's password.
-app.post("/api/admin/hosts/:id/password", AUTH.requireAdmin, async (req, res) => {
-  try {
-    const pw = (req.body && req.body.password) || "";
-    if (String(pw).length < 8) return res.status(400).json({ error: "Parola trebuie să aibă minim 8 caractere" });
-    const hash = await AUTH.hashPassword(pw);
-    const r = await pool.query("update users set password_hash=$1, updated_at=now() where id=$2 and role='host' returning id", [hash, req.params.id]);
-    if (!r.rowCount) return res.status(404).json({ error: "Cont negăsit" });
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Set a hotelier's price per AI-optimized photo (in lei). Optionally reset their spend counter.
-app.post("/api/admin/hosts/:id/photo-price", AUTH.requireAdmin, async (req, res) => {
-  try {
-    const price = Number(req.body && req.body.price);
-    if (!isFinite(price) || price < 0 || price > 10000) return res.status(400).json({ error: "Preț invalid" });
-    const resetSpend = !!(req.body && req.body.resetSpend);
-    const r = await pool.query(
-      resetSpend
-        ? "update users set photo_price=$1, photo_spent=0, photos_optimized=0, updated_at=now() where id=$2 and role='host' returning coalesce(photo_price,3) as price, coalesce(photo_spent,0) as spent, coalesce(photos_optimized,0) as count"
-        : "update users set photo_price=$1, updated_at=now() where id=$2 and role='host' returning coalesce(photo_price,3) as price, coalesce(photo_spent,0) as spent, coalesce(photos_optimized,0) as count",
-      [price, req.params.id]
-    );
-    if (!r.rowCount) return res.status(404).json({ error: "Cont negăsit" });
-    res.json({ ok: true, price: Number(r.rows[0].price), spent: Number(r.rows[0].spent), count: Number(r.rows[0].count) });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Delete a host account (their properties become unassigned).
-app.delete("/api/admin/hosts/:id", AUTH.requireAdmin, async (req, res) => {
-  try {
-    await pool.query("delete from users where id=$1 and role='host'", [req.params.id]);
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-/* ====================== END AUTH ====================== */
-
-app.post("/api/ai-enhance", AUTH.requireAuth, async (req, res) => {
-  try {
-    let base64, mime;
-    if (req.body.url) {
-      const r = await fetch(req.body.url);
-      if (!r.ok) throw new Error("fetch image " + r.status);
-      mime = r.headers.get("content-type") || "image/jpeg";
-      base64 = Buffer.from(await r.arrayBuffer()).toString("base64");
-    } else {
-      const m = String(req.body.dataUrl || "").match(/^data:(image\/[\w+.-]+);base64,(.+)$/);
-      if (!m) return res.status(400).json({ error: "bad image" });
-      mime = m[1]; base64 = m[2];
-    }
-    const out = await enhanceImage(base64, mime);
-    if (!out) return res.status(502).json({ error: "AI enhance failed" });
-    res.json({ dataUrl: "data:" + out.mime + ";base64," + out.image });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post("/api/upload", AUTH.requireAuth, async (req, res) => {
-  try {
-    if (!r2ready()) return res.status(503).json({ error: "R2 not configured" });
-    const m = String(req.body.dataUrl || "").match(/^data:(image\/[\w+.-]+);base64,(.+)$/);
-    if (!m) return res.status(400).json({ error: "bad image" });
-    const input = Buffer.from(m[2], "base64");
-
-    // optimize: auto-rotate (EXIF), resize<=1600, auto-contrast, sharpen, WebP + a thumbnail
-    const main = await sharp(input).rotate()
-      .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
-      .normalize().sharpen().webp({ quality: 82 }).toBuffer();
-    const thumb = await sharp(input).rotate()
-      .resize({ width: 480, height: 480, fit: "inside", withoutEnlargement: true })
-      .webp({ quality: 75 }).toBuffer();
-
-    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-    const url = await r2put("photos/" + id + ".webp", main, "image/webp");
-    let thumbUrl = "";
-    try { thumbUrl = await r2put("photos/" + id + "_t.webp", thumb, "image/webp"); } catch (e) {}
-
-    let alt = "", description = "";
-    try {
-      const ai = await Promise.race([
-        describeImage(main.toString("base64"), "image/webp"),
-        new Promise((_, rej) => setTimeout(() => rej(new Error("describe timeout")), 6000)),
-      ]);
-      alt = ai.alt; description = ai.description;
-    } catch (e) {}
-
-    res.json({ url, thumb: thumbUrl, alt, description });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// AI optimize (for bulk photo tool): AI-enhance (best-effort) → optimize → upload → describe, in one call.
-app.post("/api/ai-optimize", AUTH.requireAuth, async (req, res) => {
-  try {
-    if (!r2ready()) return res.status(503).json({ error: "R2 not configured" });
-    let mime, b64;
-    if (req.body && req.body.url) {
-      const fr = await fetch(req.body.url);
-      if (!fr.ok) return res.status(400).json({ error: "fetch image " + fr.status });
-      mime = fr.headers.get("content-type") || "image/jpeg";
-      b64 = Buffer.from(await fr.arrayBuffer()).toString("base64");
-    } else {
-      const m = String((req.body && req.body.dataUrl) || "").match(/^data:(image\/[\w+.-]+);base64,(.+)$/);
-      if (!m) return res.status(400).json({ error: "bad image" });
-      mime = m[1]; b64 = m[2];
-    }
-    let enhanced = false, aiError = null;
-    // 1) AI enhance — best-effort; if it fails we still optimize+upload the original
-    if (req.body.enhance !== false) {
-      try {
-        const out = await enhanceImage(b64, mime);
-        if (out && out.image) { b64 = out.image; mime = out.mime || mime; enhanced = true; }
-        else aiError = "AI nu a returnat o imagine";
-      } catch (e) { aiError = e.message; console.error("ai-optimize enhance failed:", e.message); } // e.g. OpenAI 429 (credit epuizat)
-    }
-    const input = Buffer.from(b64, "base64");
-    const main = await sharp(input).rotate()
-      .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
-      .normalize().sharpen().webp({ quality: 82 }).toBuffer();
-    const thumb = await sharp(input).rotate()
-      .resize({ width: 480, height: 480, fit: "inside", withoutEnlargement: true })
-      .webp({ quality: 75 }).toBuffer();
-    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-    const url = await r2put("photos/" + id + ".webp", main, "image/webp");
-    let thumbUrl = "";
-    try { thumbUrl = await r2put("photos/" + id + "_t.webp", thumb, "image/webp"); } catch (e) {}
-    let alt = "", description = "";
-    try {
-      const ai = await Promise.race([
-        describeImage(main.toString("base64"), "image/webp"),
-        new Promise((_, rej) => setTimeout(() => rej(new Error("describe timeout")), 6000)),
-      ]);
-      alt = ai.alt; description = ai.description;
-    } catch (e) {}
-
-    // Billing: hotelieri are charged their per-account price per optimized photo.
-    let cost = 0, spent = null, count = null;
-    if (req.user.role === "host") {
-      try {
-        const pr = await pool.query(
-          "update users set photos_optimized = coalesce(photos_optimized,0)+1, photo_spent = coalesce(photo_spent,0)+coalesce(photo_price,3) where id=$1 returning coalesce(photo_price,3) as price, photo_spent, photos_optimized",
-          [req.user.id]
-        );
-        if (pr.rows.length) { cost = Number(pr.rows[0].price); spent = Number(pr.rows[0].photo_spent); count = Number(pr.rows[0].photos_optimized); }
-      } catch (e) { /* billing is best-effort; never fail the optimize */ }
-    }
-    res.json({ url, thumb: thumbUrl, alt, description, enhanced, aiError, cost, spent, count });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Current hotelier's photo billing (price per photo + cumulative spend).
-app.get("/api/host/photo-billing", AUTH.requireAuth, async (req, res) => {
-  try {
-    const r = await pool.query("select coalesce(photo_price,3) as price, coalesce(photo_spent,0) as spent, coalesce(photos_optimized,0) as count from users where id=$1", [req.user.id]);
-    const row = r.rows[0] || { price: 3, spent: 0, count: 0 };
-    res.json({ price: Number(row.price), spent: Number(row.spent), count: Number(row.count), isHost: req.user.role === "host" });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-function mergeAdminState(oldS, newS) {
-  if (!oldS) return newS;
-  const oldUnits = oldS.units || [];
-  (newS.units || []).forEach(u => {
-    const o = oldUnits.find(x => x.id === u.id);
-    if (o) { u.feeds = o.feeds || u.feeds || []; u.blocks = o.blocks || u.blocks || []; }
-  });
-  if (oldS.galleries && Object.keys(oldS.galleries).length) newS.galleries = oldS.galleries;
-  const np = (newS.property && newS.property._photos) || [];
-  const op = (oldS.property && oldS.property._photos) || [];
-  if (!np.length && op.length && newS.property) newS.property._photos = op;
-  // preserve host price edits (base rates, currency, min nights, seasonal periods, per-day prices)
-  const oldRooms = (oldS.pricing && oldS.pricing.rooms) || [];
-  ((newS.pricing && newS.pricing.rooms) || []).forEach(r => {
-    const o = oldRooms.find(x => x.id === r.id);
-    if (o) {
-      if (o.weekday != null) r.weekday = o.weekday;
-      if (o.weekend != null) r.weekend = o.weekend;
-      if (o.currency) r.currency = o.currency;
-      if (o.minNights != null) r.minNights = o.minNights;
-    }
-  });
-  if (oldS.pricing) {
-    newS.pricing = newS.pricing || {};
-    if (oldS.pricing.periods && oldS.pricing.periods.length) newS.pricing.periods = oldS.pricing.periods;
-    if (oldS.pricing.dayPrices && Object.keys(oldS.pricing.dayPrices).length) newS.pricing.dayPrices = oldS.pricing.dayPrices;
-  }
-  return newS;
-}
-
-/* ============== UNIT APPROVAL (hotelier reviews the generated site) ============== */
-
-function approvalLinks(slug, token) {
-  return { site: siteUrl(slug), console: "/admin?slug=" + encodeURIComponent(slug), approve: "/aproba/" + token };
-}
-
-// Public LocalStay approval page (the link sent to the hotelier by email / WhatsApp).
-app.get("/aproba/:token", (req, res) => res.sendFile(path.join(PUBLIC, "approve.html")));
-
-// Info for the approval page (token-gated, no login required).
-app.get("/api/approval/:token", async (req, res) => {
-  try {
-    const r = await pool.query(
-      "select slug, admin_state->'property'->'basicInfo'->>'name' as name, approval from properties where approval->>'token' = $1",
-      [req.params.token]
-    );
-    if (!r.rows.length) return res.status(404).json({ error: "Link invalid sau expirat." });
-    const row = r.rows[0];
-    res.json({
-      slug: row.slug, name: row.name || row.slug,
-      status: (row.approval && row.approval.status) || "pending",
-      note: (row.approval && row.approval.note) || "",
-      links: approvalLinks(row.slug, req.params.token)
-    });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-function parseDecision(b) {
-  if (b && b.decision === "approved") return "approved";
-  if (b && b.decision === "rejected") return "rejected";
-  return null;
-}
-
-// Record a decision via the token (from the email / WhatsApp link, no login).
-app.post("/api/approval/:token", async (req, res) => {
-  try {
-    const decision = parseDecision(req.body);
-    if (!decision) return res.status(400).json({ error: "Decizie invalidă." });
-    const patch = { status: decision, note: String((req.body && req.body.note) || "").slice(0, 500), decidedAt: new Date().toISOString() };
-    const r = await pool.query(
-      "update properties set approval = coalesce(approval,'{}'::jsonb) || $2::jsonb where approval->>'token' = $1 returning slug",
-      [req.params.token, JSON.stringify(patch)]
-    );
-    if (!r.rows.length) return res.status(404).json({ error: "Link invalid." });
-    res.json({ ok: true, status: decision });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// Record a decision from inside the hotelier's own console (session-authenticated).
-app.post("/api/host/approval", AUTH.requireAuth, async (req, res) => {
-  try {
-    const slug = String((req.body && req.body.slug) || "");
-    const decision = parseDecision(req.body);
-    if (!slug || !decision) return res.status(400).json({ error: "Date lipsă." });
-    const patch = { status: decision, note: String((req.body && req.body.note) || "").slice(0, 500), decidedAt: new Date().toISOString() };
-    const isAdmin = req.user.role === "admin";
-    const where = isAdmin ? "slug=$1" : "slug=$1 and owner_id=$3";
-    const params = isAdmin ? [slug, JSON.stringify(patch)] : [slug, JSON.stringify(patch), req.user.id];
-    const r = await pool.query(
-      "update properties set approval = coalesce(approval,'{}'::jsonb) || $2::jsonb where " + where + " returning slug",
-      params
-    );
-    if (!r.rows.length) return res.status(404).json({ error: "Unitate inexistentă sau fără acces." });
-    res.json({ ok: true, status: decision });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-/* ============== OFFERS / DEALS (hotelier-created, shown on the public site) ============== */
-
-const DEAL_TYPES = ["interval_discount", "last_minute", "late_checkout", "early_checkin", "free_snack", "stay_pay", "long_stay", "early_bird"];
-
-function sanitizeDeals(arr) {
-  if (!Array.isArray(arr)) return [];
-  return arr.slice(0, 40).map(d => {
-    d = d || {};
-    return {
-      id: String(d.id || crypto.randomBytes(6).toString("hex")).slice(0, 40),
-      type: DEAL_TYPES.includes(d.type) ? d.type : "interval_discount",
-      title: String(d.title || "").slice(0, 120),
-      active: d.active !== false,
-      percent: Math.max(0, Math.min(90, Math.round(+d.percent || 0))),
-      start: String(d.start || "").slice(0, 10),
-      end: String(d.end || "").slice(0, 10),
-      days: Math.max(0, Math.min(60, Math.round(+d.days || 0))),
-      recurring: !!d.recurring,
-      time: String(d.time || "").slice(0, 5),
-      nights: Math.max(0, Math.min(30, Math.round(+d.nights || 0))),
-      freeNights: Math.max(0, Math.min(10, Math.round(+d.freeNights || 0))),
-      weekdaysOnly: !!d.weekdaysOnly,
-      note: String(d.note || "").slice(0, 300)
+  function deriveAdminState(m){
+    const g=m.general||m, bi=g.basicInfo||{};
+    const rooms=[],units=[],mr=m.rooms||[];
+    if(mr.length){
+      mr.forEach((r,i)=>{const id=slugify(r.roomName||("camera-"+(i+1)));const per=(r.periods&&r.periods[0])||{};
+        rooms.push({id,name:r.roomName||("Cameră "+(i+1)),sub:"",weekday:+per.adult_week_price||496,weekend:+per.adult_weekend_price||+per.adult_week_price||496,currency:per.currency||"RON",minNights:+per.min_nights||1,isEntire:!!bi.entireUnitRental&&i===0});
+        units.push({id,feeds:[],blocks:[]});});
+    }else{const id=slugify(bi.name||"unitate");rooms.push({id,name:bi.name||"Unitate",sub:bi.unitType||"",weekday:496,weekend:496,currency:"RON",minNights:1,isEntire:!!bi.entireUnitRental});units.push({id,feeds:[],blocks:[]});}
+    const property={
+      basicInfo:{name:bi.name||"",unitType:bi.unitType||"",starRating:bi.starRating??null,entireUnitRental:!!bi.entireUnitRental,unitCapacity:bi.unitCapacity??null,roomsNumber:bi.roomsNumber??null,unitBathroomsNumber:bi.unitBathroomsNumber??null,unitSurface:bi.unitSurface||"",address:bi.address||"",county:bi.county||"",city:bi.city||"",locality:bi.locality||"",latitude:bi.latitude??null,longitude:bi.longitude??null},
+      host:g.host||{hostName:"",hostImage:"",hostUnitDescription:"",spokenLanguages:[]},
+      description:g.description||m.description||"",
+      benefits:m.benefits||g.benefits||[],
+      mostAppreciatedFacilities:g.mostAppreciatedFacilities||[],
+      allFacilities:normFacilities(g.allFacilities||{}),
+      activities:{skiing:(g.activities&&g.activities.skiing)||[],entertainmentAndFamilyServices:(g.activities&&g.activities.entertainmentAndFamilyServices)||[],sportsAndRecreation:(g.activities&&g.activities.sportsAndRecreation)||[]},
+      services:{receptionServices:(g.services&&g.services.receptionServices)||[],servicesExtra:(g.services&&g.services.servicesExtra)||[],safety:(g.services&&g.services.safety)||[],generalServices:(g.services&&g.services.generalServices)||[]},
+      policies:normPolicies(g.policies||{},g.checkInOut||{}),
+      payment:{paymentMethods:(g.payment&&g.payment.paymentMethods)||[]},
+      location:normLocation(g.location||{}),
+      questionsAndAnswers:g.questionsAndAnswers||m.questionsAndAnswers||[],
+      contact:m.contact||{name:bi.name||"",phone:"",email:"",website:""},
+      _photos:(m.photos&&m.photos.generalPhotos)||[],
+      _reviews:m.reviews||[], _reviewSummary:m.reviewSummary||{}
     };
+    return {property,pricing:{rooms,periods:[]},units};
+  }
+
+  /* ---- admin property -> site PROPERTY (what the template renders) ---- */
+  function masterToSite(P,pricing){
+    const bi=P.basicInfo||{}, loc=P.location||{};
+    const city=bi.city||bi.locality||"", county=bi.county?("jud. "+bi.county):"";
+    const minPrice=Math.min.apply(null,((pricing&&pricing.rooms)||[{weekday:0}]).map(r=>r.weekday||0).filter(x=>x>0).concat([Infinity]));
+    const photos=(P._photos||[]).map(photoUrl).filter(Boolean);
+    const desc=P.description||(P.host&&P.host.hostUnitDescription)||"";
+    const firstSentence=(desc.split(/(?<=[.!?])\s/)[0]||desc).slice(0,120);
+
+    // overview features
+    const features=[];
+    if(bi.unitCapacity)features.push({icon:"guests",label:"Până la "+bi.unitCapacity+" oaspeți"});
+    if(bi.entireUnitRental)features.push({icon:"key",label:"Închiriere integrală"});
+    if(bi.roomsNumber)features.push({icon:"bed",label:bi.roomsNumber+" dormitoare"+(bi.unitBathroomsNumber?" · "+bi.unitBathroomsNumber+" băi":"")});
+    take(P.mostAppreciatedFacilities,2).forEach(f=>features.push({icon:icon(nm(f)),label:nm(f)}));
+
+    // flags
+    const allNames=[].concat(...FAC_CATS.map(c=>(P.allFacilities[c]||[]).map(nm)),(P.activities.sportsAndRecreation||[]).map(nm),(P.activities.skiing||[]).map(nm)).join(" ").toLowerCase();
+    const flags={pool:/piscin/.test(allNames),spa:/saun|spa|wellness|masaj/.test(allNames),ski:(P.location.slopes||[]).length>0||/schi|pârtie|partie/.test(allNames),forest:/pădure|padure|forest/.test((P.benefits||[]).join(" ").toLowerCase())};
+
+    // spaces (curated feature-row groups)
+    const grp=(title,arr)=>{const items=take(arr,6).map(x=>({icon:icon(nm(x)),title:nm(x),sub:""})).filter(i=>i.title);return items.length?{title,items}:null;};
+    const spaces=[
+      grp("Relaxare și exterior",[].concat(P.allFacilities.wellness||[],P.allFacilities.exterior||[])),
+      grp("Confort și bucătărie",[].concat(P.allFacilities.kitchen||[],P.allFacilities.comfort||[])),
+      grp("Socializare și distracție",[].concat(P.allFacilities.commonAreas||[],P.allFacilities.livingArea||[],P.activities.entertainmentAndFamilyServices||[])),
+      grp("Media & tehnologie",P.allFacilities.mediaTechnology||[])
+    ].filter(Boolean);
+
+    // amenities grid (full)
+    const amenities=[];
+    if(P.mostAppreciatedFacilities&&P.mostAppreciatedFacilities.length)
+      amenities.push({icon:"view",title:"Cele mai apreciate",items:P.mostAppreciatedFacilities.map(f=>({name:nm(f),featured:!!f.premiumFacility,extra:false,offsite:false}))});
+    FAC_CATS.forEach(c=>{const list=P.allFacilities[c]||[];if(!list.length)return;
+      amenities.push({icon:icon(RO[c])==="view"?"view":icon(RO[c]),title:RO[c],items:list.map(x=>({name:nm(x),featured:false,extra:!!(x&&x.priceRule),offsite:!!(x&&x.locationRule)}))});});
+    ["skiing","entertainmentAndFamilyServices","sportsAndRecreation"].forEach(c=>{const list=P.activities[c]||[];if(!list.length)return;amenities.push({icon:c==="skiing"?"slope":"ball",title:RO[c],items:list.map(x=>({name:nm(x),featured:false,extra:!!(x&&x.priceRule),offsite:!!(x&&x.locationRule)}))});});
+    ["receptionServices","safety","generalServices","servicesExtra"].forEach(c=>{const list=P.services[c]||[];if(!list.length)return;amenities.push({icon:"key",title:RO[c],items:list.map(x=>({name:nm(x),featured:false,extra:!!(x&&x.priceRule),offsite:!!(x&&x.locationRule)}))});});
+
+    // rules from policies
+    const po=P.policies||{}, rules=[];
+    if(po.checkIn&&po.checkIn.startHour)rules.push({icon:"checkin",label:"Check-in"+(po.checkIn.endHour?" între "+po.checkIn.startHour+" și "+po.checkIn.endHour:" de la "+po.checkIn.startHour)});
+    if(po.checkOut&&po.checkOut.startHour)rules.push({icon:"checkout",label:"Check-out"+(po.checkOut.endHour?" până la "+po.checkOut.endHour:" la "+po.checkOut.startHour)});
+    if(bi.unitCapacity)rules.push({icon:"guests",label:"Număr maxim de persoane: "+bi.unitCapacity});
+    if(po.smokingPolicy)rules.push({icon:"smoke",label:po.smokingPolicy});
+    if(po.petsPolicy)rules.push({icon:"pet",label:po.petsPolicy});
+    if(po.noisePolicy||po.partiesPolicy)rules.push({icon:"quiet",label:po.partiesPolicy||po.noisePolicy});
+
+    // about
+    const about=[];
+    if(bi.unitType)about.push({label:"Tip proprietate",value:bi.unitType+(bi.entireUnitRental?" · închiriere integrală":"")});
+    if(bi.unitCapacity)about.push({label:"Capacitate",value:"Până la "+bi.unitCapacity+" oaspeți"});
+    if(bi.roomsNumber)about.push({label:"Dormitoare",value:bi.roomsNumber});
+    if(bi.unitBathroomsNumber)about.push({label:"Băi",value:bi.unitBathroomsNumber});
+    if(bi.unitSurface)about.push({label:"Suprafață",value:bi.unitSurface});
+    if(flags.pool||flags.spa)about.push({label:"Wellness",value:"Piscină interioară, spa și saună"});
+    if(city)about.push({label:"Localizare",value:[bi.locality,city].filter(Boolean).join(", ")});
+    if(po.parkingPolicy)about.push({label:"Parcare",value:po.parkingPolicy});
+
+    // reviews
+    const rs=P._reviewSummary||{}, ritems=(P._reviews||[]).map(r=>({name:(r.clientInfo&&(r.clientInfo.name||r.clientInfo.country))?("Oaspete · "+(r.clientInfo.country||r.clientInfo.name)):"Oaspete",meta:r.title||"",rating:Math.round(r.reviewRating||5),text:r.body||""})).filter(r=>r.text);
+    const reviews=ritems.length?{average:rs.generalRating?+rs.generalRating:null,count:rs.reviewCount||ritems.length,items:ritems}:null;
+
+    // faq (wrap flat Q&A into one category)
+    const qa=(P.questionsAndAnswers||[]).map(x=>({q:x.question||"",a:x.answer||""})).filter(x=>x.q);
+    const faq=qa.length?[{category:"Întrebări frecvente",items:qa}]:[];
+
+    // galleries from photos
+    const galleries=photos.length>=2?[{heading:"Galerie foto",slides:photos.map((u,i)=>({img:u,cap:""}))}]:[];
+
+    return {
+      name:bi.name||"",
+      tagline:(firstSentence&&firstSentence.length<=70)?firstSentence:((bi.unitType||"Cazare")+(flags.pool?" cu piscină și spa":(flags.ski?" la munte":""))+(city?" în "+city:"")),
+      intro:desc.slice(0,240),
+      location:{area:city,county,note:bi.locality||"",address:bi.address||"",lat:bi.latitude,lng:bi.longitude},
+      priceFrom:(isFinite(minPrice)&&minPrice>0)?{amount:minPrice,currency:(pricing.rooms[0]&&pricing.rooms[0].currency)||"RON",unit:"noapte"}:null,
+      photos:{hero:photos[0]||"",strip:take(photos,5)},
+      overview:{image:photos[1]||photos[0]||"",heading:((bi.unitType||"Cazare")+(flags.pool?" cu piscină și spa":"")+(city?" în "+city:"")),description:desc,features},
+      flags, galleries, spaces, amenities, rules,
+      reviews:reviews||{items:[]}, faq, about,
+      pricing:{ periods:((pricing&&pricing.periods)||[]).map(p=>({roomId:p.roomId||"all",start:p.start||"",end:p.end||"",weekday:+p.weekday||0,weekend:+p.weekend||+p.weekday||0,label:p.label||""})), dayPrices:(pricing&&pricing.dayPrices)||{} },
+      _contact:P.contact||{}
+    };
+  }
+
+  window.STAY={slugify,deriveAdminState,masterToSite};
+})();
+
+</script>
+<script>window.CATALOG={"general.allFacilities.foodAndDrinks": ["Cafenea la proprietate", "Aparat pentru prepararea de ceai", "Cafea", "Mic dejun în cameră", "Restaurant", "Minibar", "Bar", "Vin", "Șampanie", "Fructe", "Livrări de alimente", "Bufet potrivit copiilor", "Meniu masă pentru copii", "Meniuri cu diete speciale", "Snack bar", "Room service", "Automat", "Prânz la pachet"], "general.allFacilities.bathroom": ["Hârtie igienică", "Prosoape", "Lenjerie de pat disponibilă contra unei taxe suplimentare", "Toaletă suplimentară", "Baie sau duş", "Încălțăminte de interior", "Baie privată", "Toaletă", "Produse de igienă oferite gratuit", "Uscător de păr", "Duş", "Cad sau plec?", "Articole gratuite pentru igienă personală", "Robe de baie", "Aparat de uscat părul", "Duș", "Bideu", "Cadă spa", "Cadă", "Baie suplimentară", "Toaletă comună", "Baie comună", "Papuci de interior.", "Baie comun", "Toaletă comun", "Saună", "Saun?"], "general.allFacilities.kitchen": ["Bucătărie comună", "Masă", "Aparat de preparat cafea", "Aragaz electric", "Cuptor", "Aparat pentru uscat rufe", "Instrumente de gătit", "Cană fierbător", "Bucătărie", "Aparat de spălat rufe.", "Aparat pentru spălat vase", "Frigider", "Chicinetă", "Articole pentru curățenie", "Microunde.", "Scaun pentru copii, ridicat", "Toaster"], "general.allFacilities.bedroom": ["Set de așternuturi pentru pat", "Dulap pentru haine sau șifonier.", "Dressing", "Paturi foarte lungi", "Ceas deșteptător"], "general.allFacilities.generalFacilities": ["Aer condiţionat", "Fumatul interzis în toate spaţiile publice şi private", "Pardoseală de lemn sau parchet", "Intrare privată", "Încălzire", "Camere de familie", "Camere pentru nefumători", "Hipoalergică", "Zonă pentru fumători", "Plasă de ţânţari", "Pardoseală de gresie", "Marmură", "Izolare fonică", "Camere izolate fonic", "Facilităţi de călcat", "Fier de călcat", "Ventilator", "Minimarket la proprietate", "Detector de monoxid de carbon", "Lounge", "Cameră cu TV comună", "Serviciu de trezire", "Mochetă", "Room service", "Exclusiv pentru adulţi", "Serviciu de transfer", "Transfer de la și", "Sau la aeroport", "Ceas deşteptător", "Cameră cu facilităţi antialergice", "Prânz la pachet", "Facilităţi pentru persoane cu mobilitate redusă", "Livrări de alimente", "Cameră", "Presă pentru călcat pantaloni", "Automat", "Lift", "Acces la Executive Lounge", "Castroane pentru animale de companie", "Închirieri auto", "Coș pentru animale de companie", "Capelă", "Altar", "Seif pentru laptop", "Bărbier", "Salon de frumuseţe", "Pături electrice", "Aer condiționat", "Fumatul interzis în toate spațiile publice Și private", "Pardoseal? de lemn sau parchet", "Izolare fonic?"], "general.allFacilities.cleaningServices": ["Menaj zilnic", "Serviciu de călcătorie", "Spălătorie", "Curăţătorie chimică", "Presă pentru călcat pantaloni"], "general.allFacilities.businessFacilities": ["Fax", "Copiator", "Business centre", "Săli de conferinţă şi petreceri"], "general.allFacilities.wellness": ["Umbrele de plajă", "Șezlonguri sau paturi de plajă", "Baie în aer liber", "Cadă cu hidromasaj", "Jacuzzi", "Saună", "Sală de fitness", "Lounge Spa", "Zonă de relaxare", "Facilități spa", "Fitness", "Baie publică", "Pachete Spa", "Wellness", "Spa și centru de wellness", "Pedichiură", "Manichiură", "Servicii de înfrumusețare", "Piscină pentru copii", "Vestiare fitness", "Spa", "Antrenor personal", "Sesiuni de fitness", "Sesiuni de yoga", "Masaj pentru tot corpul", "Masaj mâini", "Masaj cap", "Masaj de cuplu", "Masaj picioare", "Masaj ceafă", "Masaj spate", "Cameră de aburi", "Onsen", "Baie termală", "Baie turcească", "Baie de aburi", "Masaj", "Solar", "Coafat", "Vopsire păr", "Tuns", "Machiaj profesional", "Scaun de masaj", "Tobogan cu apă", "Baie picioare", "Tratamente faciale", "Împachetare corporală", "Scrub corporal", "Tratamente corporale", "Tratamente capilare", "Epilare cu ceară", "Terapie cu lumină"], "general.allFacilities.comfort": ["Etajele superioare nu sunt accesibile pentru persoanele cu mobilitate redusă", "Clădirea este complet la parter", "Adaptat pentru persoane cu deficiențe de auz", "Accesibilitate completă pentru scaunul cu rotile", "Unitatea se află integral la parter", "Acces cu scaunul cu rotile în întreaga unitate", "Acces la etajele superioare prin lift", "Întreaga unitate este accesibilă pentru scaune cu rotile", "Etajele superioare pot fi accesate cu ajutorul liftului", "Etajele superioare sunt accesibile doar prin scări", "Unitatea este amplasată complet la parter", "Toaletă cu înălțime ridicată", "Acces pentru scaun cu rotile", "Întreaga unitate este accesibilă persoanelor în scaun cu rotile", "Etajele superioare sunt accesibile doar pe scări", "Unitatea este complet la parter", "Adaptat pentru persoanele cu deficiențe de auz", "Toate zonele accesibile cu scaunul cu rotile", "Lift care asigură accesul la etajele superioare", "Acces pentru persoanele cu deficiențe de auz", "Unitate complet accesibilă pentru scaune cu rotile", "Acces cu liftul la etajele superioare", "Unitatea întreagă este accesibilă pentru scaune cu rotile", "Lift pentru accesul la etajele superioare.", "Acces la etajele superioare doar prin scări", "Unitatea este complet accesibilă pentru utilizatorii de scaune cu rotile", "Etajele superioare pot fi accesate doar prin scări", "Accesibil pentru persoanele cu dificultăți de auz", "Accesibilitate completă pentru scaune cu rotile în întreaga unitate", "Unitate amplasată exclusiv la parter", "Accesibil pentru scaun cu rotile", "Întreaga unitate adaptată pentru utilizarea scaunului cu rotile", "Etajele superioare accesibile prin lift", "Chiuvetă de baie montată la o înălțime redusă", "Toaletă cu șezut ridicat", "Acces pentru scaunul cu rotile", "Acces la etajele superioare doar pe scări", "Unitate complet la parter", "Potrivit pentru utilizatori de scaune cu rotile", "Toaletă ridicată", "Unitate amplasată integral la parter", "Unitatea este complet accesibilă pentru utilizatorii de scaune cu rotile.", "Lift disponibil pentru accesul la etajele superioare", "Diminuează barierele pentru persoanele cu deficiențe de auz", "Accesibilitate completă pentru scaunul cu rotile în întreaga unitate", "Unitate amplasată integral la nivelul parterului", "Unitate amplasată complet la parter", "Toaletă echipată cu bare de susținere", "Chiuvetă de baie la înălțime redusă", "Toaletă cu bare de sprijin", "Accesibilitate pentru scaun cu rotile", "Accesibilitate pentru persoanele cu deficiențe de auz", "Unitatea este complet accesibilă pentru scaune cu rotile.", "Unitate amplasată în întregime la parter", "Facilități pentru persoane cu deficiențe de auz", "Acces ușor pentru persoanele cu deficiențe de auz", "Servicii adaptate pentru cei cu deficiențe auditive", "Accesibilitate îmbunătățită pentru persoanele cu probleme de auz", "Accesibilitate pentru persoanele cu deficiențe auditive", "Toaletă echipată cu bare de sprijin", "Accesibil pentru utilizatorii de scaune cu rotile", "Acces la etajele superioare cu ajutorul liftului", "Acces pentru scaune cu rotile", "Etajele superioare pot fi accesate doar pe scări", "Cordon de urgență în baie", "Toaletă înălțată", "Adaptat pentru persoane cu deficiențe auditive", "Etajele superioare accesibile exclusiv pe scări", "Etajele superioare accesibile cu liftul", "Lift accesibil pentru etajele superioare", "Unitate situată integral la parter", "Accesibilitate pentru scaune cu rotile", "Etajele superioare accesibile doar pe scări", "Unitatea este situată integral la parter", "Accesibilitate pentru scaunul cu rotile", "Chiuvetă de baie montată mai jos", "Accesibil pentru scaunul cu rotile", "Unitate amplasată în totalitate la parter", "Potrivit pentru persoanele cu deficiențe de auz", "Lift pentru acces la etajele superioare", "Buton de urgență în baie", "Întreaga clădire este accesibilă pentru scaune cu rotile", "Etajele superioare sunt accesibile cu liftul", "Unitatea complet accesibilă pentru scaune cu rotile", "Acces pentru persoane cu deficiențe de auz", "Unitatea complet accesibilă pentru scaunul cu rotile", "Etajele superioare accesibile cu ajutorul liftului", "Întreaga unitate este accesibilă cu scaunul cu rotile", "Sistem de orientare auditivă", "Cablu de urgență în baie", "Chiuvetă de baie montată jos", "Toaletă dotată cu bare de susținere", "Toaletă dotată cu bare de sprijin", "Accesibil pentru scaune cu rotile", "Unitatea întreagă este accesibilă pentru scaunele cu rotile.", "Potrivit pentru persoane cu deficiențe de auz", "Adaptat pentru utilizarea scaunului cu rotile", "Etajele superioare se pot accesa cu liftul", "Întreaga unitate accesibilă pentru scaune cu rotile", "Inscripții în Braille pentru asistență vizuală", "Unitatea este complet accesibilă pentru scaunul cu rotile", "Unitatea este amplasată în totalitate la parter", "Unitate complet accesibilă pentru scaun cu rotile", "Etajele superioare accesibile numai pe scări", "Toaletă cu bare de susținere", "Semne tactile pentru asistență vizuală", "Sistem de scriere Braille pentru asistență vizuală", "Adaptat pentru persoanele cu deficiențe auditive", "Etajele superioare pot fi accesate doar prin intermediul scărilor", "Chiuvetă de baie la nivel redus", "Accesibil pentru persoanele cu deficiențe de auz", "Întreaga unitate accesibilă cu scaunul cu rotile", "Unitate situată integral la parter Reformulare: Facilități pentru persoanele cu deficiențe de auz", "Toate facilitățile sunt la parter", "Indicații audio", "Semne tactile pentru orientare vizuală", "Informații în Braille", "Unitatea este situată integral la parter.", "Chiuvetă de baie situată mai jos", "Toaletă prevăzută cu mânere de sprijin", "Întreaga clădire este accesibilă pentru scaunul cu rotile", "Accesibilitate pentru scaunele cu rotile", "Unitatea complet accesibilă pentru scaunele cu rotile", "Sistem de urgență în baie", "Chiuvetă de baie coborâtă", "Întreaga unitate adaptată pentru scaun cu rotile", "Semne tactile pentru orientare", "Semne în alfabetul Braille", "Toaletă cu șezut înalt", "Etaje superioare accesibile exclusiv pe scări", "Toaletă dotată cu mânere de sprijin", "Etajele superioare accesibile numai prin intermediul scărilor", "Coardă de urgență în baie", "Sistem de alarmă de urgență în baie", "Dispozitiv de apel de urgență în baie", "Unitatea întreagă este accesibilă pentru scaun cu rotile", "Etajele superioare sunt accesibile prin lift", "Acces la etajele superioare cu liftul", "Sisteme de ghidare pentru nevăzători: Braille", "Toaletă prevăzută cu bare de sprijin", "Accesibilitate completă pentru scaune cu rotile", "Etajele superioare accesibile exclusiv prin scări", "Unitate complet accesibilă pentru scaunul cu rotile", "Etaje superioare accesibile cu ajutorul liftului", "Accesibilitate totală pentru scaune cu rotile", "Adaptări pentru persoanele cu deficiențe de auz", "Toaletă la înălțime confortabilă", "Etaje superioare accesibile exclusiv prin scări", "Etajele superioare accesibile numai prin scări", "Unitatea este complet situată la parter", "Indicatoare tactile pentru asistență vizuală", "Toată clădirea este accesibilă cu scaunul cu rotile", "Etajele superioare se accesează doar pe scări", "Accesibil pentru utilizatorii de scaun cu rotile", "Vas de toaletă ridicat", "Chiuvetă de baie montată la înălțime joasă", "Întreaga unitate este accesibilă pentru scaun cu rotile", "Etaje superioare accesibile prin lift", "Sistem de ghidare sonoră", "Dispozitiv de urgență în baie", "Întreaga unitate accesibilă pentru scaunul cu rotile", "Unitatea întreagă este accesibilă cu scaunul cu rotile", "Chiuvetă joasă în baie", "Întreaga unitate adaptată pentru scaune cu rotile", "Inscripții în Braille", "Întreaga unitate adaptată pentru scaunul cu rotile", "Toaletă echipată cu mânere de sprijin", "Etajele superioare pot fi accesate cu liftul", "Adaptări pentru persoane cu deficiențe de auz", "Unitate complet situată la parter", "Ghidare prin sunet", "Întreaga unitate este accesibilă pentru scaunul cu rotile", "Toaletă cu înălțime ajustată", "Asistență audio", "Etaje superioare accesibile cu liftul", "Compatibil cu dispozitive de asistență auditivă", "Sisteme de ghidare prin sunet", "Semnalizare tactilă pentru persoanele cu deficiențe de vedere", "Semne tactile pentru suport vizual", "Inscripții în Braille pentru suport vizual", "Toaletă cu înălțime mai mare", "Întreaga locație este accesibilă pentru scaune cu rotile", "Sistem de ghidare auditivă", "Toaletă la înălțime accesibilă", "Semnalizare tactilă", "Semnalizare Braille", "Chiuvetă de baie amplasată la înălțime redusă", "Adaptat pentru utilizatorii de scaune cu rotile", "Întreaga locație este accesibilă cu scaunul cu rotile", "Unitatea este situată complet la parter", "Toaletă cu înălțime ajustată pentru accesibilitate", "Inscripții în Braille pentru orientare vizuală", "Unitate întreagă accesibilă pentru scaun cu rotile", "Chiuvetă de baie adaptată, situată la înălțime redusă", "Facilități pentru persoanele cu deficiențe de auz", "Chiuvetă de baie mai joasă", "Toaletă mai înaltă", "Etaje superioare accesibile doar prin scări", "Semnalizare tactilă pentru orientare", "Facilități accesibile pentru scaune cu rotile", "Etajele superioare accesibile prin intermediul liftului", "Ajutor vizual prin inscripții Braille", "Cordon de siguranță în baie", "Accesibilitate pentru persoane cu deficiențe de auz", "Etaje superioare accesibile numai prin scări", "Etaje superioare cu acces la lift", "Toată unitatea este accesibilă pentru scaune cu rotile", "Chiuvetă de baie amplasată mai jos", "Toată unitatea este accesibilă pentru scaunul cu rotile", "Buton de panică în baie", "Toaletă înaltă", "Adaptat pentru scaune cu rotile", "Întreaga unitate are acces pentru scaune cu rotile", "Unitate complet amplasată la parter", "Sisteme de orientare prin sunet", "Întreaga unitate este adaptată pentru scaunul cu rotile", "Unitatea este amplasată integral la parter", "Chiuvetă de baie montată la o înălțime mai mică", "Acces facil pentru persoanele cu deficiențe de auz", "Semne tactile pentru ghidare vizuală", "Sistem de alarmă în baie pentru situații de urgență", "Lift pentru a ajunge la etajele superioare", "Toaletă echipată cu mânere de susținere", "Accesibilitate pentru utilizatorii de scaune cu rotile", "Sfoară de urgență în baie", "Chiuvetă de baie instalată la înălțime redusă", "Indicatoare în Braille", "Materiale în Braille pentru ajutor vizual", "Toaletă cu șezut înălțat", "Unitate complet accesibilă pentru scaunele cu rotile", "Inscripții Braille pentru sprijin vizual", "Chiuvetă de baie montată la înălțime redusă", "Ghid audio", "Toaletă adaptată pentru persoane cu mobilitate redusă", "Chiuvetă de baie joasă", "Adaptat pentru persoane cu pierderi de auz", "Unitate complet localizată la parter", "Chiuvetă de baie la înălțime mică", "Etaje superioare deservite de lift", "Toaletă la înălțime ridicată", "Potrivit pentru utilizatorii de scaune cu rotile", "Unitatea amplasată complet la parter"], "general.allFacilities.exterior": ["Mobilier exterior", "Balcon", "Terasă", "Șemineu în aer liber", "Zonă de picnic", "Zonă de luat masa în aer liber", "Terasă la soare", "Grătar", "Grădină", "Piscină privată", "Acces imediat la plajă", "Zonă de plajă privată", "Mobilier de grădină", "Patio"], "general.allFacilities.commonAreas": ["Lounge", "Cameră cu TV comună", "Capelă", "Altar", "Cameră de jocuri"], "general.allFacilities.livingArea": ["Zonă de luat masa", "Zonă de relaxare", "Birou", "Canapea", "Șemineu"], "general.allFacilities.mediaTechnology": ["TV cu ecran plat", "Canale prin cablu", "Canale prin satelit", "TV", "Serviciu de streaming", "Radio", "Canale cu plată", "Jocuri video", "Video", "Laptop", "Computer", "Seif pentru laptop", "Stație de andocare iPod", "CD player", "DVD player", "Consolă de jocuri", "Telefon", "Blu-ray player", "Consolă de jocuri – Xbox 360", "Fax", "Consolă de jocuri – PS3", "IPad", "Consol? de jocuri", "Consolă de jocuri – Nintendo Wii", "Consolă de jocuri – PS2", "Consol? de jocuri – Xbox 360", "Consol? de jocuri – PS3", "Consol? de jocuri – Nintendo Wii"], "general.allFacilities.roomFacilities": ["Priză lângă pat", "Suport de haine", "Plasă de ţânţari", "Pardoseală de lemn sau parchet", "Pardoseală de gresie", "Marmură", "Intrare privată", "Mochetă", "Ventilator", "Facilităţi de călcat", "Fier de călcat", "Canapea extensibilă", "Izolare fonică", "Uscător de rufe", "Hipoalergică", "Cameră", "Încălzire", "Cadă cu hidromasaj", "Pat pliant", "Presă pentru călcat pantaloni", "Aer condiţionat", "Pături electrice"], "general.allFacilities.shops": ["Minimarket la proprietate", "Bărbier", "Salon de frumuseţe", "Salon de frumusețe"], "general.activities.skiing": ["Închiriere echipament de schi la proprietate", "Depozit schiuri", "Şcoală de schi", "Acces direct la pârtiile de schi", "Vânzare permise de schi"], "general.activities.entertainmentAndFamilyServices": ["Echipament de joacă pentru exterior", "Jocuri și puzzle-uri", "Cărți, DVD-uri, muzică pentru copii", "Teren de joacă pentru copii", "Club de noapte", "DJ", "Porți de siguranță pentru copiii mici", "Zonă de joacă înăuntru", "Divertisment de seară", "Babysitting", "Servicii pentru copii", "Capace de siguranță pentru prize", "Cazino", "Karaoke", "Cărucioare", "Club pentru copii", "Animatori"], "general.activities.sportsAndRecreation": ["Seri cu cină tematică", "Tururi cu bicicleta", "Tururi de mers pe jos", "Seri de film", "Drumeţii", "Plajă", "Squash", "Teren de tenis", "Călărie", "Caiac", "Galerii de artă temporare", "Echipament de badminton", "Schi", "Acces direct la pârtiile de schi", "Închiriere echipament de schi la proprietate", "Şcoală de schi", "Depozit schiuri", "Pescuit", "Stand-up comedy", "Ieșiri în pub-uri", "Aqua park", "Ciclism", "Tenis de masă", "Facilităţi de sporturi nautice la proprietate", "Scufundări", "Windsurfing", "Snorkelling", "Muzică", "Spectacol live", "Cadă cu hidromasaj", "Tur sau curs despre cultura locală", "Curs de gătit", "Aerobic", "Happy hour", "Echipament de tenis", "Evenimente sportive live", "Vânzare permise de schi", "Teren de joacă pentru copii", "Închiriere de biciclete", "Bowling", "Bingo", "Tir cu arcul", "Darts", "Biliard", "Cameră de jocuri", "Divertisment de seară", "Karaoke", "Mini golf", "Club de noapte", "DJ", "Animatori", "Club pentru copii", "Teren de golf", "Cazino", "Saună"], "general.services.receptionServices": ["Factură disponibilă la cerere", "Vestiare", "Check-in", "Check-out privat", "Check-out express", "Bancomat", "Schimb valutar", "Recepţie deschisă nonstop", "Cameră de bagaje", "Serviciu de concierge", "Birou de turism"], "general.services.servicesExtra": ["Serviciu de trezire", "Ceas deşteptător", "Acces la Executive Lounge", "Ceas deșteptător"], "general.services.safety": ["Extinctoare", "Camere de supraveghere în afara proprietății", "Camere de supraveghere în zonele comune", "Acces cu cardul", "Acces cu cheia", "Detector de monoxid de carbon", "Alarmă de fum", "Seif", "Securitate non-stop", "Alarmă de securitate"], "general.services.generalServices": ["Business centre", "Recepţie deschisă nonstop", "Lounge", "Cameră cu TV comună", "Check-in", "Check-out privat", "Cameră de bagaje", "Fax", "Copiator", "Închirieri auto", "Check-out express", "Transfer de la și", "Sau la aeroport", "Menaj zilnic", "Serviciu de călcătorie", "Curăţătorie chimică", "Spălătorie", "Săli de conferinţă şi petreceri", "Room service", "Serviciu de transfer", "Bărbier", "Salon de frumuseţe", "Castroane pentru animale de companie", "Serviciu de trezire", "Schimb valutar", "Cărucioare", "Vestiare", "Ceas deşteptător", "Livrări de alimente", "Prânz la pachet", "Birou de turism", "Automat", "Presă pentru călcat pantaloni", "Acces la Executive Lounge", "Bancomat", "Coș pentru animale de companie", "Serviciu de concierge", "Babysitting", "Servicii pentru copii", "RecepȘie deschisă nonstop", "RecepȘie deschis? nonstop"], "general.mostAppreciatedFacilities": ["WiFi gratuit inclus", "Camere destinate nefumătorilor", "Terasă", "Încălzire", "Parcare gratuită", "Camere pentru familii", "Mic dejun", "Transfer de la și către", "Ori la aeroport", "Piscină", "2 piscine", "Acces direct la plajă", "Amenajări pentru persoanele cu mobilitate redusă", "Restaurant", "Plajă exclusivă", "Bar", "Grădină", "Dispozitiv pentru făcut ceai", "Cafelei din fiecare cameră", "Jacuzzi cu funcție de masaj cu apă", "Jacuzzi", "Lift", "Parcare", "WiFi bun gratuit", "Parcare privată", "Room service", "Recepție disponibilă 24/7", "2 restaurante", "WiFi rapid gratuit", "Centru de fitness", "Parcare la proprietate", "Zonă de plajă exclusivă", "Piscină în aer liber", "Piscină interioară", "Spa Și centru de wellness", "Amenajări pentru persoane cu mobilitate redusă", "Sau gratuit la aeroport", "Grătar", "Mic dejun foarte bun", "Mic dejun superb", "3 piscine", "Schi", "WiFi disponibil în toate zonele", "WiFi de bază gratuit", "4 piscine", "Piscină exterioară", "Priveliste", "Ciubar", "3 restaurante", "Sală de sport", "Mic dejun excepţional", "Mic dejun bun", "Semineu", "Mic dejun fabulos", "WiFi gratuit", "Piscina cu priveliste", "4 restaurante", "6 restaurante", "Cadă cu hidromasaj", "Recepție deschisă 24/7", "Foisor", "Piscină în aer liber pentru copii", "WiFi", "5 restaurante", "Ceaun", "Vatra de foc", "WiFi rapid disponibil în toate zonele", "Mic dejun excepțional", "WiFi bun disponibil în toate zonele", "8 restaurante", "6 piscine", "5 piscine", "Piscină acoperită pentru copii"], "benefits": ["Fara vecini", "Langa padure", "Modern", "A-frame", "Langa rau", "Rustic", "Preparate traditionale"], "rooms.[].details.bathroomFacilities": ["Articole de toaletă gratuite", "Toaletă", "Cadă sau duş", "Prosoape", "Papuci de casă", "Uscător de păr", "Toaletă suplimentară", "lenjerie de pat contra cost", "Hârtie igienică", "Duş", "Halat de baie", "bideu", "Cadă spa", "Cadă", "Baie suplimentară", "Toaletă comună"], "rooms.[].details.keyFacilities": ["Bucătărie privată", "Baie privată", "Balcon", "Vedere la curtea interioară", "Aer condiţionat", "Maşină de spălat vase", "TV cu ecran plat", "Mașină de cafea", "WiFi gratuit", "Vedere la grădină", "Grătar", "Terasă", "Chicinetă privată", "Izolare fonică", "Piscină privată", "Vedere", "Vedere la piscină", "Minibar", "Vedere la oraș", "Cadă spa", "Cadă", "Vedere la munte", "Vedere la punct de atracţie", "Vedere la mare", "Patio", "Vedere la râu", "Vedere la lac", "Saună"], "rooms.[].details.kitchenFacilities": ["Produse de curățenie", "Frigider", "Mașină de cafea", "Ustensile de bucătărie", "Plită de gătit", "Masă", "Cuptor cu microunde", "Cană fierbător", "Uscător de haine", "Prăjitor de pâine", "Maşină de spălat", "Cuptor", "Maşină de spălat vase", "Scaun înalt pentru copii"], "rooms.[].details.unitFacilities": ["Balcon", "Terasă", "Aer condiţionat", "Bucătărie", "Maşină de spălat", "Pardoseală de lemn sau parchet", "Lenjerie de pat", "Priză lângă pat", "Produse de curățenie", "Pardoseală de gresie", "marmură", "Birou", "TV", "Mașină de cafea", "Aparat pentru prepararea de ceai", "cafea", "Cuptor cu microunde", "Încălzire", "TV cu ecran plat", "Ustensile de bucătărie", "Cană fierbător", "Maşină de spălat vase", "Canale prin cablu", "Garderobă sau dulap", "Plită de gătit", "Prăjitor de pâine", "Zonă de luat masa", "Etaje superioare accesibile cu liftul", "Apartament privat în clădire", "Suport de haine", "uscător de rufe", "Canapea extensibilă", "Cărți, DVD-uri, muzică pentru copii", "Detector de monoxid de carbon", "Aer condiționat individual pentru fiecare cameră de la proprietate", "Hipoalergică", "Zonă de relaxare", "Cameră", "Etaje superioare accesibile doar pe scări", "Canapea", "Mobilier de grădină", "Paturi extra lungi", "Intrare privată", "Frigider", "Plasă de ţânţari", "Zonă de luat masa în aer liber", "Cuptor", "Masă", "Unitate situată integral la parter", "Fier de călcat", "Internet wireless", "Serviciu de streaming", "Izolare fonică", "Facilităţi de călcat", "Mochetă", "Dezinfectant pentru mâini", "Șemineu", "Patio", "Uscător de haine", "Grătar", "Cadă cu hidromasaj", "Dressing", "Pat pliant", "Accesibil pentru persoanele cu deficiențe de auz", "Saună", "Independentă", "Chicinetă", "Minibar", "Canale prin satelit", "Radio", "Ventilator", "Jocuri și puzzle-uri", "Serviciu de trezire", "ceas deşteptător", "Seif", "Canale cu plată", "Piscină privată", "Întreaga unitate accesibilă cu scaunul cu rotile", "Jocuri video", "Porți de siguranță pentru copiii mici", "Scaun înalt pentru copii", "Capace de siguranță pentru prize", "Telefon", "Acces la Executive Lounge", "CD player", "Seif pentru laptop", "Purificatoare de aer", "Semi-independentă", "Ceas deșteptător", "Pături electrice", "Consolă de jocuri – PS3", "Video", "Fax", "Blu-ray player", "Presă pentru călcat pantaloni", "Internet", "Consolă de jocuri", "Stație de andocare iPod", "DVD player", "Computer", "Consolă de jocuri – Xbox 360", "Consolă de jocuri – Nintendo Wii", "Consolă de jocuri – PS2", "Laptop", "iPad"]};</script>
+<script>
+const SLUG=new URLSearchParams(location.search).get("slug")||"vila-maria-rustic-predeal";
+const FEED_COLORS={"Booking.com":"#3b6fb0","Airbnb":"#cf4b4b","Google Calendar":"#2a8c8c","Altă platformă":"#6b54b3"};
+const ICON_KEYS=["guests","key","bed","pool","fire","sauna","massage","kids","terrace","garden","games","restaurant","lounge","playground","slope","train","castle","museum","view","checkin","checkout","quiet","smoke","pet","wifi","parking","coffee","dishwasher","washer","ball","projector"];
+
+/* ---- persistence (swap for your API) ---- */
+const api={
+  load(){ try{ if(window.__ADMIN_STATE) return window.__ADMIN_STATE; return JSON.parse(localStorage.getItem("stay_admin_v3_"+SLUG)||"null"); }catch(e){ return null; } },
+  save(s){ try{ localStorage.setItem("stay_admin_v3_"+SLUG,JSON.stringify(s)); }catch(e){}
+           fetch("/api/host/"+SLUG+"/state",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(s)}).catch(()=>{}); } };
+
+/* ---- default full state ---- */
+let state=api.load()||{
+  property:{
+    basicInfo:{name:"Vila Maria Rustic Predeal",unitType:"Vilă",starRating:null,entireUnitRental:true,unitCapacity:12,roomsNumber:6,unitBathroomsNumber:6,unitSurface:"180.0 mp",address:"Șoseaua Națională 87, 505300 Predeal",county:"Brașov",city:"Predeal",locality:"Malul Ursului",latitude:45.482432,longitude:25.565507},
+    host:{hostName:"Munții BUCEGI",hostImage:"",hostUnitDescription:"Pensiunea Maria Rustic oferă un cadru intim și primitor, ideal pentru momente relaxante în jurul șemineului.",spokenLanguages:["Engleză","Română"]},
+    description:"Vila Maria Rustic din Predeal oferă cazare cu piscină interioară, centru de wellness, parcare gratuită, WiFi, grătar și restaurant. Camerele sunt pentru nefumători și familii, iar micul dejun este inclus.",
+    benefits:["Lângă pădure","Rustic"],
+    mostAppreciatedFacilities:[{name:"Priveliște",premiumFacility:true},{name:"Șemineu",premiumFacility:true},{name:"Vatră de foc",premiumFacility:true},{name:"Piscină interioară",premiumFacility:false}],
+    allFacilities:{
+      foodAndDrinks:[{name:"Restaurant",priceRule:null,locationRule:null},{name:"Bar",priceRule:null,locationRule:null},{name:"Mic dejun în cameră",priceRule:null,locationRule:null}],
+      bathroom:["Baie privată","Duș","Uscător de păr"],
+      kitchen:["Frigider","Cuptor cu microunde"],
+      bedroom:["Set de așternuturi pentru pat"],
+      generalFacilities:[{name:"Cameră pentru nefumători",priceRule:null,locationRule:null},{name:"Familii",priceRule:null,locationRule:null}],
+      cleaningServices:[],
+      businessFacilities:[],
+      wellness:[{name:"Saună",priceRule:"cost suplimentar",locationRule:null},{name:"Spa și centru de wellness",priceRule:"cost suplimentar",locationRule:null}],
+      comfort:[],
+      exterior:[{name:"Mobilier exterior",priceRule:null,locationRule:null},{name:"Terasă",priceRule:null,locationRule:null},{name:"Grădină",priceRule:null,locationRule:null}],
+      commonAreas:["Lounge"],
+      livingArea:["Zonă de luat masa"],
+      mediaTechnology:["TV cu ecran plat"],
+      roomFacilities:["Priză lângă pat"],
+      shops:[]
+    },
+    activities:{skiing:[],entertainmentAndFamilyServices:[],sportsAndRecreation:[]},
+    services:{receptionServices:[],servicesExtra:[],safety:[],generalServices:[]},
+    policies:{
+      checkIn:{startHour:"14:00",endHour:"18:00"},checkOut:{startHour:"08:00",endHour:"11:00"},
+      childrenPolicies:"Toți copiii sunt bineveniți.",petsPolicy:"Animale acceptate la cerere, pot fi aplicate taxe suplimentare.",
+      smokingPolicy:"Fumatul interzis în toate spațiile interioare.",parkingPolicy:"Parcare privată gratuită.",
+      internetPolicy:"WiFi gratuit în întreaga proprietate.",mealPolicy:"",noisePolicy:"",partiesPolicy:"",groupsPolicy:"",ageRestriction:"",damageDeposit:"",
+      extraBedAgeRates:[{ageMin:0,ageMax:2,bedType:"Pat suplimentar la cerere",amount:50,currency:"RON",per:"copil/noapte"},{ageMin:3,ageMax:11,bedType:"Pat suplimentar la cerere",amount:50,currency:"RON",per:"copil/noapte"}]
+    },
+    payment:{paymentMethods:["Visa","Mastercard","Maestro","Card de credit UnionPay","Numerar"]},
+    location:{
+      mainAttractions:[{name:"Castelul Peleș",distance:18},{name:"Casa memorială George Enescu",distance:17}],
+      nearbyAttractions:[{name:"Mountain Adventure",distance:2.7}],
+      slopes:[{name:"Pârtia Clăbucet",distance:2.3},{name:"Pârtia Sorica",distance:4.8}],
+      publicTransport:[{name:"Gara Predeal",distance:2}],
+      nearbyAirports:[]
+    },
+    questionsAndAnswers:[{question:"Se închiriază vila integral?",answer:"Da, plus camere individuale."}],
+    contact:{name:"Vila Maria Rustic Predeal",phone:"+40723221610",email:"",website:""}
+  },
+  pricing:{ rooms:[
+      {id:"vila-standard",name:"Vilă Standard",sub:"Închiriere integrală · 12 oaspeți",weekday:496,weekend:496,currency:"RON",minNights:1,isEntire:true},
+      {id:"camera-dubla",name:"Cameră Dublă",sub:"2 adulți · 15 mp",weekday:496,weekend:496,currency:"RON",minNights:1,isEntire:false}
+    ], periods:[] },
+  units:[ {id:"vila-standard",feeds:[],blocks:[]}, {id:"camera-dubla",feeds:[],blocks:[]} ]
+};
+/* normalize null arrays/objects so imported skeleton data (with nulls) doesn't break section rendering */
+function _na(o,k){ if(!o||typeof o!=="object")return; if(!Array.isArray(o[k])) o[k]=[]; }
+function normalizeState(s){
+  if(!s||typeof s!=="object") return s;
+  const P=s.property=s.property||{};
+  P.basicInfo=P.basicInfo||{};
+  P.host=P.host||{}; _na(P.host,"spokenLanguages");
+  ["benefits","mostAppreciatedFacilities","_photos","questionsAndAnswers"].forEach(k=>_na(P,k));
+  P.allFacilities=P.allFacilities||{};
+  ["foodAndDrinks","generalFacilities","wellness","exterior","cleaningServices","businessFacilities","bathroom","kitchen","bedroom","comfort","commonAreas","livingArea","mediaTechnology","roomFacilities","shops","pools","restaurants","internet","parking"].forEach(k=>_na(P.allFacilities,k));
+  P.activities=P.activities||{}; ["skiing","entertainmentAndFamilyServices","sportsAndRecreation"].forEach(k=>_na(P.activities,k));
+  P.services=P.services||{}; ["receptionServices","servicesExtra","safety","generalServices"].forEach(k=>_na(P.services,k));
+  P.policies=P.policies||{}; P.policies.checkIn=P.policies.checkIn||{}; P.policies.checkOut=P.policies.checkOut||{}; _na(P.policies,"extraBedAgeRates");
+  P.payment=P.payment||{}; _na(P.payment,"paymentMethods");
+  P.location=P.location||{}; ["mainAttractions","nearbyAttractions","slopes","publicTransport","nearbyAirports","nearbyBeaches","naturalLandscapes","restaurantsAndCafes","zones"].forEach(k=>_na(P.location,k));
+  P.contact=P.contact||{};
+  s.pricing=s.pricing||{}; _na(s.pricing,"rooms"); _na(s.pricing,"periods"); s.pricing.dayPrices=s.pricing.dayPrices||{};
+  (s.pricing.rooms||[]).forEach(r=>{ r.details=r.details||{}; ["spaces","view","keyFacilities","bathroomFacilities","kitchenFacilities","unitFacilities"].forEach(k=>_na(r.details,k)); });
+  _na(s,"units"); s.galleries=s.galleries||{};
+  return s;
+}
+normalizeState(state);
+/* keep units in sync with pricing rooms */
+function syncUnits(){
+  state.pricing.rooms.forEach(r=>{ if(!state.units.find(u=>u.id===r.id)) state.units.push({id:r.id,feeds:[],blocks:[]}); });
+  state.units=state.units.filter(u=>state.pricing.rooms.find(r=>r.id===u.id));
+}
+function regenSite(){ try{ if(window.STAY) localStorage.setItem("stay_site_"+SLUG, JSON.stringify(STAY.masterToSite(state.property,state.pricing,state.galleries))); }catch(e){} }
+function persist(){ api.save(state); regenSite(); const s=$("#saveState"); s.classList.remove("dirty"); s.innerHTML='<span class="dot"></span> Salvat'; }
+function markDirty(){ const s=$("#saveState"); s.classList.add("dirty"); s.innerHTML='<span class="dot" style="background:var(--amber)"></span> Modificări nesalvate · salvează'; }
+
+/* ---- helpers ---- */
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+function h(tag,attrs,...kids){const e=document.createElement(tag);for(const k in (attrs||{})){const v=attrs[k];if(k==="class")e.className=v;else if(k==="html")e.innerHTML=v;else if(k.slice(0,2)==="on")e[k.toLowerCase()]=v;else if(v!=null)e.setAttribute(k,v);}kids.flat().forEach(c=>{if(c==null||c===false)return;e.append(c.nodeType?c:document.createTextNode(String(c)));});return e;}
+const pad=n=>String(n).padStart(2,"0");
+const iso=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+const fromIso=s=>{const[y,m,d]=s.split("-").map(Number);return new Date(y,m-1,d);};
+const MONTHS=["Ianuarie","Februarie","Martie","Aprilie","Mai","Iunie","Iulie","August","Septembrie","Octombrie","Noiembrie","Decembrie"];
+const DOW=["Lu","Ma","Mi","Jo","Vi","Sâ","Du"];
+let toastT;function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),2200);}
+const unitName=id=>{const r=state.pricing.rooms.find(x=>x.id===id);return r?r.name:id;};
+const unitIsEntire=id=>{const r=state.pricing.rooms.find(x=>x.id===id);return r?!!r.isEntire:false;};
+
+/* ---- iCal parse / generate (real) ---- */
+function parseICS(t){const lines=t.replace(/\r\n[ \t]/g,"").replace(/\n[ \t]/g,"").split(/\r?\n/);const ev=[];let c=null;
+  for(const l of lines){if(l==="BEGIN:VEVENT")c={};else if(l==="END:VEVENT"){if(c&&c.start)ev.push(c);c=null;}
+    else if(c){const i=l.indexOf(":");if(i<0)continue;const n=l.slice(0,i).split(";")[0].toUpperCase(),v=l.slice(i+1).trim();
+      if(n==="DTSTART")c.start=icd(v);else if(n==="DTEND")c.end=icd(v);else if(n==="SUMMARY")c.summary=v;}}return ev;}
+function icd(v){const m=v.match(/(\d{4})(\d{2})(\d{2})/);return m?`${m[1]}-${m[2]}-${m[3]}`:null;}
+function eventsToDates(ev){const s=new Set();for(const e of ev){if(!e.start)continue;const a=fromIso(e.start),b=e.end?fromIso(e.end):new Date(a.getTime()+864e5);for(let d=new Date(a);d<b;d.setDate(d.getDate()+1))s.add(iso(d));}return[...s];}
+function buildICS(dates,label){const o=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//LocalStay//Admin//RO","CALSCALE:GREGORIAN","METHOD:PUBLISH"];
+  const n=new Date(),st=n.getFullYear()+pad(n.getMonth()+1)+pad(n.getDate())+"T"+pad(n.getHours())+pad(n.getMinutes())+"00Z";
+  const arr=[...dates].sort();let i=0;
+  while(i<arr.length){let s=arr[i],j=i;while(j+1<arr.length){const nx=fromIso(arr[j]);nx.setDate(nx.getDate()+1);if(iso(nx)===arr[j+1])j++;else break;}
+    const e=fromIso(arr[j]);e.setDate(e.getDate()+1);
+    o.push("BEGIN:VEVENT","UID:"+s+"-"+SLUG+"@localstay.ro","DTSTAMP:"+st,"DTSTART;VALUE=DATE:"+s.replace(/-/g,""),"DTEND;VALUE=DATE:"+iso(e).replace(/-/g,""),"SUMMARY:"+(label||"Indisponibil"),"END:VEVENT");i=j+1;}
+  o.push("END:VCALENDAR");return o.join("\r\n");}
+
+/* feed-derived blocked dates for a unit */
+function unitFeedDates(u){const s=new Set();(u.feeds||[]).forEach(f=>(f.blocks||[]).forEach(d=>s.add(d)));return s;}
+/* effective state of a date for a unit, incl. entire/room overlap */
+function effState(unitId,ds){
+  const u=state.units.find(x=>x.id===unitId); if(!u)return{s:"free"};
+  if((u.blocks||[]).includes(ds))return{s:"own"};
+  const fd=unitFeedDates(u); if(fd.has(ds)){const f=(u.feeds||[]).find(f=>(f.blocks||[]).includes(ds));return{s:"ical",src:f?f.source:""};}
+  // overlap: entire blocks rooms; any room blocks entire
+  const others = unitIsEntire(unitId)
+    ? state.units.filter(x=>x.id!==unitId)
+    : state.units.filter(x=>unitIsEntire(x.id));
+  for(const o of others){ if((o.blocks||[]).includes(ds)||unitFeedDates(o).has(ds)) return {s:"overlap",src:unitName(o.id)}; }
+  return {s:"free"};
+}
+/* effective unavailable dates for export (own+ical+overlap) */
+function effectiveBlocked(unitId){
+  const set=new Set(); const u=state.units.find(x=>x.id===unitId);
+  (u.blocks||[]).forEach(d=>set.add(d)); unitFeedDates(u).forEach(d=>set.add(d));
+  const others=unitIsEntire(unitId)?state.units.filter(x=>x.id!==unitId):state.units.filter(x=>unitIsEntire(x.id));
+  others.forEach(o=>{(o.blocks||[]).forEach(d=>set.add(d));unitFeedDates(o).forEach(d=>set.add(d));});
+  return set;
+}
+
+/* =================== CONTENT EDITOR =================== */
+function field(obj,k,o){ // o:{type,ph,label}
+  o=o||{};
+  let el;
+  if(o.type==="textarea"){el=h("textarea",{class:"inp",placeholder:o.ph||""});el.value=obj[k]??"";el.oninput=()=>{obj[k]=el.value;markDirty();};}
+  else if(o.type==="icon"){el=h("select",{class:"sel"},...ICON_KEYS.map(ic=>h("option",{value:ic,...(obj[k]===ic?{selected:"1"}:{})} ,ic)));el.value=obj[k]||"view";el.onchange=()=>{obj[k]=el.value;markDirty();};}
+  else if(o.type==="check"){const cb=h("input",{type:"checkbox"});cb.checked=!!obj[k];cb.onchange=()=>{obj[k]=cb.checked;markDirty();};return h("label",{class:"checkline"},cb,o.label||k);}
+  else{el=h("input",{class:"inp"+(o.short?" short":""),type:o.type||"text",placeholder:o.ph||""});el.value=obj[k]??"";el.oninput=()=>{obj[k]=o.type==="number"?(+el.value||0):el.value;markDirty();};}
+  return o.label?h("div",{class:"field"},h("label",{},o.label),el):el;
+}
+/* recursive list editor */
+function listEditor(host,arr,schema){
+  host.innerHTML="";
+  arr.forEach((row,i)=>{
+    const fields=h("div",{class:"rep-fields"});
+    schema.fields.forEach(f=>{
+      if(f.type==="list"){ if(!Array.isArray(row[f.k]))row[f.k]=[];
+        const sub=h("div",{}); const wrap=h("div",{class:"rep-sub"},h("div",{class:"rep-sublabel"},f.label),sub);
+        listEditor(sub,row[f.k],f.schema); fields.appendChild(wrap);
+      } else fields.appendChild(field(row,f.k,f));
+    });
+    const del=h("button",{class:"rep-del",title:"Șterge",onclick:()=>{arr.splice(i,1);listEditor(host,arr,schema);markDirty();}},
+      h("span",{html:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>'}));
+    host.appendChild(h("div",{class:"rep"},fields,del));
+  });
+  host.appendChild(h("button",{class:"btn btn-out sm rep-add",onclick:()=>{arr.push(structuredClone(schema.item));listEditor(host,arr,schema);markDirty();}},
+    h("span",{html:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>'}),"Adaugă "+schema.addLabel));
+}
+function stringList(host,arr,ph,addLabel){
+  host.innerHTML="";
+  arr.forEach((v,i)=>{
+    const inp=h("input",{class:"inp",placeholder:ph});inp.value=v;inp.oninput=()=>{arr[i]=inp.value;markDirty();};
+    const del=h("button",{class:"rep-del",onclick:()=>{arr.splice(i,1);stringList(host,arr,ph,addLabel);markDirty();}},h("span",{html:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>'}));
+    host.appendChild(h("div",{class:"rep"},h("div",{class:"rep-fields"},inp),del));
+  });
+  host.appendChild(h("button",{class:"btn btn-out sm",onclick:()=>{arr.push("");stringList(host,arr,ph,addLabel);markDirty();}},"+ "+addLabel));
+}
+function accordion(title,sub,buildBody,open){
+  const body=h("div",{class:"bd"});
+  try{ buildBody(body); }catch(e){ console.error("Secțiune indisponibilă ("+title+"):",e); body.appendChild(h("p",{style:"color:#c0392b;font-size:13px;margin:4px 0"},"Această secțiune n-a putut fi încărcată (date incomplete). Restul funcționează normal.")); }
+  const card=h("div",{class:"card acc"+(open?" open":"")},
+    h("div",{class:"hd",onclick:()=>card.classList.toggle("open")},
+      h("div",{},h("h2",{},title),sub?h("p",{},sub):null),
+      h("span",{class:"chev",html:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>'})),
+    body);
+  return card;
+}
+const ICON_F={k:"icon",type:"icon",label:"Icon"};
+const PAYMENT_OPTS=["Visa","Mastercard","Maestro","American Express","Card de credit UnionPay","Numerar","Transfer bancar","Tichete de vacanță"];
+const LANG_OPTS=["Română","Engleză","Franceză","Germană","Italiană","Spaniolă","Maghiară"];
+const UNIT_TYPES=["Vilă","Apartament","Cameră de hotel","Pensiune","Cabană","Casă de vacanță","Studio","Bungalow","Hostel"];
+function getName(it){return typeof it==="string"?it:(it&&it.name)||"";}
+function ta(obj,k){const t=h("textarea",{class:"inp"});t.value=obj[k]==null?"":obj[k];t.oninput=()=>{obj[k]=t.value;markDirty();};return t;}
+function selField(obj,k,opts,label){
+  const sel=h("select",{class:"sel"});
+  opts.forEach(o=>{let val,txt;if(Array.isArray(o)){val=o[0];txt=o[1];}else{val=o;txt=o===""?"—":o;}
+    const cur=String(obj[k]);sel.appendChild(h("option",{value:val,...(cur===String(val)?{selected:1}:{})},txt));});
+  sel.onchange=()=>{let v=sel.value;if(v==="true")v=true;else if(v==="false")v=false;else if(k==="starRating")v=v?+v:null;obj[k]=v;markDirty();};
+  return h("div",{class:"field"},h("label",{},label),sel);
+}
+function timePair(label,obj){
+  const mk=k=>{const i=h("input",{class:"inp",type:"time"});i.value=obj[k]||"";i.oninput=()=>{obj[k]=i.value;markDirty();};return i;};
+  return h("div",{class:"field"},h("label",{},label),h("div",{style:"display:flex;gap:8px"},mk("startHour"),mk("endHour")));
+}
+function multiSelect(host,arr,options,mode){
+  options=options||[];host.innerHTML="";
+  const chips=h("div",{class:"ms-chips"});
+  const search=h("input",{class:"inp",placeholder:"Caută și adaugă..."});
+  const drop=h("div",{class:"ms-drop"});
+  const names=()=>arr.map(getName);
+  function add(name){
+    if(mode==="rules")arr.push({name,priceRule:null,locationRule:null});
+    else if(mode==="appreciated")arr.push({name,premiumFacility:false});
+    else arr.push(name);
+    markDirty();chips_render();search.value="";drop_render("");search.focus();
+  }
+  function chips_render(){
+    chips.innerHTML="";
+    arr.forEach((it,i)=>{
+      const chip=h("div",{class:"ms-chip"},getName(it));
+      if(mode==="rules"){
+        chip.append(h("span",{class:"ms-rule"+(it.priceRule?" on":""),title:"Cost suplimentar",onclick:()=>{it.priceRule=it.priceRule?null:"cost suplimentar";markDirty();chips_render();}},"$"));
+        chip.append(h("span",{class:"ms-rule"+(it.locationRule?" on":""),title:"În afara locației",onclick:()=>{it.locationRule=it.locationRule?null:"în afara locației";markDirty();chips_render();}},"loc"));
+      }
+      if(mode==="appreciated")chip.append(h("span",{class:"ms-rule"+(it.premiumFacility?" on":""),title:"Premium",onclick:()=>{it.premiumFacility=!it.premiumFacility;markDirty();chips_render();}},"★"));
+      chip.append(h("span",{class:"x",onclick:()=>{arr.splice(i,1);markDirty();chips_render();drop_render(search.value);}},"×"));
+      chips.appendChild(chip);
+    });
+  }
+  function drop_render(q){
+    const sel=names();q=(q||"").toLowerCase().trim();
+    if(!q){drop.classList.remove("on");return;}
+    const m=options.filter(o=>!sel.includes(o)&&o.toLowerCase().includes(q)).slice(0,60);
+    drop.innerHTML="";
+    if(!m.length){drop.appendChild(h("div",{class:"ms-empty"},"Apasă Enter pentru a adăuga: "+q));drop.classList.add("on");return;}
+    m.forEach(o=>drop.appendChild(h("div",{class:"ms-opt",onclick:()=>add(o)},o)));
+    drop.classList.add("on");
+  }
+  search.oninput=()=>drop_render(search.value);
+  search.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();const v=search.value.trim();if(v&&!names().includes(v))add(v);}};
+  search.onblur=()=>setTimeout(()=>drop.classList.remove("on"),180);
+  host.append(chips,h("div",{class:"ms-search"},search,drop));chips_render();
+}
+function facBlock(host,label,arr,options,mode){
+  const w=h("div",{class:"fac-block"});if(label)w.appendChild(h("div",{class:"fac-label"},label));
+  const ms=h("div",{});w.appendChild(ms);multiSelect(ms,arr,options,mode);host.appendChild(w);
+}
+function distList(host,label,arr){
+  host.appendChild(h("div",{class:"fac-label",style:"margin-top:10px"},label));
+  const s=h("div",{});host.appendChild(s);
+  listEditor(s,arr,{fields:[{k:"name",type:"text",ph:"Denumire"},{k:"distance",type:"number",ph:"km",short:true}],item:{name:"",distance:0},addLabel:"loc"});
+}
+/* ============================================================
+   Photo editor — upload, crop, rotate/flip, adjust, filters,
+   text overlay; exports WebP resized to max 1600px.
+   API: openPhotoEditor(initialSrc, onSave)  // onSave(dataUrl)
+   ============================================================ */
+(function(){
+  const MAXDIM = 1600;
+  const PRESETS = {
+    none:"", bw:"grayscale(100%)", sepia:"sepia(75%)",
+    warm:"sepia(30%) saturate(150%) hue-rotate(-10deg)",
+    cool:"saturate(120%) hue-rotate(15deg)",
+    vivid:"saturate(165%) contrast(108%)"
+  };
+  const PRESET_LABELS = { none:"Original", bw:"Alb-negru", sepia:"Sepia", warm:"Cald", cool:"Rece", vivid:"Vivid" };
+
+  let overlay, view, vctx, ctrls;
+  let work=null;            // canvas with geometry baked (native res, no filter)
+  let st=null;              // editor session state
+
+  function build(){
+    overlay = document.createElement("div");
+    overlay.className = "pe-overlay";
+    overlay.innerHTML =
+      '<div class="pe-modal">'
+      + '<div class="pe-head"><b>Editor foto</b><button class="pe-x" data-act="cancel">&times;</button></div>'
+      + '<div class="pe-body">'
+        + '<div class="pe-stage"><div class="pe-canwrap"><canvas class="pe-canvas"></canvas><div class="pe-cropbox" hidden></div></div>'
+          + '<div class="pe-empty" data-act="pick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg><span>Trage o poză aici sau click pentru a încărca</span></div>'
+        + '</div>'
+        + '<div class="pe-side">'
+          + '<button class="pe-btn pe-up" data-act="pick">Încarcă poză</button>'
+          + '<button class="pe-btn pe-ai" data-act="aiEnhance" title="Corecție lumină, culoare și perspectivă cu AI">✨ Optimizează cu AI</button>'
+          + '<input type="file" accept="image/*" class="pe-file" hidden>'
+          + '<div class="pe-group"><div class="pe-gl">Rotire</div><div class="pe-rowb">'
+            + '<button class="pe-mini" data-act="rotL" title="Rotește stânga">⟲</button>'
+            + '<button class="pe-mini" data-act="rotR" title="Rotește dreapta">⟳</button>'
+            + '<button class="pe-mini" data-act="flipH" title="Oglindă orizontal">⇆</button>'
+            + '<button class="pe-mini" data-act="flipV" title="Oglindă vertical">⇅</button>'
+          + '</div></div>'
+          + '<div class="pe-group"><div class="pe-gl">Decupare (crop)</div>'
+            + '<div class="pe-rowb pe-ratios">'
+              + '<button class="pe-mini" data-ratio="free">Liber</button>'
+              + '<button class="pe-mini" data-ratio="1">1:1</button>'
+              + '<button class="pe-mini" data-ratio="1.333">4:3</button>'
+              + '<button class="pe-mini" data-ratio="1.777">16:9</button>'
+            + '</div>'
+            + '<div class="pe-rowb"><button class="pe-mini pe-apply" data-act="cropApply" hidden>Aplică</button><button class="pe-mini" data-act="cropCancel" hidden>Renunță</button></div>'
+          + '</div>'
+          + '<div class="pe-group"><div class="pe-gl">Ajustări</div>'
+            + adjRow("Luminozitate","brightness",0,200,100)
+            + adjRow("Contrast","contrast",0,200,100)
+            + adjRow("Saturație","saturation",0,200,100)
+          + '</div>'
+          + '<div class="pe-group"><div class="pe-gl">Filtre</div><div class="pe-filters">'
+            + Object.keys(PRESETS).map(k=>'<button class="pe-fbtn'+(k==="none"?" on":"")+'" data-preset="'+k+'">'+PRESET_LABELS[k]+'</button>').join("")
+          + '</div></div>'
+          + '<div class="pe-group"><div class="pe-gl">Text pe poză</div>'
+            + '<div class="pe-rowb"><input class="pe-tin" placeholder="Scrie un text..."><button class="pe-mini" data-act="addText">+</button></div>'
+            + '<div class="pe-rowb pe-tctrl" hidden><input type="color" class="pe-tcolor" value="#ffffff"><input type="range" class="pe-tsize" min="14" max="160" value="48"><button class="pe-mini" data-act="delText">Șterge text</button></div>'
+          + '</div>'
+        + '</div>'
+      + '</div>'
+      + '<div class="pe-foot"><button class="pe-btn pe-ghost" data-act="reset">Resetează</button><div style="flex:1"></div><button class="pe-btn pe-ghost" data-act="cancel">Anulează</button><button class="pe-btn pe-pri" data-act="save">Salvează</button></div>'
+      + '</div>';
+    document.body.appendChild(overlay);
+    view = overlay.querySelector(".pe-canvas");
+    vctx = view.getContext("2d");
+    ctrls = {
+      file: overlay.querySelector(".pe-file"),
+      empty: overlay.querySelector(".pe-empty"),
+      cropbox: overlay.querySelector(".pe-cropbox"),
+      canwrap: overlay.querySelector(".pe-canwrap"),
+      tin: overlay.querySelector(".pe-tin"),
+      tctrl: overlay.querySelector(".pe-tctrl"),
+      tcolor: overlay.querySelector(".pe-tcolor"),
+      tsize: overlay.querySelector(".pe-tsize"),
+      applyBtn: overlay.querySelector('[data-act="cropApply"]'),
+      cancelCropBtn: overlay.querySelector('[data-act="cropCancel"]')
+    };
+    wire();
+  }
+  function adjRow(label,key,min,max,val){
+    return '<div class="pe-adj"><div class="pe-al"><span>'+label+'</span><span class="pe-av" data-av="'+key+'">'+val+'</span></div>'
+      + '<input type="range" class="pe-range" data-adj="'+key+'" min="'+min+'" max="'+max+'" value="'+val+'"></div>';
+  }
+
+  function freshState(){
+    return { brightness:100, contrast:100, saturation:100, preset:"none",
+             texts:[], sel:-1, cropMode:false, ratio:"free", crop:null, drag:null, onSave:null };
+  }
+  function curFilter(){
+    return (PRESETS[st.preset]?PRESETS[st.preset]+" ":"")
+      + "brightness("+st.brightness+"%) contrast("+st.contrast+"%) saturate("+st.saturation+"%)";
+  }
+
+  // fit display canvas to the stage while keeping aspect
+  function layout(){
+    if(!work) return;
+    const maxW = 560, maxH = 460;
+    const s = Math.min(maxW/work.width, maxH/work.height, 1);
+    view.width = Math.round(work.width*s);
+    view.height = Math.round(work.height*s);
+    view.dataset.scale = s;
+    draw();
+  }
+  function dscale(){ return parseFloat(view.dataset.scale||"1"); }
+
+  function draw(){
+    if(!work) return;
+    vctx.clearRect(0,0,view.width,view.height);
+    vctx.filter = curFilter();
+    vctx.drawImage(work, 0, 0, view.width, view.height);
+    vctx.filter = "none";
+    const s = dscale();
+    st.texts.forEach((t,i)=>{
+      vctx.save();
+      vctx.font = Math.round(t.size*s)+"px "+t.font;
+      vctx.fillStyle = t.color; vctx.textBaseline="top";
+      vctx.shadowColor="rgba(0,0,0,.45)"; vctx.shadowBlur=4*s;
+      vctx.fillText(t.str, t.x*s, t.y*s);
+      vctx.restore();
+      if(i===st.sel){
+        const w = vctx.measureText? measureW(t,s):0;
+        vctx.strokeStyle="#2f7355"; vctx.lineWidth=1.5; vctx.setLineDash([5,4]);
+        vctx.strokeRect(t.x*s-4, t.y*s-4, w+8, t.size*s+8); vctx.setLineDash([]);
+      }
+    });
+  }
+  function measureW(t,s){ vctx.save(); vctx.font=Math.round(t.size*s)+"px "+t.font; const w=vctx.measureText(t.str).width; vctx.restore(); return w; }
+
+  function loadSrc(src){
+    if(!src){ work=null; ctrls.empty.hidden=false; view.style.display="none"; return; }
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = ()=>{
+      const c = document.createElement("canvas"); c.width=img.naturalWidth; c.height=img.naturalHeight;
+      c.getContext("2d").drawImage(img,0,0);
+      work = c; ctrls.empty.hidden=true; view.style.display="block"; layout();
+    };
+    img.onerror = ()=>{ ctrls.empty.hidden=false; view.style.display="none"; toast&&toast("Nu am putut încărca imaginea"); };
+    img.src = /^https?:/i.test(src) ? (src + (src.includes("?")?"&":"?") + "cors=" + Date.now()) : src;
+  }
+  function loadFile(file){
+    if(!file || !/^image\//.test(file.type)){ toast&&toast("Alege un fișier imagine"); return; }
+    const r = new FileReader(); r.onload=()=>loadSrc(r.result); r.readAsDataURL(file);
+  }
+
+  /* geometry ops (bake into `work`, transform text coords) */
+  function rotate(cw){
+    if(!work) return;
+    const w=work.width,h=work.height, c=document.createElement("canvas");
+    c.width=h; c.height=w; const x=c.getContext("2d");
+    x.translate(c.width/2,c.height/2); x.rotate((cw?90:-90)*Math.PI/180); x.drawImage(work,-w/2,-h/2);
+    st.texts.forEach(t=>{ const nx=cw?(h-t.y):(t.y), ny=cw?(t.x):(w-t.x); t.x=nx; t.y=ny; });
+    work=c; layout();
+  }
+  function flip(horiz){
+    if(!work) return;
+    const w=work.width,h=work.height,c=document.createElement("canvas"); c.width=w;c.height=h; const x=c.getContext("2d");
+    if(horiz){ x.translate(w,0); x.scale(-1,1); } else { x.translate(0,h); x.scale(1,-1); }
+    x.drawImage(work,0,0);
+    st.texts.forEach(t=>{ if(horiz) t.x=w-t.x; else t.y=h-t.y; });
+    work=c; draw();
+  }
+  function applyCrop(){
+    if(!st.crop||!work) return;
+    const r=st.crop, c=document.createElement("canvas");
+    c.width=Math.max(1,Math.round(r.w)); c.height=Math.max(1,Math.round(r.h));
+    c.getContext("2d").drawImage(work, r.x, r.y, r.w, r.h, 0,0, c.width, c.height);
+    st.texts.forEach(t=>{ t.x-=r.x; t.y-=r.y; });
+    work=c; exitCrop(); layout();
+  }
+  function exitCrop(){ st.cropMode=false; st.crop=null; ctrls.cropbox.hidden=true; ctrls.applyBtn.hidden=true; ctrls.cancelCropBtn.hidden=true; overlay.querySelector(".pe-stage").classList.remove("cropping"); }
+
+  /* export: resize to <=1600, webp */
+  function exportWebp(){
+    if(!work) return Promise.resolve("");
+    const s = Math.min(1, MAXDIM/Math.max(work.width,work.height));
+    const ow=Math.round(work.width*s), oh=Math.round(work.height*s);
+    const out=document.createElement("canvas"); out.width=ow; out.height=oh; const c=out.getContext("2d");
+    c.filter = curFilter(); c.drawImage(work,0,0,ow,oh); c.filter="none";
+    st.texts.forEach(t=>{ c.save(); c.font=Math.round(t.size*s)+"px "+t.font; c.fillStyle=t.color; c.textBaseline="top";
+      c.shadowColor="rgba(0,0,0,.45)"; c.shadowBlur=4*s; c.fillText(t.str, t.x*s, t.y*s); c.restore(); });
+    return new Promise(res=>{
+      out.toBlob(b=>{ if(!b){ res(out.toDataURL("image/png")); return; } const r=new FileReader(); r.onload=()=>res(r.result); r.readAsDataURL(b); }, "image/webp", 0.85);
+    });
+  }
+
+  function wire(){
+    overlay.addEventListener("click", e=>{
+      const act = e.target.closest("[data-act]") && e.target.closest("[data-act]").dataset.act;
+      const preset = e.target.dataset.preset, ratio = e.target.dataset.ratio;
+      if(act==="cancel"){ close(); return; }
+      if(act==="pick"){ ctrls.file.click(); return; }
+      if(act==="aiEnhance"){ aiEnhance(); return; }
+      if(act==="rotL"){ rotate(false); return; }
+      if(act==="rotR"){ rotate(true); return; }
+      if(act==="flipH"){ flip(true); return; }
+      if(act==="flipV"){ flip(false); return; }
+      if(act==="cropApply"){ applyCrop(); return; }
+      if(act==="cropCancel"){ exitCrop(); draw(); return; }
+      if(act==="addText"){ addText(); return; }
+      if(act==="delText"){ if(st.sel>=0){ st.texts.splice(st.sel,1); st.sel=-1; ctrls.tctrl.hidden=true; draw(); } return; }
+      if(act==="reset"){ st.brightness=100;st.contrast=100;st.saturation=100;st.preset="none";st.texts=[];st.sel=-1;
+        overlay.querySelectorAll(".pe-range").forEach(r=>{r.value=100;overlay.querySelector('[data-av="'+r.dataset.adj+'"]').textContent="100";});
+        overlay.querySelectorAll(".pe-fbtn").forEach(b=>b.classList.toggle("on",b.dataset.preset==="none"));
+        ctrls.tctrl.hidden=true; draw(); return; }
+      if(act==="save"){ doSave(); return; }
+      if(preset!==undefined){ st.preset=preset; overlay.querySelectorAll(".pe-fbtn").forEach(b=>b.classList.toggle("on",b.dataset.preset===preset)); draw(); return; }
+      if(ratio!==undefined){ enterCrop(ratio); return; }
+    });
+    overlay.addEventListener("input", e=>{
+      if(e.target.classList.contains("pe-range")){ const k=e.target.dataset.adj; st[k]=+e.target.value; overlay.querySelector('[data-av="'+k+'"]').textContent=e.target.value; draw(); }
+      if(e.target.classList.contains("pe-tcolor")&&st.sel>=0){ st.texts[st.sel].color=e.target.value; draw(); }
+      if(e.target.classList.contains("pe-tsize")&&st.sel>=0){ st.texts[st.sel].size=+e.target.value; draw(); }
+    });
+    ctrls.file.addEventListener("change",()=>{ if(ctrls.file.files[0]) loadFile(ctrls.file.files[0]); ctrls.file.value=""; });
+    // drag & drop onto stage
+    const stage = overlay.querySelector(".pe-stage");
+    stage.addEventListener("dragover",e=>{e.preventDefault();stage.classList.add("over");});
+    stage.addEventListener("dragleave",()=>stage.classList.remove("over"));
+    stage.addEventListener("drop",e=>{e.preventDefault();stage.classList.remove("over"); if(e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);});
+    // canvas pointer: crop draw OR text drag
+    view.addEventListener("pointerdown", onDown);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }
+
+  function enterCrop(ratio){
+    if(!work) return;
+    st.cropMode=true; st.ratio=ratio;
+    overlay.querySelector(".pe-stage").classList.add("cropping");
+    ctrls.applyBtn.hidden=false; ctrls.cancelCropBtn.hidden=false;
+    // default crop = centered 80%
+    const w=view.width, h=view.height; let cw=w*0.8, ch=h*0.8;
+    if(ratio!=="free"){ const R=+ratio; if(cw/ch>R) cw=ch*R; else ch=cw/R; }
+    setCropDisplay((w-cw)/2,(h-ch)/2,cw,ch);
+  }
+  function setCropDisplay(x,y,w,h){
+    const s=dscale();
+    st.crop={ x:x/s, y:y/s, w:w/s, h:h/s };
+    const box=ctrls.cropbox; box.hidden=false;
+    box.style.left=x+"px"; box.style.top=y+"px"; box.style.width=w+"px"; box.style.height=h+"px";
+  }
+
+  function localXY(e){ const r=view.getBoundingClientRect(); return { x:e.clientX-r.left, y:e.clientY-r.top }; }
+  function onDown(e){
+    if(!work) return;
+    const p=localXY(e);
+    if(st.cropMode){ st.drag={mode:"crop", sx:p.x, sy:p.y}; setCropDisplay(p.x,p.y,1,1); return; }
+    // hit-test texts (topmost first)
+    const s=dscale();
+    for(let i=st.texts.length-1;i>=0;i--){ const t=st.texts[i]; const w=measureW(t,s);
+      if(p.x>=t.x*s-6 && p.x<=t.x*s+w+6 && p.y>=t.y*s-6 && p.y<=t.y*s+t.size*s+6){
+        st.sel=i; selectText(); st.drag={mode:"text", ox:p.x-t.x*s, oy:p.y-t.y*s}; draw(); return; }
+    }
+    st.sel=-1; ctrls.tctrl.hidden=true; draw();
+  }
+  function onMove(e){
+    if(!st||!st.drag) return;
+    const p=localXY(e), s=dscale();
+    if(st.drag.mode==="crop"){
+      let x=Math.min(st.drag.sx,p.x), y=Math.min(st.drag.sy,p.y), w=Math.abs(p.x-st.drag.sx), h=Math.abs(p.y-st.drag.sy);
+      if(st.ratio!=="free"){ const R=+st.ratio; if(w/h>R) w=h*R; else h=w/R; }
+      x=Math.max(0,Math.min(x,view.width)); y=Math.max(0,Math.min(y,view.height));
+      w=Math.min(w,view.width-x); h=Math.min(h,view.height-y);
+      setCropDisplay(x,y,w,h);
+    } else if(st.drag.mode==="text"){
+      const t=st.texts[st.sel]; if(!t) return;
+      t.x=(p.x-st.drag.ox)/s; t.y=(p.y-st.drag.oy)/s; draw();
+    }
+  }
+  function onUp(){ if(st) st.drag=null; }
+
+  function addText(){
+    const str=(ctrls.tin.value||"").trim(); if(!str){ toast&&toast("Scrie un text întâi"); return; }
+    if(!work){ toast&&toast("Încarcă o poză întâi"); return; }
+    const t={ str, x:work.width*0.1, y:work.height*0.1, size:Math.round(work.height*0.07)||48, color:ctrls.tcolor.value||"#ffffff", font:'"Inter", sans-serif' };
+    st.texts.push(t); st.sel=st.texts.length-1; ctrls.tin.value=""; selectText(); draw();
+  }
+  function selectText(){ const t=st.texts[st.sel]; if(!t) return; ctrls.tctrl.hidden=false; ctrls.tcolor.value=t.color; ctrls.tsize.value=t.size; }
+
+  function exportRawJpeg(){
+    const c=document.createElement("canvas"); c.width=work.width; c.height=work.height;
+    c.getContext("2d").drawImage(work,0,0);
+    return c.toDataURL("image/jpeg",0.95);
+  }
+  async function aiEnhance(){
+    if(!work){ toast&&toast("Încarcă o poză întâi"); return; }
+    const btn=overlay.querySelector('[data-act="aiEnhance"]'); const old=btn.textContent;
+    btn.disabled=true; btn.textContent="Se optimizează cu AI...";
+    try{
+      const r=await fetch("/api/ai-enhance",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({dataUrl:exportRawJpeg()})});
+      const d=await r.json().catch(()=>({}));
+      if(r.ok && d.dataUrl){ loadSrc(d.dataUrl); toast&&toast("Poză optimizată cu AI — verific-o înainte de a salva"); }
+      else { toast&&toast("Optimizarea AI nu a reușit"+(d.error?(" ("+d.error+")"):"")); }
+    }catch(e){ toast&&toast("Optimizarea AI nu a reușit (server)"); }
+    finally{ btn.disabled=false; btn.textContent=old; }
+  }
+  function exportJpeg(){
+    if(!work) return Promise.resolve("");
+    const ow=work.width, oh=work.height;
+    const out=document.createElement("canvas"); out.width=ow; out.height=oh; const c=out.getContext("2d");
+    c.fillStyle="#ffffff"; c.fillRect(0,0,ow,oh);
+    c.filter=curFilter(); c.drawImage(work,0,0,ow,oh); c.filter="none";
+    st.texts.forEach(t=>{ c.save(); c.font=t.size+"px "+t.font; c.fillStyle=t.color; c.textBaseline="top";
+      c.shadowColor="rgba(0,0,0,.45)"; c.shadowBlur=4; c.fillText(t.str,t.x,t.y); c.restore(); });
+    return Promise.resolve(out.toDataURL("image/jpeg",0.92));
+  }
+  async function doSave(){
+    if(!work){ toast&&toast("Nu ai nicio poză"); return; }
+    if(st.cropMode) exitCrop();
+    const btn = overlay.querySelector('[data-act="save"]'); btn.disabled=true; btn.textContent="Se procesează...";
+    let url="", meta={};
+    try{
+      const jpeg = await exportJpeg();
+      const r = await fetch("/api/upload",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({dataUrl:jpeg})});
+      if(r.ok){ const d=await r.json(); if(d&&d.url){ url=d.url; meta={alt:d.alt||"",description:d.description||""}; } }
+    }catch(e){}
+    if(!url){ try{ url = await exportWebp(); }catch(e){ toast&&toast("Eroare la salvare"); btn.disabled=false; btn.textContent="Salvează"; return; } }
+    const cb=st.onSave; close(); cb&&cb(url, meta);
+  }
+
+  function close(){ overlay.classList.remove("on"); }
+  window.openPhotoEditor = function(initialSrc, onSave){
+    if(!overlay) build();
+    st = freshState(); st.onSave = onSave;
+    overlay.querySelectorAll(".pe-range").forEach(r=>{r.value=100;});
+    overlay.querySelectorAll('[data-av]').forEach(s=>s.textContent="100");
+    overlay.querySelectorAll(".pe-fbtn").forEach(b=>b.classList.toggle("on",b.dataset.preset==="none"));
+    ctrls.tctrl.hidden=true; overlay.querySelector('[data-act="save"]').disabled=false; overlay.querySelector('[data-act="save"]').textContent="Salvează";
+    overlay.classList.add("on");
+    loadSrc(initialSrc||"");
+  };
+})();
+
+/* ===== Before/After comparison slider =====
+   openCompare(beforeSrc, afterSrc, { index, total, onAccept, onSkip, onCancel }) */
+(function(){
+  let ov, box, before, handle, count, cb;
+  function build(){
+    ov=document.createElement("div"); ov.className="cmp-overlay";
+    ov.innerHTML=
+      '<div class="cmp-modal">'
+      + '<div class="cmp-head"><b>Înainte / După — comparație AI</b><span class="cmp-count"></span></div>'
+      + '<div class="cmp-stage"><div class="cmp-box">'
+        + '<img class="cmp-after" alt="după">'
+        + '<img class="cmp-before" alt="înainte">'
+        + '<div class="cmp-handle"><span class="cmp-grip">⇆</span></div>'
+        + '<span class="cmp-tag cmp-tagL">ÎNAINTE</span><span class="cmp-tag cmp-tagR">DUPĂ · AI</span>'
+      + '</div></div>'
+      + '<div class="cmp-hint">Trage de mijloc pentru a compara.</div>'
+      + '<div class="cmp-foot">'
+        + '<button class="pe-btn pe-ghost" data-c="skip">Păstrează originalul</button>'
+        + '<div style="flex:1"></div>'
+        + '<button class="pe-btn pe-ghost" data-c="cancel">Renunță la tot</button>'
+        + '<button class="pe-btn pe-pri" data-c="accept">Folosește versiunea AI</button>'
+      + '</div></div>';
+    document.body.appendChild(ov);
+    box=ov.querySelector(".cmp-box");
+    before=ov.querySelector(".cmp-before");
+    handle=ov.querySelector(".cmp-handle");
+    count=ov.querySelector(".cmp-count");
+
+    function setPos(pct){
+      pct=Math.max(2,Math.min(98,pct));
+      before.style.clipPath="inset(0 "+(100-pct)+"% 0 0)";
+      handle.style.left=pct+"%";
+    }
+    setPos(50);
+    let dragging=false;
+    function move(e){
+      const r=box.getBoundingClientRect();
+      const x=( (e.touches?e.touches[0].clientX:e.clientX) - r.left)/r.width*100;
+      setPos(x);
+    }
+    box.addEventListener("pointerdown",e=>{dragging=true;move(e);});
+    window.addEventListener("pointermove",e=>{if(dragging)move(e);});
+    window.addEventListener("pointerup",()=>{dragging=false;});
+
+    ov.addEventListener("click",e=>{
+      const c=e.target.closest("[data-c]"); if(!c) return;
+      const act=c.dataset.c; close();
+      if(cb){ const f=cb; cb=null; f(act); }
+    });
+  }
+  function close(){ ov && ov.classList.remove("on"); }
+  window.openCompare=function(beforeSrc, afterSrc, opts){
+    opts=opts||{};
+    if(!ov) build();
+    ov.querySelector(".cmp-after").src=afterSrc;
+    before.src=beforeSrc;
+    before.style.clipPath="inset(0 50% 0 0)"; handle.style.left="50%";
+    count.textContent = (opts.total>1) ? ("Poza "+opts.index+" din "+opts.total) : "";
+    cb=function(act){
+      if(act==="accept") opts.onAccept&&opts.onAccept();
+      else if(act==="skip") opts.onSkip&&opts.onSkip();
+      else opts.onCancel&&opts.onCancel();
+    };
+    ov.classList.add("on");
+  };
+})();
+
+/* ---- bulk AI selection state + runner ---- */
+const photoSel = new WeakSet();
+async function aiOptimizeSelected(arr, host){
+  const sel = arr.filter(p=>photoSel.has(p) && p.photoName);
+  if(!sel.length){ toast("Bifează cel puțin o poză"); return; }
+  let used=0, kept=0, failed=0, cancelled=false;
+  for(let i=0;i<sel.length;i++){
+    const p=sel[i];
+    toast("Optimizez "+(i+1)+" din "+sel.length+" cu AI...");
+    let enhanced=null;
+    try{
+      const payload = /^data:/.test(p.photoName) ? {dataUrl:p.photoName} : {url:p.photoName};
+      const r=await fetch("/api/ai-enhance",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+      const d=await r.json().catch(()=>({}));
+      if(r.ok&&d.dataUrl) enhanced=d.dataUrl; else { failed++; }
+    }catch(e){ failed++; }
+    if(!enhanced) continue;
+    const decision = await new Promise(res=>openCompare(p.photoName, enhanced, {index:i+1,total:sel.length,
+      onAccept:()=>res("accept"), onSkip:()=>res("skip"), onCancel:()=>res("cancel")}));
+    if(decision==="cancel"){ cancelled=true; break; }
+    if(decision==="skip"){ kept++; continue; }
+    // accept -> upload enhanced to R2 (short url); fallback to embedding if upload fails
+    try{
+      const ur=await fetch("/api/upload",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({dataUrl:enhanced})});
+      const ud=await ur.json().catch(()=>({}));
+      if(ur.ok&&ud.url){ p.photoName=ud.url; if(ud.alt&&!p.imageAlt)p.imageAlt=ud.alt; }
+      else { p.photoName=enhanced; }
+      used++; markDirty();
+    }catch(e){ p.photoName=enhanced; used++; markDirty(); }
+  }
+  sel.forEach(p=>photoSel.delete(p));
+  renderPhotos(host,arr);
+  toast("Gata: "+used+" optimizate, "+kept+" păstrate"+(failed?(", "+failed+" eșuate"):"")+(cancelled?" — oprit":""));
+}
+
+/* ---- image field + photo list (uses openPhotoEditor) ---- */
+function imageField(obj,key,label,opts){
+  opts=opts||{};
+  const wrap=h("div",{class:"field"});
+  if(label) wrap.appendChild(h("label",{},label));
+  const prev=h("div",{class:"img-prev"});
+  function refresh(){ prev.innerHTML=""; if(obj[key]) prev.appendChild(h("img",{src:obj[key],alt:""})); else prev.appendChild(h("span",{class:"img-empty"},"fără imagine")); }
+  refresh();
+  const edit=h("button",{class:"btn btn-out sm",type:"button",onclick:()=>openPhotoEditor(obj[key]||"",(u,meta)=>{obj[key]=u;refresh();markDirty();opts.onSaved&&opts.onSaved(meta||{});})},
+    h("span",{html:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>'}),"Încarcă / Editează");
+  const rm=h("button",{class:"btn-ghost sm",type:"button",onclick:()=>{obj[key]="";refresh();markDirty();}},"Elimină");
+  wrap.appendChild(h("div",{class:"img-row"},prev,h("div",{class:"img-acts"},edit,rm)));
+  return wrap;
+}
+function renderPhotos(host,arr){
+  host.innerHTML="";
+  const selCount=arr.filter(p=>photoSel.has(p)).length;
+  const aiBtn=h("button",{class:"btn btn-ai-bulk sm",type:"button",disabled:selCount?undefined:"disabled",
+    onclick:()=>aiOptimizeSelected(arr,host)},
+    h("span",{html:'✨'}),"Optimizează selectatele"+(selCount?(" ("+selCount+")"):""));
+  const allSel=arr.length&&arr.every(p=>photoSel.has(p));
+  const selAll=arr.length?h("button",{class:"btn-ghost sm",type:"button",onclick:()=>{
+      if(allSel) arr.forEach(p=>photoSel.delete(p)); else arr.forEach(p=>photoSel.add(p));
+      renderPhotos(host,arr);
+    }}, allSel?"Deselectează tot":"Selectează tot"):null;
+  host.appendChild(h("div",{class:"photo-toolbar"}, aiBtn, selAll));
+
+  arr.forEach((p,i)=>{
+    const alt=h("input",{class:"inp",placeholder:"Descriere (alt)"}); alt.value=p.imageAlt||""; alt.oninput=()=>{p.imageAlt=alt.value;markDirty();};
+    const chk=h("input",{type:"checkbox",class:"photo-chk"}); chk.checked=photoSel.has(p);
+    chk.onchange=()=>{ if(chk.checked)photoSel.add(p); else photoSel.delete(p); renderPhotos(host,arr); };
+    const acts=h("div",{class:"photo-acts"},
+      i>0?h("button",{class:"btn-ghost sm",type:"button",onclick:()=>{const t=arr[i-1];arr[i-1]=arr[i];arr[i]=t;renderPhotos(host,arr);markDirty();}},"↑"):null,
+      i<arr.length-1?h("button",{class:"btn-ghost sm",type:"button",onclick:()=>{const t=arr[i+1];arr[i+1]=arr[i];arr[i]=t;renderPhotos(host,arr);markDirty();}},"↓"):null,
+      h("button",{class:"btn-ghost sm",type:"button",style:"color:var(--red)",onclick:()=>{arr.splice(i,1);renderPhotos(host,arr);markDirty();}},"Șterge"));
+    host.appendChild(h("div",{class:"photo-card"},
+      h("label",{class:"photo-pick"}, chk, h("span",{},"AI")),
+      h("div",{class:"photo-tag"}, i===0?"Foto principală (hero)":("Foto "+(i+1))),
+      imageField(p,"photoName","",{onSaved:(meta)=>{ if(meta&&meta.alt&&!p.imageAlt){p.imageAlt=meta.alt;} renderPhotos(host,arr); }}),
+      h("div",{class:"field",style:"margin-top:8px"},alt),
+      acts));
+  });
+  host.appendChild(h("button",{class:"btn btn-out sm",type:"button",style:"margin-top:4px",onclick:()=>openPhotoEditor("",(u,meta)=>{arr.push({photoName:u,imageAlt:(meta&&meta.alt)||""});renderPhotos(host,arr);markDirty();})},
+    h("span",{html:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>'}),"Adaugă poză"));
+}
+/* ---- Camere & detalii: per-room editor (capacity, beds, surface, view, facilities) ---- */
+function bedroomsEditor(host, spaces){
+  host.innerHTML="";
+  spaces.forEach((sp,i)=>{
+    if(!sp.spaceType||typeof sp.spaceType!=="object") sp.spaceType={name:"",beds:[]};
+    const stp=sp.spaceType;
+    if(!Array.isArray(stp.beds)) stp.beds=[];
+    if(!stp.beds.length) stp.beds.push({type:"",count:1});
+    const bed=stp.beds[0];
+    const name=h("input",{class:"inp",placeholder:"ex: Dormitor 1"}); name.value=stp.name||""; name.oninput=()=>{stp.name=name.value;markDirty();};
+    const type=h("input",{class:"inp",placeholder:"ex: pat dublu"}); type.value=bed.type||""; type.oninput=()=>{bed.type=type.value;markDirty();};
+    const cnt=h("input",{class:"inp short",type:"number",min:"1"}); cnt.value=bed.count||1; cnt.oninput=()=>{bed.count=+cnt.value||1;markDirty();};
+    const del=h("button",{class:"rep-del",title:"Șterge",onclick:()=>{spaces.splice(i,1);bedroomsEditor(host,spaces);markDirty();}},
+      h("span",{html:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>'}));
+    host.appendChild(h("div",{class:"rep"},h("div",{style:"display:grid;grid-template-columns:2fr 1.4fr 70px;gap:8px;flex:1"},name,type,cnt),del));
+  });
+  host.appendChild(h("button",{class:"btn btn-out sm",onclick:()=>{spaces.push({spaceType:{name:"",beds:[{type:"",count:1}]}});bedroomsEditor(host,spaces);markDirty();}},"+ Adaugă dormitor/spațiu"));
+}
+function renderRoomsDetail(host){
+  host.innerHTML="";
+  const rooms=(state.pricing&&state.pricing.rooms)||[];
+  if(!rooms.length){ host.appendChild(h("p",{class:"intro"},"Adaugă întâi variante de unitate în tab-ul Prețuri.")); return; }
+  rooms.forEach(r=>{
+    if(!r.details||typeof r.details!=="object") r.details={};
+    const d=r.details;
+    ["view","keyFacilities","bathroomFacilities","kitchenFacilities","unitFacilities"].forEach(k=>{ if(!Array.isArray(d[k])) d[k]=[]; });
+    if(!Array.isArray(d.spaces)) d.spaces=[];
+    const body=h("div",{});
+    body.appendChild(h("div",{class:"grid4"},
+      field(d,"adultsRoomCapacity",{label:"Adulți",type:"number"}),
+      field(d,"childrenRoomCapacity",{label:"Copii",type:"number"}),
+      field(d,"surface",{label:"Suprafață"}),
+      field(d,"bathroomsNumber",{label:"Nr. băi",type:"number"})));
+    body.appendChild(h("div",{class:"field",style:"margin-top:12px"},h("label",{},"Descriere cameră"),ta(d,"roomDescription")));
+    const sec=(label,arr,ph)=>{ body.appendChild(h("div",{class:"fac-label",style:"margin-top:16px"},label)); const hh=h("div",{}); body.appendChild(hh); stringList(hh,arr,ph,"adaugă"); };
+    body.appendChild(h("div",{class:"fac-label",style:"margin-top:16px"},"Dormitoare / paturi"));
+    const bedsHost=h("div",{}); body.appendChild(bedsHost); bedroomsEditor(bedsHost,d.spaces);
+    sec("Priveliște",d.view,"ex: Vedere la munte");
+    sec("Facilități cheie",d.keyFacilities,"ex: Balcon, Bucătărie privată");
+    sec("Facilități baie",d.bathroomFacilities,"ex: Halat de baie");
+    sec("Facilități bucătărie",d.kitchenFacilities,"ex: Cuptor cu microunde");
+    host.appendChild(h("div",{class:"room-block"},
+      h("div",{class:"room-head"},h("b",{},r.name||r.id), r.isEntire?h("span",{class:"room-tag"},"toată unitatea"):null),
+      body));
   });
 }
 
-// Read the hotelier's deals for a unit (host owns slug, or admin).
-app.get("/api/host/deals", AUTH.requireAuth, async (req, res) => {
-  try {
-    const slug = String(req.query.slug || "");
-    if (!slug) return res.status(400).json({ error: "slug lipsă" });
-    if (!(await AUTH.userCanAccessSlug(pool, req.user, slug))) return res.status(403).json({ error: "Fără acces" });
-    const r = await pool.query("select deals, deals_consent from properties where slug=$1", [slug]);
-    res.json({ deals: (r.rows[0] && r.rows[0].deals) || [], consent: !!(r.rows[0] && r.rows[0].deals_consent) });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+function renderContent(){
+  const P=state.property,box=$("#contentEditor"),C=window.CATALOG||{};box.innerHTML="";
+  box.appendChild(accordion("Informații de bază","Identitatea unității",b=>{
+    b.appendChild(h("div",{class:"grid2"},field(P.basicInfo,"name",{label:"Nume unitate"}),selField(P.basicInfo,"unitType",UNIT_TYPES,"Tip unitate")));
+    b.appendChild(h("div",{class:"grid3",style:"margin-top:14px"},selField(P.basicInfo,"starRating",["","1","2","3","4","5"],"Clasificare (stele)"),selField(P.basicInfo,"entireUnitRental",[["true","Da"],["false","Nu"]],"Închiriere integrală"),field(P.basicInfo,"unitSurface",{label:"Suprafață"})));
+    b.appendChild(h("div",{class:"grid3",style:"margin-top:14px"},field(P.basicInfo,"unitCapacity",{label:"Capacitate (oaspeți)",type:"number"}),field(P.basicInfo,"roomsNumber",{label:"Nr. camere",type:"number"}),field(P.basicInfo,"unitBathroomsNumber",{label:"Nr. băi",type:"number"})));
+    b.appendChild(h("div",{style:"margin-top:14px"},field(P.basicInfo,"address",{label:"Adresă"})));
+    b.appendChild(h("div",{class:"grid3",style:"margin-top:14px"},field(P.basicInfo,"county",{label:"Județ"}),field(P.basicInfo,"city",{label:"Oraș"}),field(P.basicInfo,"locality",{label:"Cartier / localitate"})));
+    b.appendChild(h("div",{class:"grid2",style:"margin-top:14px"},field(P.basicInfo,"latitude",{label:"Latitudine",type:"number"}),field(P.basicInfo,"longitude",{label:"Longitudine",type:"number"})));
+  },true));
+  box.appendChild(accordion("Gazdă","Date despre gazdă și limbi vorbite",b=>{
+    b.appendChild(h("div",{class:"grid2"},field(P.host,"hostName",{label:"Nume gazdă"}),imageField(P.host,"hostImage","Imagine gazdă")));
+    b.appendChild(h("div",{class:"field",style:"margin-top:12px"},h("label",{},"Descriere gazdă"),ta(P.host,"hostUnitDescription")));
+    b.appendChild(h("div",{class:"fac-label",style:"margin-top:14px"},"Limbi vorbite"));
+    facBlock(b,"",P.host.spokenLanguages,LANG_OPTS,"string");
+  }));
+  box.appendChild(accordion("Camere & detalii","Capacitate, paturi, suprafață, priveliște și facilități pentru fiecare variantă — apar pe pagina de rezervare",b=>{
+    const host=h("div",{}); b.appendChild(host); renderRoomsDetail(host);
+  }));
+  box.appendChild(accordion("Descriere & beneficii","Text de prezentare, beneficii, facilități apreciate",b=>{
+    b.appendChild(h("div",{class:"field"},h("label",{},"Descriere unitate"),ta(P,"description")));
+    b.appendChild(h("div",{style:"margin-top:14px"}));
+    facBlock(b,"Beneficii",P.benefits,C["benefits"],"string");
+    facBlock(b,"Cele mai apreciate facilități",P.mostAppreciatedFacilities,C["general.mostAppreciatedFacilities"],"appreciated");
+  }));
+  box.appendChild(accordion("Facilități","Selectează din catalog, pe categorii. $ = cost suplimentar, loc = în afara locației",b=>{
+    const AF=P.allFacilities,K="general.allFacilities.";
+    facBlock(b,"Mâncare & băutură",AF.foodAndDrinks,C[K+"foodAndDrinks"],"rules");
+    facBlock(b,"Facilități generale",AF.generalFacilities,C[K+"generalFacilities"],"rules");
+    facBlock(b,"Wellness",AF.wellness,C[K+"wellness"],"rules");
+    facBlock(b,"Exterior",AF.exterior,C[K+"exterior"],"rules");
+    facBlock(b,"Curățenie",AF.cleaningServices,C[K+"cleaningServices"],"rules");
+    facBlock(b,"Business",AF.businessFacilities,C[K+"businessFacilities"],"rules");
+    facBlock(b,"Baie",AF.bathroom,C[K+"bathroom"],"string");
+    facBlock(b,"Bucătărie",AF.kitchen,C[K+"kitchen"],"string");
+    facBlock(b,"Dormitor",AF.bedroom,C[K+"bedroom"],"string");
+    facBlock(b,"Confort & accesibilitate",AF.comfort,C[K+"comfort"],"string");
+    facBlock(b,"Zone comune",AF.commonAreas,C[K+"commonAreas"],"string");
+    facBlock(b,"Zonă de zi",AF.livingArea,C[K+"livingArea"],"string");
+    facBlock(b,"Media & tehnologie",AF.mediaTechnology,C[K+"mediaTechnology"],"string");
+    facBlock(b,"Facilitățile camerei",AF.roomFacilities,C[K+"roomFacilities"],"string");
+    facBlock(b,"Magazine",AF.shops,C[K+"shops"],"string");
+  }));
+  box.appendChild(accordion("Activități","Schi, divertisment, sport & recreere",b=>{
+    const A=P.activities,K="general.activities.";
+    facBlock(b,"Schi",A.skiing,C[K+"skiing"],"rules");
+    facBlock(b,"Divertisment & familie",A.entertainmentAndFamilyServices,C[K+"entertainmentAndFamilyServices"],"rules");
+    facBlock(b,"Sport & recreere",A.sportsAndRecreation,C[K+"sportsAndRecreation"],"rules");
+  }));
+  box.appendChild(accordion("Servicii","Recepție, siguranță, generale",b=>{
+    const S=P.services,K="general.services.";
+    facBlock(b,"Recepție",S.receptionServices,C[K+"receptionServices"],"rules");
+    facBlock(b,"Servicii extra",S.servicesExtra,C[K+"servicesExtra"],"string");
+    facBlock(b,"Siguranță",S.safety,C[K+"safety"],"rules");
+    facBlock(b,"Servicii generale",S.generalServices,C[K+"generalServices"],"rules");
+  }));
+  box.appendChild(accordion("Politici","Check-in/out, copii, animale, fumat, parcare...",b=>{
+    const PO=P.policies;
+    b.appendChild(h("div",{class:"grid2"},timePair("Check-in",PO.checkIn),timePair("Check-out",PO.checkOut)));
+    b.appendChild(h("div",{class:"field",style:"margin-top:12px"},h("label",{},"Politica privind copiii"),ta(PO,"childrenPolicies")));
+    b.appendChild(h("div",{class:"grid2",style:"margin-top:12px"},h("div",{class:"field"},h("label",{},"Animale de companie"),ta(PO,"petsPolicy")),h("div",{class:"field"},h("label",{},"Fumat"),ta(PO,"smokingPolicy"))));
+    b.appendChild(h("div",{class:"grid2",style:"margin-top:12px"},h("div",{class:"field"},h("label",{},"Parcare"),ta(PO,"parkingPolicy")),h("div",{class:"field"},h("label",{},"Internet"),ta(PO,"internetPolicy"))));
+    b.appendChild(h("div",{class:"grid2",style:"margin-top:12px"},h("div",{class:"field"},h("label",{},"Masă / mic dejun"),ta(PO,"mealPolicy")),h("div",{class:"field"},h("label",{},"Liniște / petreceri"),ta(PO,"noisePolicy"))));
+    b.appendChild(h("div",{class:"grid3",style:"margin-top:12px"},field(PO,"groupsPolicy",{label:"Grupuri"}),field(PO,"ageRestriction",{label:"Restricție de vârstă"}),field(PO,"damageDeposit",{label:"Garanție daune"})));
+    b.appendChild(h("div",{class:"rep-sublabel",style:"margin:16px 0 8px"},"Paturi suplimentare (pe vârste)"));
+    const eb=h("div",{});b.appendChild(eb);
+    listEditor(eb,PO.extraBedAgeRates,{fields:[{k:"ageMin",type:"number",ph:"min"},{k:"ageMax",type:"number",ph:"max"},{k:"bedType",type:"text",ph:"Tip pat"},{k:"amount",type:"number",ph:"Preț"},{k:"currency",type:"text",ph:"RON"},{k:"per",type:"text",ph:"copil/noapte"}],item:{ageMin:0,ageMax:0,bedType:"",amount:0,currency:"RON",per:"copil/noapte"},addLabel:"interval"});
+  }));
+  box.appendChild(accordion("Plată","Metode de plată acceptate",b=>{facBlock(b,"Metode de plată",P.payment.paymentMethods,PAYMENT_OPTS,"string");}));
+  box.appendChild(accordion("Locație & împrejurimi","Atracții, pârtii, transport (nume + distanță în km)",b=>{
+    distList(b,"Atracții principale",P.location.mainAttractions);
+    distList(b,"Atracții în apropiere",P.location.nearbyAttractions);
+    distList(b,"Pârtii de schi",P.location.slopes);
+    distList(b,"Transport public",P.location.publicTransport);
+    distList(b,"Aeroporturi",P.location.nearbyAirports);
+  }));
+  box.appendChild(accordion("Întrebări frecvente","Întrebări și răspunsuri",b=>{
+    const s=h("div",{});b.appendChild(s);listEditor(s,P.questionsAndAnswers,{fields:[{k:"question",type:"text",ph:"Întrebare"},{k:"answer",type:"textarea",ph:"Răspuns"}],item:{question:"",answer:""},addLabel:"întrebare"});
+  }));
+  box.appendChild(accordion("Contact","Date de contact publice",b=>{
+    b.appendChild(h("div",{class:"grid2"},field(P.contact,"name",{label:"Nume contact"}),field(P.contact,"phone",{label:"Telefon"})));
+    b.appendChild(h("div",{class:"grid2",style:"margin-top:12px"},field(P.contact,"email",{label:"Email"}),field(P.contact,"website",{label:"Website"})));
+  }));
+}
+$("#saveContent").onclick=()=>{persist();toast("Conținut salvat");};
+(function(){const s=$("#saveState"); if(s){ s.style.cursor="pointer"; s.title="Click pentru a salva toate modificările"; s.onclick=()=>{persist();toast("Toate modificările au fost salvate");}; }})();
+$("#exportJson").onclick=()=>{const blob=new Blob([JSON.stringify(state.property,null,2)],{type:"application/json"});const a=h("a",{href:URL.createObjectURL(blob),download:SLUG+".json"});a.click();URL.revokeObjectURL(a.href);toast("JSON exportat — alimentează template-ul");};
+
+/* =================== PRICING =================== */
+const CURRENCIES=["RON","EUR","USD"];
+function renderRooms(){
+  $("#roomsBox").innerHTML="";
+  state.pricing.rooms.forEach((r,idx)=>{
+    if(!r.currency)r.currency="RON";
+    const curSel=h("select",{class:"sel"},...CURRENCIES.map(c=>h("option",{value:c,...(r.currency===c?{selected:1}:{})},c)));
+    curSel.onchange=()=>{ r.currency=curSel.value; markDirty(); renderRooms(); };
+    const row=h("div",{class:"room-row"},
+      h("div",{class:"rn"},h("b",{},r.name),h("small",{},(r.isEntire?"Toată vila · ":"")+(r.sub||""))),
+      h("div",{class:"field"},h("label",{},"Zi obișnuită"),(()=>{const w=h("div",{class:"with-sfx"},mkNum(r,"weekday"),h("span",{class:"sfx"},r.currency));return w;})()),
+      h("div",{class:"field"},h("label",{},"Weekend"),(()=>{const w=h("div",{class:"with-sfx"},mkNum(r,"weekend"),h("span",{class:"sfx"},r.currency));return w;})()),
+      h("div",{class:"field"},h("label",{},"Nopți minime"),mkNum(r,"minNights",1)),
+      h("div",{class:"field"},h("label",{},"Monedă"),curSel));
+    $("#roomsBox").appendChild(row);
+  });
+  function mkNum(o,k,min){const i=h("input",{class:"inp",type:"number",min:min||0});i.value=o[k];i.oninput=()=>{o[k]=Math.max(min||0,+i.value||0);markDirty();};return i;}
+}
+function renderPeriods(){
+  const box=$("#periodsBox");box.innerHTML="";$("#noPeriods").style.display=state.pricing.periods.length?"none":"block";
+  state.pricing.periods.forEach((p,idx)=>{
+    const sel=h("select",{class:"sel"},h("option",{value:"all",...(p.roomId==="all"?{selected:1}:{})},"Toate"),...state.pricing.rooms.map(r=>h("option",{value:r.id,...(p.roomId===r.id?{selected:1}:{})},r.name)));
+    sel.onchange=()=>{p.roomId=sel.value;markDirty();};
+    const mk=(k,t)=>{const i=h("input",{class:"inp"+(t==="number"?" short":""),type:t||"text"});i.value=p[k]??"";i.oninput=()=>{p[k]=t==="number"?(+i.value||0):i.value;markDirty();};return i;};
+    const del=h("button",{class:"icon-btn",onclick:()=>{state.pricing.periods.splice(idx,1);renderPeriods();markDirty();}},h("span",{html:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>'}));
+    box.appendChild(h("tr",{},h("td",{},mk("label")),h("td",{},sel),h("td",{},mk("start","date")),h("td",{},mk("end","date")),h("td",{},mk("weekday","number")),h("td",{},mk("weekend","number")),h("td",{},del)));
+  });
+}
+$("#addPeriod").onclick=()=>{state.pricing.periods.push({label:"",roomId:"all",start:"",end:"",weekday:state.pricing.rooms[0].weekday,weekend:state.pricing.rooms[0].weekend});renderPeriods();markDirty();};
+$("#savePrices").onclick=()=>{syncUnits();persist();renderUnitChips();renderIcal();toast("Prețuri salvate");};
+
+/* =================== CALENDAR (channel manager) =================== */
+let curUnit=state.units[0]?.id, view=new Date();view.setDate(1);
+function renderUnitChips(){
+  const box=$("#unitChips");box.innerHTML="";
+  if(!state.units.find(u=>u.id===curUnit))curUnit=state.units[0]?.id;
+  state.pricing.rooms.forEach(r=>{
+    box.appendChild(h("button",{class:"unit-chip"+(curUnit===r.id?" on":""),onclick:()=>{curUnit=r.id;renderUnitChips();renderCalendar();}},
+      r.name, r.isEntire?h("span",{class:"tag"},"toată vila"):null));
+  });
+}
+function dayOverride(roomId,ds){const dp=state.pricing.dayPrices||{};return (dp[roomId]&&dp[roomId][ds]!=null)?dp[roomId][ds]:null;}
+function basePrice(ds){const ov=dayOverride(curUnit,ds);if(ov!=null)return ov;const d=fromIso(ds).getDay(),we=(d===5||d===6);const r=state.pricing.rooms.find(x=>x.id===curUnit)||state.pricing.rooms[0];let wd=r.weekday,wk=r.weekend;
+  state.pricing.periods.forEach(p=>{if((p.roomId==="all"||p.roomId===curUnit)&&p.start&&p.end&&ds>=p.start&&ds<=p.end){wd=p.weekday;wk=p.weekend;}});return we?wk:wd;}
+function renderCalendar(){
+  $("#dow").innerHTML=DOW.map(d=>`<div class="cal-dow">${d}</div>`).join("");
+  $("#calTitle").textContent=MONTHS[view.getMonth()]+" "+view.getFullYear();
+  $("#statTitle").textContent=unitName(curUnit)+" · "+MONTHS[view.getMonth()];
+  const grid=$("#calGrid");grid.innerHTML="";
+  const startDow=(new Date(view).getDay()+6)%7, dim=new Date(view.getFullYear(),view.getMonth()+1,0).getDate(),today=iso(new Date());
+  let free=0,own=0,ic=0,ov=0;
+  for(let i=0;i<startDow;i++)grid.appendChild(h("div",{class:"day out"}));
+  for(let day=1;day<=dim;day++){
+    const ds=view.getFullYear()+"-"+pad(view.getMonth()+1)+"-"+pad(day);
+    const past=ds<today, st=effState(curUnit,ds);
+    const c=h("div",{class:"day"+(past?" past":"")+(!past&&st.s!=="free"?" "+st.s:"")});
+    c.appendChild(h("span",{},String(day)));
+    if(st.s==="ical"){c.style.background=(state.units.find(u=>u.id===curUnit).feeds.find(f=>(f.blocks||[]).includes(ds))||{}).color||"#3b6fb0";c.appendChild(h("span",{class:"pr"},st.src));if(!past)ic++;}
+    else if(st.s==="own"){c.appendChild(h("span",{class:"pr"},"blocat"));if(!past)own++;}
+    else if(st.s==="overlap"){c.appendChild(h("span",{class:"pr"},st.src));if(!past)ov++;}
+    else{
+      if(!past){
+        const ov=dayOverride(curUnit,ds);
+        const inp=h("input",{class:"day-price",type:"number",min:"0",value:String(basePrice(ds))});
+        inp.onmousedown=e=>e.stopPropagation();
+        inp.onclick=e=>{ e.stopPropagation(); inp.select&&inp.select(); };
+        inp.onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); inp.blur(); } };
+        inp.onchange=()=>commitDayPrice(ds,inp.value,inp);
+        c.appendChild(inp);
+        if(ov!=null)c.classList.add("custom");
+        free++;
+      } else {
+        c.appendChild(h("span",{class:"pr"},String(basePrice(ds))));
+        if(dayOverride(curUnit,ds)!=null)c.classList.add("custom");
+      }
+    }
+    if(!past){ c.dataset.ds=ds; c.onmousedown=(e)=>dragDown(e,ds); c.onmouseenter=()=>dragOver(ds); }
+    grid.appendChild(c);
+  }
+  const total=free+own+ic+ov;
+  $("#statFree").textContent=free;$("#statOwn").textContent=own;$("#statIcal").textContent=ic;$("#statOverlap").textContent=ov;
+  $("#statOcc").textContent=total?Math.round((own+ic+ov)/total*100)+"%":"0%";
+  renderLegend();
+}
+function setDayBlock(ds,block){
+  const u=state.units.find(x=>x.id===curUnit);u.blocks=u.blocks||[];const i=u.blocks.indexOf(ds);
+  if(block&&i<0)u.blocks.push(ds);else if(!block&&i>=0)u.blocks.splice(i,1);
+  persist();
+}
+// inline per-day price editing (committed from the editable cell input)
+function normalTariff(ds){const dd=fromIso(ds).getDay(),we=(dd===5||dd===6);const r=state.pricing.rooms.find(x=>x.id===curUnit)||state.pricing.rooms[0]||{};let wd=r.weekday,wk=r.weekend;state.pricing.periods.forEach(p=>{if((p.roomId==="all"||p.roomId===curUnit)&&p.start&&p.end&&ds>=p.start&&ds<=p.end){wd=p.weekday;wk=p.weekend;}});return we?wk:wd;}
+function commitDayPrice(ds,val,inpEl){
+  const v = (val===""||val==null) ? null : Math.max(0,+val||0);
+  state.pricing.dayPrices=state.pricing.dayPrices||{};
+  const dp=state.pricing.dayPrices[curUnit]=state.pricing.dayPrices[curUnit]||{};
+  if(v==null || v===normalTariff(ds)){ delete dp[ds]; } else { dp[ds]=v; }
+  if(!Object.keys(dp).length) delete state.pricing.dayPrices[curUnit];
+  persist();
+  if(inpEl){
+    const cell=inpEl.closest&&inpEl.closest(".day");
+    if(cell) cell.classList.toggle("custom", dayOverride(curUnit,ds)!=null);
+    if(v==null) inpEl.value=String(normalTariff(ds));
+  } else renderCalendar();
+}
+function renderLegend(){
+  let html=`<div class="li"><span class="sw" style="background:#fff"></span> Disponibil (preț)</div><div class="li"><span class="sw" style="position:relative;background:#fff"><span style="position:absolute;top:1px;right:1px;width:6px;height:6px;border-radius:50%;background:var(--brand)"></span></span> Preț special</div><div class="li"><span class="sw" style="background:var(--red-soft);border-color:#f1d3d3"></span> Blocat de tine</div><div class="li"><span class="sw" style="background:repeating-linear-gradient(45deg,#fbf2e2,#fbf2e2 4px,#fff5e2 4px,#fff5e2 8px)"></span> Indisponibil indirect</div>`;
+  const u=state.units.find(x=>x.id===curUnit);(u.feeds||[]).forEach(f=>html+=`<div class="li"><span class="sw" style="background:${f.color}"></span> ${f.source}</div>`);
+  $("#legend").innerHTML=html;
+}
+$("#calPrev").onclick=()=>{view.setMonth(view.getMonth()-1);renderCalendar();if(typeof clearSel==="function")clearSel();};
+$("#calNext").onclick=()=>{view.setMonth(view.getMonth()+1);renderCalendar();if(typeof clearSel==="function")clearSel();};
+/* ===== modes + drag-select + bulk (price/block) ===== */
+let calMode="price";                 // 'price' | 'block'
+let bulkDows=new Set([0,1,2,3,4,5,6]); // JS getDay() values; default all on
+let calSel=null;                     // {from,to} after a drag
+let dragging=false, dragStart=null, dragEnd=null, dragMoved=false;
+
+function applyRange(from,to,dowSet,action){
+  if(!from||!to) return 0;
+  let s=fromIso(from), e=fromIso(to); if(e<s){const t=s;s=e;e=t;}
+  const u=state.units.find(x=>x.id===curUnit); if(!u) return 0;
+  u.blocks=u.blocks||[];
+  state.pricing.dayPrices=state.pricing.dayPrices||{};
+  const dp=state.pricing.dayPrices[curUnit]=state.pricing.dayPrices[curUnit]||{};
+  let n=0;
+  for(let d=new Date(s); d<=e; d.setDate(d.getDate()+1)){
+    if(dowSet && !dowSet.has(d.getDay())) continue;
+    const ds=iso(d);
+    if(action.type==="price"){
+      if(action.value==null){ delete dp[ds]; } else { dp[ds]=action.value; }
+      n++;
+    } else if(action.type==="block"){
+      const i=u.blocks.indexOf(ds);
+      if(action.block && i<0){ u.blocks.push(ds); n++; }
+      else if(!action.block && i>=0){ u.blocks.splice(i,1); n++; }
+    }
+  }
+  if(action.type==="price" && !Object.keys(dp).length) delete state.pricing.dayPrices[curUnit];
+  persist(); renderCalendar();
+  return n;
+}
+
+/* ---- drag selection on the calendar ---- */
+function paintSel(){
+  const grid=$("#calGrid"); if(!grid) return;
+  let lo=dragStart, hi=dragEnd; if(lo&&hi&&hi<lo){const t=lo;lo=hi;hi=t;}
+  grid.querySelectorAll(".day").forEach(c=>{ const ds=c.dataset.ds; c.classList.toggle("sel", !!(ds&&lo&&hi&&ds>=lo&&ds<=hi)); });
+}
+function dragDown(e,ds){ e.preventDefault(); dragging=true; dragStart=ds; dragEnd=ds; dragMoved=false; $("#calSelBar").hidden=true; paintSel(); }
+function dragOver(ds){ if(!dragging) return; if(ds!==dragEnd) dragMoved=true; dragEnd=ds; paintSel(); }
+document.addEventListener("mouseup",()=>{
+  if(!dragging) return; dragging=false;
+  let lo=dragStart, hi=dragEnd; if(lo&&hi&&hi<lo){const t=lo;lo=hi;hi=t;}
+  if(!dragMoved){
+    // a plain click (no drag): in BLOCK mode treat as a 1-day selection so it can be blocked;
+    // in PRICE mode do nothing (the price is edited via the inline field in the cell)
+    if(calMode!=="block"){ $("#calGrid").querySelectorAll(".day.sel").forEach(c=>c.classList.remove("sel")); return; }
+  }
+  calSel={from:lo,to:hi};
+  showSelBar();
 });
+function showSelBar(){
+  const bar=$("#calSelBar"); if(!calSel){ bar.hidden=true; return; }
+  const cnt=Math.round((fromIso(calSel.to)-fromIso(calSel.from))/864e5)+1;
+  $("#calSelInfo").textContent = fromIso(calSel.from).toLocaleDateString("ro-RO",{day:"numeric",month:"short"})+" → "+fromIso(calSel.to).toLocaleDateString("ro-RO",{day:"numeric",month:"short"})+" · "+cnt+(cnt===1?" zi":" zile");
+  const pf=$("#selPrice"); pf.style.display = calMode==="price"?"inline-block":"none"; pf.value="";
+  $("#selApply").textContent = calMode==="price"?"Setează preț":"Blochează";
+  bar.hidden=false;
+}
+function clearSel(){ calSel=null; $("#calSelBar").hidden=true; $("#calGrid").querySelectorAll(".day.sel").forEach(c=>c.classList.remove("sel")); }
+$("#selCancel").onclick=clearSel;
+$("#selApply").onclick=()=>{
+  if(!calSel) return;
+  if(calMode==="price"){ const v=$("#selPrice").value; if(v==="" ){toast("Introdu un preț");return;} const n=applyRange(calSel.from,calSel.to,null,{type:"price",value:Math.max(0,+v||0)}); toast(n+" zile actualizate"); }
+  else { const n=applyRange(calSel.from,calSel.to,null,{type:"block",block:true}); toast(n+" zile blocate"); }
+  clearSel();
+};
 
-// Hotelier agrees that offers are published on the LocalStay platform.
-app.post("/api/host/deals-consent", AUTH.requireAuth, async (req, res) => {
-  try {
-    const slug = String((req.body && req.body.slug) || "");
-    if (!slug) return res.status(400).json({ error: "slug lipsă" });
-    if (!(await AUTH.userCanAccessSlug(pool, req.user, slug))) return res.status(403).json({ error: "Fără acces" });
-    await pool.query("update properties set deals_consent=$1 where slug=$2", [!!(req.body && req.body.consent), slug]);
-    res.json({ ok: true, consent: !!(req.body && req.body.consent) });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+/* ---- mode toggle ---- */
+function setMode(m){
+  calMode=m;
+  $$(".cal-mode").forEach(b=>b.classList.toggle("on",b.dataset.mode===m));
+  $("#bulkTitle").textContent = m==="price"?"Editare în masă — prețuri":"Editare în masă — blocare";
+  $$(".price-only").forEach(el=>el.style.display = m==="price"?"":"none");
+  $$(".block-only").forEach(el=>el.style.display = m==="block"?"":"none");
+  $("#bkApply").textContent = m==="price"?"Aplică prețul":"Blochează";
+  clearSel();
+}
+$$(".cal-mode").forEach(b=>b.onclick=()=>setMode(b.dataset.mode));
+
+/* ---- weekday toggles ---- */
+function renderDows(){
+  const box=$("#bkDows"); box.innerHTML="";
+  DOW.forEach((lbl,i)=>{ const js=(i+1)%7; // Lu->1 ... Du->0
+    const b=h("button",{class:"dow-b"+(bulkDows.has(js)?" on":""),onclick:()=>{ if(bulkDows.has(js))bulkDows.delete(js); else bulkDows.add(js); b.classList.toggle("on"); }}, lbl);
+    box.appendChild(b);
+  });
+}
+
+/* ---- bulk apply ---- */
+$("#bkApply").onclick=()=>{
+  const a=$("#bkFrom").value,b=$("#bkTo").value; if(!a||!b){toast("Alege intervalul (de la / până la)");return;}
+  if(!bulkDows.size){toast("Selectează cel puțin o zi a săptămânii");return;}
+  if(calMode==="price"){ const v=$("#bkPrice").value; if(v===""){toast("Introdu un preț");return;}
+    const n=applyRange(a,b,bulkDows,{type:"price",value:Math.max(0,+v||0)}); toast(n+" zile cu preț nou"); }
+  else { const n=applyRange(a,b,bulkDows,{type:"block",block:true}); toast(n+" zile blocate"); }
+};
+$("#bkResetPrice").onclick=()=>{
+  const a=$("#bkFrom").value,b=$("#bkTo").value; if(!a||!b){toast("Alege intervalul");return;}
+  const n=applyRange(a,b,bulkDows,{type:"price",value:null}); toast(n+" zile revenite la tarif normal");
+};
+$("#bkUnblock").onclick=()=>{
+  const a=$("#bkFrom").value,b=$("#bkTo").value; if(!a||!b){toast("Alege intervalul");return;}
+  const n=applyRange(a,b,bulkDows,{type:"block",block:false}); toast(n+" zile deblocate");
+};
+$("#clearManual").onclick=()=>{const u=state.units.find(x=>x.id===curUnit);if(!u.blocks||!u.blocks.length){toast("Nimic de deblocat");return;}u.blocks=[];persist();renderCalendar();toast("Deblocat");};
+renderDows();
+setMode("price");
+
+/* =================== ICAL (per unit) =================== */
+function renderIcal(){
+  const box=$("#icalUnits");box.innerHTML="";
+  state.pricing.rooms.forEach(r=>{
+    const u=state.units.find(x=>x.id===r.id)||{feeds:[]};
+    const feedsWrap=h("div",{});
+    (u.feeds||[]).forEach((f,idx)=>{
+      feedsWrap.appendChild(h("div",{class:"feed"},
+        h("div",{class:"clr",style:"background:"+f.color}),
+        h("div",{class:"meta"},h("b",{},f.source),h("div",{class:"u"},f.url||"(conținut lipit manual)")),
+        h("div",{class:"st "+(f.lastSync?"ok":"warn")},h("span",{class:"d"}),f.lastSync?("Sincronizat · "+(f.count||0)+" nopți"):"Neconectat"),
+        h("button",{class:"btn btn-out sm",onclick:()=>syncFeed(r.id,idx)},h("span",{html:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></svg>'}),"Sincr."),
+        h("button",{class:"icon-btn",onclick:()=>{u.feeds.splice(idx,1);persist();renderIcal();renderCalendar();}},h("span",{html:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>'}))));
+    });
+    if(!(u.feeds||[]).length)feedsWrap.appendChild(h("div",{style:"color:var(--muted);font-size:13px;padding:4px 0 10px"},"Niciun calendar importat."));
+    const exportUrl=location.origin+"/ical/"+SLUG+"/"+r.id+".ics";
+    const block=h("div",{class:"unit-block"},
+      h("div",{class:"uh"},h("div",{},h("b",{},r.name),r.isEntire?h("span",{class:"tag"},"toată vila"):null),
+        h("button",{class:"btn btn-pri sm",onclick:()=>openFeed(r.id)},h("span",{html:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>'}),"Conectează calendar")),
+      h("div",{class:"ub"},feedsWrap,
+        h("div",{class:"export-box"},
+          h("div",{class:"export-url"},exportUrl),
+          h("button",{class:"btn btn-out sm",onclick:()=>{navigator.clipboard?.writeText(exportUrl);toast("Link copiat");}},"Copiază"),
+          h("button",{class:"btn btn-pri sm",onclick:()=>dlIcs(r.id)},"Descarcă .ics")),
+        h("div",{class:"note",style:"margin-top:10px"},h("span",{html:'<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v5M12 16h.01"/></svg>'}),
+          h("span",{},".ics generat include datele blocate + cele indirecte (din vilă/cameră), ca să eviți suprapunerile la export.")))
+    );
+    box.appendChild(block);
+  });
+}
+let feedUnit=null;
+function openFeed(unitId){feedUnit=unitId;$("#feedModalTitle").textContent="Conectează calendar · "+unitName(unitId);$("#fUrl").value="";$("#fPaste").value="";$("#feedOverlay").classList.add("on");}
+function syncFeed(unitId,idx){const u=state.units.find(x=>x.id===unitId),f=u.feeds[idx];
+  if(f.raw){const ev=parseICS(f.raw);f.blocks=eventsToDates(ev);f.count=f.blocks.length;f.lastSync=Date.now();persist();renderIcal();renderCalendar();toast(f.source+": "+f.count+" nopți");return;}
+  if(f.url){
+    toast("Se sincronizează pe server...");
+    fetch("/api/host/"+SLUG+"/sync",{method:"POST"}).then(r=>r.json()).then(d=>{
+      if(d&&d.admin_state&&Array.isArray(d.admin_state.units)){
+        state.units=d.admin_state.units; renderIcal(); renderCalendar();
+        const nu=state.units.find(x=>x.id===unitId), nf=nu&&nu.feeds[idx];
+        if(nf&&String(nf.lastStatus||"").indexOf("error")===0) toast("Eroare la sincronizare: "+nf.lastStatus.replace("error: ",""));
+        else toast(f.source+": "+((nf&&nf.count)||0)+" nopți importate");
+      } else toast("Sincronizare eșuată");
+    }).catch(()=>toast("Sincronizare eșuată (server indisponibil)"));
+    return;
+  }
+  toast("Adaugă un link sau lipește un .ics");}
+function dlIcs(unitId){const dates=effectiveBlocked(unitId);const blob=new Blob([buildICS(dates,"Indisponibil · "+unitName(unitId))],{type:"text/calendar"});const a=h("a",{href:URL.createObjectURL(blob),download:SLUG+"-"+unitId+".ics"});a.click();URL.revokeObjectURL(a.href);toast(".ics generat ("+dates.size+" nopți)");}
+$("#feedClose").onclick=$("#feedCancel").onclick=()=>$("#feedOverlay").classList.remove("on");
+$("#feedOverlay").onclick=e=>{if(e.target===$("#feedOverlay"))$("#feedOverlay").classList.remove("on");};
+$("#feedSave").onclick=()=>{
+  const source=$("#fSource").value,url=$("#fUrl").value.trim(),raw=$("#fPaste").value.trim();
+  if(!url&&!raw){toast("Adaugă link sau conținut .ics");return;}
+  const u=state.units.find(x=>x.id===feedUnit);u.feeds=u.feeds||[];
+  const f={id:Date.now(),source,url,color:FEED_COLORS[source]||"#6b54b3",blocks:[],count:0,lastSync:null,raw:raw||null};
+  if(raw){const ev=parseICS(raw);f.blocks=eventsToDates(ev);f.count=f.blocks.length;f.lastSync=Date.now();}
+  u.feeds.push(f);persist();renderIcal();renderCalendar();$("#feedOverlay").classList.remove("on");
+  toast(raw?(source+": "+f.count+" nopți importate"):"Calendar adăugat — se sincronizează de pe server");
+};
+
+/* =================== NAV / INIT =================== */
+const TITLES={panou:"Panou",continut:"Conținut",preturi:"Prețuri",calendar:"Calendar",ical:"Calendare iCal",galerie:"Galerie",cereri:"Cereri de rezervare",oferte:"Oferte",aprobari:"Aprobări"};
+$$(".nav-i").forEach(b=>b.onclick=()=>{
+  $$(".nav-i").forEach(x=>x.classList.remove("on"));b.classList.add("on");
+  $$(".panel").forEach(p=>p.classList.remove("on"));$("#panel-"+b.dataset.tab).classList.add("on");
+  $("#pageTitle").textContent=TITLES[b.dataset.tab];$("#side").classList.remove("open");
+  const ct=document.querySelector(".content"); if(ct) ct.classList.toggle("wide", b.dataset.tab==="galerie");
+  if(b.dataset.tab==="galerie") renderGalerie();
+  if(b.dataset.tab==="cereri") renderCereri();
+  if(b.dataset.tab==="panou" && window.__renderDash) window.__renderDash();
+  if(b.dataset.tab==="oferte" && window.__renderDeals) window.__renderDeals();
+  if(b.dataset.tab==="aprobari" && window.__renderAppr) window.__renderAppr();
 });
+$("#menuBtn").onclick=()=>$("#side").classList.toggle("open");
+$("#viewSite").href="/s/"+SLUG;
+$("#propName").textContent=state.property.basicInfo.name;
 
-// Save the deals array for a unit.
-app.post("/api/host/deals", AUTH.requireAuth, async (req, res) => {
-  try {
-    const slug = String((req.body && req.body.slug) || "");
-    if (!slug) return res.status(400).json({ error: "slug lipsă" });
-    if (!(await AUTH.userCanAccessSlug(pool, req.user, slug))) return res.status(403).json({ error: "Fără acces" });
-    const deals = sanitizeDeals(req.body && req.body.deals);
-    await pool.query("update properties set deals=$1 where slug=$2", [JSON.stringify(deals), slug]);
-    res.json({ ok: true, deals });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+/* ---- Galerie: per-variant galleries, bulk upload (sharp/WebP/R2) + bulk delete ---- */
+const galSel = new WeakSet();
+function fileToDataUrl(f){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(f); }); }
 
-// Public: active (non-expired) deals for a unit — rendered on the public site.
-app.get("/api/site/:slug/deals", async (req, res) => {
-  try {
-    const r = await pool.query("select deals from properties where slug=$1", [req.params.slug]);
-    const all = (r.rows[0] && r.rows[0].deals) || [];
-    const today = todayIso();
-    const active = all.filter(d => d && d.active !== false && !(d.type === "interval_discount" && d.end && d.end < today));
-    res.json({ deals: active });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+/* shared drag payload between gallery thumbs and the docked editor */
+let galDragState = null;
 
-// Core import logic, reusable for single + bulk import.
-async function importOne(master) {
-  const admin = STAY.deriveAdminState(master);
-  const slug = STAY.slugify(admin.property.basicInfo.name || "unitate");
-  const existing = await getProp(slug);
-  const merged = existing ? mergeAdminState(existing.admin_state, admin) : admin;
-  const site = STAY.masterToSite(merged.property, merged.pricing, merged.galleries);
-  await pool.query(
-    `insert into properties(slug, admin_state, site) values($1,$2,$3)
-     on conflict(slug) do update set admin_state=excluded.admin_state, site=excluded.site, updated_at=now()`,
-    [slug, merged, site]
-  );
+/* ---- Docked photo editor (right of gallery): AI optimize + adjustments, drag in/out ---- */
+const DOCK_PRESETS = { none:"", bw:"grayscale(100%)", sepia:"sepia(75%)", warm:"sepia(30%) saturate(150%) hue-rotate(-10deg)", cool:"saturate(120%) hue-rotate(15deg)", vivid:"saturate(165%) contrast(108%)" };
+const DOCK_PRESET_LABELS = { none:"Original", bw:"Alb-negru", sepia:"Sepia", warm:"Cald", cool:"Rece", vivid:"Vivid" };
+function createDockEditor(container){
+  const MAXDIM=1600;
+  let work=null;                 // full-res source canvas (geometry baked, no filter)
+  let original=null;             // snapshot of the image as first loaded (for before/after)
+  let aiApplied=false, geomChanged=false;  // real changes that make before/after meaningful
+  let compareOn=false, comparePos=0.5, cmpDrag=false;
+  let adj={brightness:100,contrast:100,saturation:100,preset:"none"};
+  container.innerHTML =
+    '<div class="de">'
+    + '<div class="de-h"><b>Editor foto</b><span class="de-hint">AI · ajustări</span></div>'
+    + '<div class="de-stage"><canvas class="de-canvas" style="display:none"></canvas>'
+      + '<button class="de-cmp" data-act="cmp" hidden>Înainte / După</button>'
+      + '<span class="de-lbl de-lbl-b" hidden>ÎNAINTE</span><span class="de-lbl de-lbl-a" hidden>DUPĂ</span>'
+      + '<div class="de-empty" data-act="pick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg><span>Trage o poză din galerie aici<br>sau click pentru a încărca</span></div>'
+      + '<input type="file" accept="image/*" class="de-file" hidden></div>'
+    + '<div class="de-body">'
+      + '<button class="btn btn-pri sm de-ai" data-act="ai" title="Corecție lumină, culoare și perspectivă cu AI">✨ Optimizează cu AI</button>'
+      + '<div><div class="de-gl">Rotire / oglindă</div><div class="de-rowb">'
+        + '<button class="de-mini" data-act="rotL" title="Rotește stânga">⟲</button>'
+        + '<button class="de-mini" data-act="rotR" title="Rotește dreapta">⟳</button>'
+        + '<button class="de-mini" data-act="flipH" title="Oglindă orizontal">⇆</button>'
+        + '<button class="de-mini" data-act="flipV" title="Oglindă vertical">⇅</button>'
+      + '</div></div>'
+      + '<div><div class="de-gl">Ajustări</div>'
+        + deAdj("Luminozitate","brightness") + deAdj("Contrast","contrast") + deAdj("Saturație","saturation")
+      + '</div>'
+      + '<div><div class="de-gl">Filtre</div><div class="de-rowb">'
+        + Object.keys(DOCK_PRESETS).map(k=>'<button class="de-mini'+(k==="none"?" on":"")+'" data-preset="'+k+'">'+DOCK_PRESET_LABELS[k]+'</button>').join("")
+      + '</div></div>'
+    + '</div>'
+    + '<div class="de-foot">'
+      + '<div class="de-rowb"><button class="de-mini" data-act="reset">Resetează ajustările</button><button class="de-mini" data-act="addMain">Adaugă în galeria principală</button></div>'
+      + '<div class="de-out disabled" draggable="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 9l-3 3 3 3M2 12h13M14 5l3 3M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H9"/></svg><span>Trage rezultatul într-o galerie din stânga</span></div>'
+    + '</div>'
+    + '</div>';
+  function deAdj(label,key){ return '<div class="de-adj"><div class="de-al"><span>'+label+'</span><span class="de-av" data-av="'+key+'">100</span></div><input type="range" class="de-range" data-adj="'+key+'" min="0" max="200" value="100"></div>'; }
 
-  // Auto-provision a host account for this property. Default credentials:
-  //   email    = <slug>@<BASE_DOMAIN || localstay.ro>
-  //   password = <slug>            (the hotelier changes it after first login)
-  // Re-importing the same slug reuses the existing account (no duplicate, no
-  // password reset) and never steals a property already owned by someone else.
-  let host = null;
-  try {
-    const hostEmail = normEmail(slug + "@" + (BASE_DOMAIN || "localstay.ro"));
-    const found = await pool.query("select id from users where email=$1", [hostEmail]);
-    let hostId;
-    if (found.rows.length) {
-      hostId = found.rows[0].id;
-      host = { email: hostEmail, created: false };
+  const $$=s=>container.querySelector(s);
+  const view=$$(".de-canvas"), vctx=view.getContext("2d");
+  const empty=$$(".de-empty"), stage=$$(".de-stage"), file=$$(".de-file"), out=$$(".de-out");
+  const cmpBtn=$$(".de-cmp"), lblB=$$(".de-lbl-b"), lblA=$$(".de-lbl-a");
+
+  function curFilter(){ return (DOCK_PRESETS[adj.preset]?DOCK_PRESETS[adj.preset]+" ":"")+"brightness("+adj.brightness+"%) contrast("+adj.contrast+"%) saturate("+adj.saturation+"%)"; }
+  function isEdited(){ return aiApplied||geomChanged||adj.preset!=="none"||adj.brightness!==100||adj.contrast!==100||adj.saturation!==100; }
+  function dispSize(){ const availW=Math.max(220,(stage.clientWidth||440)-8); const availH=Math.max(260,Math.min(760,Math.round(((typeof window!=="undefined"&&window.innerHeight)||820)*0.72))); const s=Math.min(availW/work.width, availH/work.height, 1); return { w:Math.max(1,Math.round(work.width*s)), h:Math.max(1,Math.round(work.height*s)) }; }
+  function drawCover(src,vw,vh){ // object-fit: cover
+    const r=Math.max(vw/src.width, vh/src.height), dw=src.width*r, dh=src.height*r;
+    vctx.drawImage(src, (vw-dw)/2, (vh-dh)/2, dw, dh);
+  }
+  function draw(){
+    if(!work){ view.style.display="none"; empty.hidden=false; stage.classList.remove("has-img"); out.classList.add("disabled"); out.setAttribute("draggable","false"); cmpBtn.hidden=true; lblB.hidden=lblA.hidden=true; return; }
+    empty.hidden=true; stage.classList.add("has-img"); out.classList.remove("disabled"); out.setAttribute("draggable","true");
+    const d=dispSize(); view.width=d.w; view.height=d.h; view.style.display="block";
+    const canCompare = !!(original && isEdited());
+    cmpBtn.hidden = !canCompare;
+    if(!canCompare && compareOn){ compareOn=false; }
+    cmpBtn.classList.toggle("on",compareOn);
+    view.style.cursor = compareOn ? "col-resize" : "default";
+    if(compareOn && original){ drawCompare(d.w,d.h); }
+    else { vctx.clearRect(0,0,d.w,d.h); vctx.filter=curFilter(); vctx.drawImage(work,0,0,d.w,d.h); vctx.filter="none"; lblB.hidden=lblA.hidden=true; }
+  }
+  function drawCompare(vw,vh){
+    vctx.clearRect(0,0,vw,vh);
+    // AFTER (current edited result) fills the canvas
+    vctx.filter=curFilter(); vctx.drawImage(work,0,0,vw,vh); vctx.filter="none";
+    // BEFORE (original) revealed on the left of the split
+    const split=Math.max(0,Math.min(vw,Math.round(vw*comparePos)));
+    vctx.save(); vctx.beginPath(); vctx.rect(0,0,split,vh); vctx.clip();
+    drawCover(original,vw,vh);
+    vctx.restore();
+    // divider + handle
+    vctx.fillStyle="#fff"; vctx.fillRect(split-1,0,2,vh);
+    vctx.beginPath(); vctx.arc(split, vh/2, 11, 0, Math.PI*2); vctx.fillStyle="#fff"; vctx.fill();
+    vctx.strokeStyle="#2f7355"; vctx.lineWidth=2; vctx.stroke();
+    vctx.fillStyle="#2f7355"; vctx.font="bold 11px system-ui"; vctx.textAlign="center"; vctx.textBaseline="middle"; vctx.fillText("⇆",split,vh/2); vctx.textAlign="start";
+    // position labels
+    lblB.hidden=lblA.hidden=false;
+  }
+  function snapshot(c){ const s=document.createElement("canvas"); s.width=c.width; s.height=c.height; s.getContext("2d").drawImage(c,0,0); return s; }
+  function loadSrc(src,isResult){
+    if(!src) return;
+    const img=new Image(); img.crossOrigin="anonymous";
+    img.onload=()=>{ const c=document.createElement("canvas"); c.width=img.naturalWidth; c.height=img.naturalHeight; c.getContext("2d").drawImage(img,0,0); work=c;
+      if(isResult){ aiApplied=true; compareOn=true; comparePos=0.5; }
+      else { original=snapshot(c); aiApplied=false; geomChanged=false; compareOn=false; adj={brightness:100,contrast:100,saturation:100,preset:"none"}; resetAdjUI(); }
+      draw(); };
+    img.onerror=()=>toast("Nu am putut încărca imaginea (CORS?)");
+    // Cache-bust remote URLs: a thumbnail loaded earlier without CORS can poison the
+    // cache, making this crossOrigin request reuse a response with no CORS headers.
+    img.src = /^https?:/i.test(src) ? (src + (src.includes("?")?"&":"?") + "cors=" + Date.now()) : src;
+  }
+  function resetAdjUI(){ container.querySelectorAll(".de-range").forEach(r=>{r.value=100;}); container.querySelectorAll("[data-av]").forEach(s=>s.textContent="100"); container.querySelectorAll("[data-preset]").forEach(b=>b.classList.toggle("on",b.dataset.preset==="none")); }
+  function loadFile(f){ if(!f||!/^image\//.test(f.type)){toast("Alege un fișier imagine");return;} const r=new FileReader(); r.onload=()=>loadSrc(r.result); r.readAsDataURL(f); }
+  function rotate(cw){ if(!work)return; const w=work.width,hh=work.height,c=document.createElement("canvas"); c.width=hh;c.height=w; const x=c.getContext("2d"); x.translate(c.width/2,c.height/2); x.rotate((cw?90:-90)*Math.PI/180); x.drawImage(work,-w/2,-hh/2); work=c; geomChanged=true; draw(); }
+  function flip(horiz){ if(!work)return; const w=work.width,hh=work.height,c=document.createElement("canvas"); c.width=w;c.height=hh; const x=c.getContext("2d"); if(horiz){x.translate(w,0);x.scale(-1,1);}else{x.translate(0,hh);x.scale(1,-1);} x.drawImage(work,0,0); work=c; geomChanged=true; draw(); }
+  function exportRawJpeg(){ const c=document.createElement("canvas"); c.width=work.width;c.height=work.height; c.getContext("2d").drawImage(work,0,0); return c.toDataURL("image/jpeg",0.95); }
+  function exportEdited(){ if(!work)return ""; const s=Math.min(1,MAXDIM/Math.max(work.width,work.height)); const ow=Math.round(work.width*s),oh=Math.round(work.height*s); const c=document.createElement("canvas"); c.width=ow;c.height=oh; const x=c.getContext("2d"); x.fillStyle="#fff"; x.fillRect(0,0,ow,oh); x.filter=curFilter(); x.drawImage(work,0,0,ow,oh); x.filter="none"; return c.toDataURL("image/jpeg",0.92); }
+  async function aiEnhance(){
+    if(!work){toast("Încarcă o poză întâi");return;}
+    const btn=$$('[data-act="ai"]'), old=btn.textContent; btn.disabled=true; btn.textContent="Se optimizează cu AI...";
+    try{ const r=await fetch("/api/ai-enhance",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({dataUrl:exportRawJpeg()})});
+      const d=await r.json().catch(()=>({}));
+      if(r.ok&&d.dataUrl){ loadSrc(d.dataUrl,true); toast("Poză optimizată cu AI — glisează pentru înainte/după, apoi trage-o în galerie"); }
+      else toast("Optimizarea AI nu a reușit"+(d.error?(" ("+d.error+")"):""));
+    }catch(e){ toast("Optimizarea AI nu a reușit (server)"); }
+    finally{ btn.disabled=false; btn.textContent=old; }
+  }
+  // before/after slider drag on the canvas
+  function cmpSet(e){ const r=view.getBoundingClientRect(); const x=(e.clientX!=null?e.clientX:(e.touches&&e.touches[0]?e.touches[0].clientX:0))-r.left; comparePos=Math.max(0,Math.min(1, x/Math.max(1,r.width))); draw(); }
+  view.addEventListener("pointerdown",e=>{ if(!compareOn)return; cmpDrag=true; try{view.setPointerCapture(e.pointerId);}catch(_){ } cmpSet(e); });
+  view.addEventListener("pointermove",e=>{ if(compareOn&&cmpDrag) cmpSet(e); });
+  view.addEventListener("pointerup",()=>{ cmpDrag=false; });
+  // events
+  container.addEventListener("click",e=>{
+    const t=e.target.closest("[data-act],[data-preset]"); if(!t)return;
+    const act=t.dataset.act, pre=t.dataset.preset;
+    if(act==="pick"){ file.click(); return; }
+    if(act==="ai"){ aiEnhance(); return; }
+    if(act==="cmp"){ if(original&&isEdited()){ compareOn=!compareOn; comparePos=0.5; draw(); } return; }
+    if(act==="rotL"){ rotate(false); return; }
+    if(act==="rotR"){ rotate(true); return; }
+    if(act==="flipH"){ flip(true); return; }
+    if(act==="flipV"){ flip(false); return; }
+    if(act==="reset"){ adj={brightness:100,contrast:100,saturation:100,preset:"none"}; container.querySelectorAll(".de-range").forEach(r=>{r.value=100;}); container.querySelectorAll("[data-av]").forEach(s=>s.textContent="100"); container.querySelectorAll("[data-preset]").forEach(b=>b.classList.toggle("on",b.dataset.preset==="none")); draw(); return; }
+    if(act==="addMain"){ if(!work){toast("Editorul e gol");return;} addEditedToGallery(state.property._photos, x=>({photoName:x.url,imageAlt:x.alt||""}), exportEdited(), "Galerie principală"); return; }
+    if(pre!==undefined){ adj.preset=pre; container.querySelectorAll("[data-preset]").forEach(b=>b.classList.toggle("on",b.dataset.preset===pre)); draw(); return; }
+  });
+  container.addEventListener("input",e=>{ if(e.target.classList.contains("de-range")){ const k=e.target.dataset.adj; adj[k]=+e.target.value; container.querySelector('[data-av="'+k+'"]').textContent=e.target.value; draw(); } });
+  file.addEventListener("change",()=>{ if(file.files[0]) loadFile(file.files[0]); file.value=""; });
+  // drag IN (file or gallery thumb)
+  stage.addEventListener("dragover",e=>{ e.preventDefault(); stage.classList.add("over"); });
+  stage.addEventListener("dragleave",()=>stage.classList.remove("over"));
+  stage.addEventListener("drop",e=>{ e.preventDefault(); stage.classList.remove("over");
+    if(e.dataTransfer.files&&e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+    else if(galDragState&&galDragState.kind==="photo"&&galDragState.url) loadSrc(galDragState.url);
+  });
+  // drag OUT (edited result -> a gallery)
+  out.addEventListener("dragstart",e=>{ if(!work){ e.preventDefault(); return; } galDragState={kind:"edited",dataUrl:exportEdited()}; e.dataTransfer.effectAllowed="copy"; try{e.dataTransfer.setData("text/plain","editat");}catch(_){} });
+  out.addEventListener("dragend",()=>{ if(galDragState&&galDragState.kind==="edited") galDragState=null; });
+
+  window.addEventListener("resize",()=>{ if(work) draw(); });
+  draw();
+  return { load:loadSrc, hasImage:()=>!!work, redraw:()=>{ if(work) draw(); } };
+}
+
+/* upload an edited dataURL and append it to a gallery array, then re-render */
+async function addEditedToGallery(arr, makeItem, dataUrl, label){
+  if(!dataUrl) return;
+  toast("Se adaugă în „"+label+"”...");
+  try{
+    const rr=await fetch("/api/upload",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({dataUrl})});
+    const d=await rr.json().catch(()=>({}));
+    if(!rr.ok||!d.url){ toast("Upload eșuat: "+((d&&d.error)||("HTTP "+rr.status))+" — verifică R2"); return; }
+    arr.push(makeItem(d)); persist(); renderGalerie();
+    toast("Adăugată în „"+label+"”");
+  }catch(e){ toast("Eroare de rețea la upload"); }
+}
+let dockEditor=null;
+function mountDock(){ const host=$("#galDock"); if(!host) return; if(!dockEditor) dockEditor=createDockEditor(host); }
+
+function galleryBlock(o){
+  const arr=o.arr;
+  const selCount=arr.filter(p=>galSel.has(p)).length;
+  const fileInput=h("input",{type:"file",accept:"image/*",multiple:true,style:"display:none"});
+  const upBtn=h("button",{class:"btn btn-pri sm",type:"button",onclick:()=>fileInput.click()},
+    h("span",{html:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>'}),"Încarcă poze");
+  fileInput.onchange=async()=>{
+    const files=[...fileInput.files]; fileInput.value="";
+    if(!files.length) return;
+    upBtn.disabled=true;
+    let ok=0, fail=0, lastErr="";
+    for(let i=0;i<files.length;i++){
+      upBtn.textContent="Se încarcă "+(i+1)+"/"+files.length+"...";
+      try{
+        const dataUrl=await fileToDataUrl(files[i]);
+        const rr=await fetch("/api/upload",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({dataUrl})});
+        const d=await rr.json().catch(()=>({}));
+        if(rr.ok&&d.url){ arr.push(o.makeItem(d)); ok++; }
+        else { fail++; lastErr=(d&&d.error)||("HTTP "+rr.status); }
+      }catch(e){ fail++; lastErr="rețea"; }
+    }
+    upBtn.disabled=false; renderGalerie();
+    if(ok){ persist(); }
+    if(fail){ markDirty();
+      toast(ok ? (ok+" încărcate, "+fail+" eșuate ("+lastErr+")") : ("Upload eșuat: "+lastErr+" — verifică setările R2"));
     } else {
-      const hash = await AUTH.hashPassword(slug);
-      const ins = await pool.query(
-        "insert into users(email,password_hash,role,name) values($1,$2,'host',$3) returning id",
-        [hostEmail, hash, merged.property.basicInfo.name || slug]
-      );
-      hostId = ins.rows[0].id;
-      host = { email: hostEmail, password: slug, created: true };
+      toast(ok+(ok===1?" poză adăugată la „":" poze adăugate la „")+o.title+"”");
     }
-    await pool.query("update properties set owner_id=$1 where slug=$2 and owner_id is null", [hostId, slug]);
-  } catch (e) {
-    host = { error: e.message }; // never fail the import over host provisioning
+  };
+  const allSel=arr.length&&arr.every(p=>galSel.has(p));
+  const selAll=h("button",{class:"btn-ghost sm",type:"button",onclick:()=>{
+    if(allSel) arr.forEach(p=>galSel.delete(p)); else arr.forEach(p=>galSel.add(p));
+    renderGalerie();
+  }}, allSel?"Deselectează tot":"Selectează tot");
+  const delBtn=selCount?h("button",{class:"btn btn-out sm",type:"button",style:"color:var(--red);border-color:var(--red)",onclick:()=>{
+    if(!confirm("Ștergi "+selCount+" poze din „"+o.title+"”?")) return;
+    const kept=arr.filter(p=>!galSel.has(p));
+    arr.filter(p=>galSel.has(p)).forEach(p=>galSel.delete(p));
+    o.onChangeArr(kept);
+    markDirty(); renderGalerie(); toast(selCount+(selCount===1?" poză ștearsă":" poze șterse"));
+  }},"Șterge selectatele ("+selCount+")"):null;
+
+  const grid=h("div",{class:"gal-grid"});
+  if(!arr.length){ grid.appendChild(h("div",{class:"gal-empty"},"Nicio poză încă. Apasă „Încarcă poze” sau trage o poză din editor.")); }
+  arr.forEach((p,idx)=>{
+    const chk=h("input",{type:"checkbox",class:"gal-chk"}); chk.checked=galSel.has(p);
+    chk.onchange=()=>{ if(chk.checked)galSel.add(p); else galSel.delete(p); renderGalerie(); };
+    const img=h("img",{src:o.getThumb(p),alt:o.getAlt(p),loading:"lazy",draggable:"true",title:"Trage în optimizator AI"});
+    const cell=h("div",{class:"gal-cell"+(galSel.has(p)?" on":"")},
+      img,
+      (o.heroFirst&&idx===0)?h("span",{class:"gal-hero-badge"},"HERO"):null,
+      h("label",{class:"gal-pick"},chk),
+      h("button",{class:"gal-edit",type:"button",title:"Editează (crop, text...)",onclick:()=>openPhotoEditor(o.getUrl(p),(u,meta)=>{o.setUrl(p,u);if(meta&&meta.alt&&!o.getAlt(p))o.setAlt(p,meta.alt);markDirty();renderGalerie();})},
+        h("span",{html:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>'})));
+    img.addEventListener("dragstart",e=>{ galDragState={kind:"photo",url:o.getUrl(p)}; e.dataTransfer.effectAllowed="copy"; try{e.dataTransfer.setData("text/plain",o.getUrl(p));}catch(_){ } cell.classList.add("dragging"); if(dockEditor) dockEditor.load(o.getUrl(p)); });
+    img.addEventListener("dragend",()=>{ cell.classList.remove("dragging"); if(galDragState&&galDragState.kind==="photo") galDragState=null; });
+    grid.appendChild(cell);
+  });
+  const optBtn=selCount?h("button",{class:"btn btn-out sm",type:"button",onclick:()=>{
+    const urls=arr.filter(p=>galSel.has(p)).map(p=>o.getUrl(p)).filter(Boolean);
+    if(window.__pzAdd) window.__pzAdd(urls);
+    arr.filter(p=>galSel.has(p)).forEach(p=>galSel.delete(p)); renderGalerie();
+  }},"→ Optimizator AI ("+selCount+")"):null;
+  const bar=h("div",{class:"gal-bar"}, upBtn, fileInput, selAll, optBtn, delBtn);
+  const head=h("div",{class:"gal-head"},
+    h("div",{},h("b",{},o.title), o.tag?h("span",{class:"gal-tag"},o.tag):null),
+    h("span",{class:"gal-count"}, arr.length+(arr.length===1?" poză":" poze")));
+  const block=h("section",{class:"gal-block"}, head, o.sub?h("p",{class:"gal-sub"},o.sub):null, bar, grid);
+  // drop target: edited result from the dock, photos copied from another gallery, or OS image files
+  block.addEventListener("dragover",e=>{ const hasFiles=e.dataTransfer&&e.dataTransfer.types&&[...e.dataTransfer.types].includes("Files"); if(galDragState||hasFiles){ e.preventDefault(); e.dataTransfer.dropEffect="copy"; block.classList.add("drop-on"); } });
+  block.addEventListener("dragleave",e=>{ if(!block.contains(e.relatedTarget)) block.classList.remove("drop-on"); });
+  block.addEventListener("drop",async e=>{
+    block.classList.remove("drop-on");
+    if(galDragState&&galDragState.kind==="edited"){ e.preventDefault(); const du=galDragState.dataUrl; galDragState=null; await addEditedToGallery(arr,o.makeItem,du,o.title); return; }
+    if(galDragState&&galDragState.kind==="photo"){ e.preventDefault(); const url=galDragState.url; galDragState=null; arr.push(o.makeItem({url,thumb:url,alt:""})); persist(); renderGalerie(); toast("Poză copiată în „"+o.title+"”"); return; }
+    if(e.dataTransfer.files&&e.dataTransfer.files.length){ e.preventDefault(); const files=[...e.dataTransfer.files].filter(f=>/^image\//.test(f.type)); for(const f of files){ const du=await fileToDataUrl(f); await addEditedToGallery(arr,o.makeItem,du,o.title); } return; }
+  });
+  return block;
+}
+function renderCereri(){
+  const box=$("#cereriBox"); if(!box) return;
+  const E=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+  box.innerHTML='<p class="muted">Se încarcă…</p>';
+  fetch("/api/host/"+encodeURIComponent(SLUG)+"/booking-requests").then(r=>r.ok?r.json():Promise.reject()).then(rows=>{
+    if(!rows.length){ box.innerHTML='<p class="muted">Nicio cerere încă. Vor apărea aici cererile trimise din formularul site-ului public.</p>'; return; }
+    const fmt=d=>d?new Date(d).toLocaleDateString("ro-RO",{day:"numeric",month:"short",year:"numeric"}):"—";
+    const fmtDT=d=>d?new Date(d).toLocaleString("ro-RO",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}):"";
+    box.innerHTML=rows.map(r=>{
+      const g=[]; if(r.adults)g.push(r.adults+" adulți"); if(r.children)g.push(r.children+" copii"); if(r.infants)g.push(r.infants+" bebeluși"); if(r.pets)g.push(r.pets+" animale");
+      const rooms=(Array.isArray(r.rooms)?r.rooms:[]).map(x=>(x.qty>1?x.qty+"× ":"")+(x.name||"")).join(", ");
+      const wa=(r.phone||"").replace(/[^0-9]/g,"");
+      return '<div class="creq"><div class="creq-h"><b>'+E(r.name||"—")+'</b><span class="creq-date">'+fmtDT(r.created_at)+'</span></div>'+
+        '<div class="creq-grid">'+
+        '<div><label>Telefon</label><a href="tel:'+E(r.phone||"")+'">'+E(r.phone||"—")+'</a></div>'+
+        '<div><label>Email</label>'+(r.email?'<a href="mailto:'+E(r.email)+'">'+E(r.email)+'</a>':"—")+'</div>'+
+        '<div><label>Check-in</label>'+fmt(r.checkin)+'</div>'+
+        '<div><label>Check-out</label>'+fmt(r.checkout)+'</div>'+
+        '<div><label>Oaspeți</label>'+E(g.join(", ")||"—")+'</div>'+
+        '<div><label>Camere</label>'+E(rooms||"—")+'</div>'+
+        '</div>'+
+        (wa?'<a class="btn small" href="https://wa.me/'+wa+'" target="_blank" rel="noopener" style="margin-top:10px">Răspunde pe WhatsApp</a>':"")+
+        '</div>';
+    }).join("");
+  }).catch(()=>{ box.innerHTML='<p class="muted">Nu am putut încărca cererile (verifică conexiunea / baza de date).</p>'; });
+}
+document.addEventListener("click",e=>{ if(e.target&&e.target.id==="cereriReload") renderCereri(); });
+
+function renderGalerie(){
+  if(!state.galleries) state.galleries={};
+  if(window.__initPoze) window.__initPoze();
+  const host=$("#galerieBox"); if(!host) return;
+  host.innerHTML="";
+  if(!Array.isArray(state.property._photos)) state.property._photos=[];
+  host.appendChild(galleryBlock({
+    title:"Galerie principală", tag:"proprietate", heroFirst:true,
+    sub:"Pozele generale ale proprietății. Prima e foto principală (hero). Apar pe pagina publică ca galerie principală.",
+    arr:state.property._photos,
+    getUrl:p=>p.photoName||p.url||"", getThumb:p=>p.photoName||p.thumb||p.url||"", getAlt:p=>p.imageAlt||p.alt||"",
+    setUrl:(p,u)=>{p.photoName=u;}, setAlt:(p,a)=>{p.imageAlt=a;},
+    makeItem:d=>({photoName:d.url,imageAlt:d.alt||""}),
+    onChangeArr:n=>{ state.property._photos=n; }
+  }));
+  const rooms=(state.pricing&&state.pricing.rooms)||[];
+  if(!rooms.length){ host.appendChild(h("p",{class:"intro",style:"margin-top:8px"},"Adaugă variante în tab-ul Prețuri pentru galerii pe cameră.")); return; }
+  rooms.forEach(r=>{
+    if(!Array.isArray(state.galleries[r.id])) state.galleries[r.id]=[];
+    host.appendChild(galleryBlock({
+      title:r.name||r.id, tag:r.isEntire?"toată unitatea":"",
+      arr:state.galleries[r.id],
+      getUrl:p=>p.url, getThumb:p=>p.thumb||p.url, getAlt:p=>p.alt||"",
+      setUrl:(p,u)=>{p.url=u;p.thumb=u;}, setAlt:(p,a)=>{p.alt=a;},
+      makeItem:d=>({url:d.url,thumb:d.thumb||d.url,alt:d.alt||""}),
+      onChangeArr:n=>{ state.galleries[r.id]=n; }
+    }));
+  });
+}
+
+if(!state.galleries) state.galleries={};
+syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();renderCalendar();renderIcal();
+</script>
+<script>
+/* Auth: logout button + redirect to login if the session has expired. */
+(function(){
+  var lo=document.getElementById("cLogout");
+  if(lo) lo.onclick=async function(){ try{ await fetch("/api/auth/logout",{method:"POST"}); }catch(e){} location.href="/login"; };
+  // If the cookie expired while the page was open, send the user back to login.
+  fetch("/api/auth/me").then(function(r){ if(r.status===401) location.href="/login?next="+encodeURIComponent(location.pathname+location.search); }).catch(function(){});
+})();
+</script>
+
+<div class="amodal" id="acctModal"><div class="amodal-card">
+  <div class="amodal-hd"><h3>Setări cont</h3><button class="amodal-x" id="acctX" type="button">&times;</button></div>
+  <div class="amodal-bd">
+    <p class="amodal-note">Lasă gol câmpurile pe care nu vrei să le schimbi.</p>
+    <label>Parola actuală</label><input id="acCur" type="password" autocomplete="current-password">
+    <label>Email nou</label><input id="acEmail" type="email" autocomplete="username">
+    <label>Parolă nouă <span style="font-weight:400;color:var(--muted)">(min. 8)</span></label><input id="acPass" type="password" autocomplete="new-password">
+    <div class="amodal-err" id="acErr"></div>
+    <div class="amodal-row"><button class="btn btn-pri" id="acSave" type="button">Salvează</button><button class="btn btn-out" id="acCancel" type="button">Renunță</button></div>
+  </div>
+</div></div>
+<script>
+/* ===== unified hotelier console: dashboard (Panou) + property switcher + account ===== */
+(function(){
+  var ME = window.__ME || {role:"host", email:""};
+  // Impersonation: when an admin is viewing this console as the hotelier, show a way back.
+  if (ME.imp) {
+    var ib = document.createElement("div");
+    ib.style.cssText = "position:sticky;top:0;z-index:80;display:flex;align-items:center;justify-content:center;gap:14px;background:#1c2430;color:#fff;font-size:13.5px;font-weight:600;padding:9px 16px";
+    ib.innerHTML = '<span>Vizualizezi consola ca hotelier ('+(ME.email||"")+') — impersonare admin.</span><button type="button" id="impBack" style="background:#fff;color:#1c2430;border:0;border-radius:8px;padding:6px 13px;font-weight:700;cursor:pointer">Revino la admin</button>';
+    document.body.insertBefore(ib, document.body.firstChild);
+    var bb = document.getElementById("impBack");
+    if (bb) bb.onclick = async function(){
+      try{ var r = await fetch("/api/auth/stop-impersonation",{method:"POST",credentials:"same-origin"}); if(r.ok){ location.href="/importer.html"; } }catch(e){}
+    };
+  }
+  var _slug = new URLSearchParams(location.search).get("slug") || "";
+  var byId = function(id){ return document.getElementById(id); };
+  var note = function(m){ try{ (window.toast||function(){})(m); }catch(e){} };
+
+  var ICONS = {
+    bed:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6M3 14h18M3 18v2M21 18v2M7 10V8a2 2 0 0 1 2-2h2"/></svg>',
+    inbox:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h5l2 3h4l2-3h5M5 5h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg>',
+    phone:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>',
+    gauge:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 13a3 3 0 0 1 3-3M3.5 18a9 9 0 1 1 17 0M12 13l4-4"/></svg>',
+    money:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 9v6M18 9v6"/></svg>',
+    eye:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>'
+  };
+  function tile(ic,n,l){ return '<div class="kpi"><div class="ic">'+ic+'</div><b>'+n+'</b><span>'+l+'</span></div>'; }
+  function actBtn(label,cls,handler){ var b=document.createElement('button'); b.className='btn '+cls; b.textContent=label; b.onclick=handler; return b; }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];}); }
+  function money(n,cur){ try{ return new Intl.NumberFormat('ro-RO').format(Math.round(n||0))+' '+(cur||'RON'); }catch(e){ return (n||0)+' '+(cur||'RON'); } }
+  function dmShort(ds){ if(!ds) return '—'; var p=ds.split('-'); var mn=['ian','feb','mar','apr','mai','iun','iul','aug','sep','oct','noi','dec']; return (+p[2])+' '+(mn[(+p[1])-1]||''); }
+  var DASH_DAYS = 30;
+
+  async function renderHostDash(days){
+    var kb=document.getElementById('dashKpis'), hostBox=document.getElementById('dashHost');
+    if(kb) kb.innerHTML='<div class="dempty">Se încarcă…</div>';
+    var o=null; try{ o=await fetch('/api/host/overview?days='+days+(_slug?('&slug='+encodeURIComponent(_slug)):'')).then(function(r){return r.ok?r.json():null;}); }catch(e){}
+    if(!o){ if(kb) kb.innerHTML='<div class="dempty">Nu am putut încărca datele.</div>'; if(hostBox) hostBox.innerHTML=''; return; }
+
+    // KPI tiles
+    if(kb) kb.innerHTML =
+      ((o.properties>1) ? tile(ICONS.bed, o.properties, 'proprietăți') : '')
+      + tile(ICONS.gauge, o.occupancy+'%', 'grad de ocupare · următoarele '+days+' zile')
+      + tile(ICONS.money, money(o.estRevenue,o.currency), 'venit estimat · următoarele '+days+' zile')
+      + tile(ICONS.inbox, o.requests, 'cereri de rezervare · ultimele '+days+' zile')
+      + tile(ICONS.eye, o.views, 'vizualizări · ultimele '+days+' zile')
+      + tile(ICONS.phone, o.reveals, 'dezvăluiri telefon · ultimele '+days+' zile');
+
+    if(!hostBox) return;
+    var maxF=Math.max(o.views,o.reveals,o.requests,1);
+    function fbar(label,val){ return '<div class="frow"><span class="fl">'+label+'</span><div class="fbar"><span style="width:'+Math.round(val/maxF*100)+'%"></span></div><span class="fv">'+val+'</span></div>'; }
+
+    // trend bars
+    var tr=o.trend||[]; var maxT=Math.max.apply(null,tr.map(function(x){return Math.max(x.views,x.requests);}).concat([1]));
+    var bars=tr.map(function(x){
+      var vh=Math.round(x.views/maxT*70), rh=Math.round(x.requests/maxT*70);
+      return '<div class="tb" title="'+dmShort(x.date)+': '+x.views+' vizualizări, '+x.requests+' cereri"><div class="r" style="height:'+rh+'px"></div><div class="v" style="height:'+vh+'px"></div></div>';
+    }).join('');
+
+    // check-ins / check-outs
+    function stayRow(s,kind){
+      var d=kind==='in'?s.checkin:s.checkout;
+      var dd=d?d.split('-'):['','',''];
+      return '<div class="stay"><div class="sd"><b>'+(+dd[2]||'')+'</b><i>'+(['ian','feb','mar','apr','mai','iun','iul','aug','sep','oct','noi','dec'][(+dd[1])-1]||'')+'</i></div>'+
+        '<div class="si"><b>'+esc(s.name)+'</b><span>'+esc(s.property)+(s.phone?(' · '+esc(s.phone)):'')+'</span></div>'+
+        '<span class="sg">'+(s.guests||0)+' oasp.</span></div>';
+    }
+    var arr=(o.arrivals||[]), dep=(o.departures||[]);
+    var arrHtml = arr.length ? arr.slice(0,6).map(function(s){return stayRow(s,'in');}).join('') : '<div class="dempty">Nicio sosire programată.</div>';
+    var depHtml = dep.length ? dep.slice(0,6).map(function(s){return stayRow(s,'out');}).join('') : '<div class="dempty">Nicio plecare programată.</div>';
+
+    // per-property table
+    var pp=(o.perProperty||[]);
+    var ppHtml = pp.length ? '<table class="dtable"><thead><tr><th>Proprietate</th><th>Ocupare</th><th>Venit estimat</th></tr></thead><tbody>'+
+      pp.map(function(p){ return '<tr><td><b>'+esc(p.name)+'</b></td><td><span class="occbar"><span style="width:'+p.occupancy+'%"></span></span>'+p.occupancy+'%</td><td>'+money(p.estRevenue,p.currency)+'</td></tr>'; }).join('')+
+      '</tbody></table>' : '<div class="dempty">Nicio proprietate.</div>';
+
+    hostBox.innerHTML =
+      '<div class="dash-grid">'+
+        '<div class="dcard"><h3>Pâlnie de conversie</h3><p class="sub">ultimele '+days+' zile</p>'+
+          '<div class="funnel">'+fbar('Vizualizări',o.views)+fbar('Dezvăluiri telefon',o.reveals)+fbar('Cereri rezervare',o.requests)+'</div>'+
+          '<div class="fconv">Vizualizare → dezvăluire: <b>'+o.conv.viewToReveal+'%</b> · dezvăluire → cerere: <b>'+o.conv.revealToRequest+'%</b></div>'+
+        '</div>'+
+        '<div class="dcard"><h3>Trafic și cereri</h3><p class="sub">pe zi · ultimele '+days+' zile</p>'+
+          '<div class="trend">'+bars+'</div>'+
+          '<div class="tlegend"><span><i style="background:var(--brand)"></i>Vizualizări</span><span><i style="background:#f0a23b"></i>Cereri</span></div>'+
+        '</div>'+
+        '<div class="dcard"><h3>Check-in-uri ce urmează</h3><p class="sub">următoarele '+days+' zile</p><div class="stays">'+arrHtml+'</div></div>'+
+        '<div class="dcard"><h3>Check-out-uri ce urmează</h3><p class="sub">următoarele '+days+' zile</p><div class="stays">'+depHtml+'</div></div>'+
+      '</div>'+
+      (function(){ var ss=o.sources||[]; if(!ss.length) return '<div class="dcard" style="margin-bottom:16px"><h3>Surse de trafic</h3><div class="dempty">Niciun trafic \u00eenc\u0103.</div></div>'; var mx=Math.max.apply(null,ss.map(function(s){return s.count;}).concat([1])); return '<div class="dcard" style="margin-bottom:16px"><h3>Surse de trafic</h3><p class="sub">de unde au venit \u00b7 ultimele '+days+' zile</p><div class="funnel">'+ss.slice(0,8).map(function(s){ return '<div class="frow"><span class="fl">'+esc(s.source)+'</span><div class="fbar"><span style="width:'+Math.round(s.count/mx*100)+'%"></span></div><span class="fv">'+s.count+'</span></div>'; }).join('')+'</div></div>'; })()+
+      (pp.length>1 ? '<div class="dcard" style="margin-bottom:16px"><h3>Pe proprietate</h3><p class="sub">ocupare în următoarele '+days+' zile</p>'+ppHtml+'</div>' : '')+
+      ('<div class="dcard" style="margin-bottom:16px"><h3>Date de contact (lead-uri)</h3><p class="sub">utilizatori care au lăsat datele · cele mai recente</p>'+
+        ((o.leads&&o.leads.length) ? '<table class="dtable"><thead><tr><th>Nume</th><th>Contact</th><th>Proprietate</th><th>Perioadă</th><th>Status</th></tr></thead><tbody>'+
+          o.leads.slice(0,12).map(function(l){ var per=(l.checkin||'')+(l.checkout?(' \u2192 '+l.checkout):''); var contact=[l.phone,l.email].filter(Boolean).join(' \u00b7 ')||'\u2014'; return '<tr><td><b>'+esc(l.name)+'</b></td><td>'+esc(contact)+'</td><td>'+esc(l.property)+'</td><td>'+esc(per||'\u2014')+'</td><td>'+esc(l.status)+'</td></tr>'; }).join('')+
+          '</tbody></table>' : '<div class="dempty">Niciun lead \u00eenc\u0103.</div>')+
+      '</div>')+
+      '<div class="estnote">Gradul de ocupare și venitul estimat se calculează din calendarul de disponibilitate (blocări manuale + sincronizări Booking/Airbnb) și din prețurile setate. Venitul este o <b>estimare</b> a nopților ocupate × tarif — platforma nu procesează plăți. Traficul se înregistrează din momentul activării.</div>';
   }
 
-  // Ensure an approval record exists (status "pending") without resetting a prior decision.
-  let approval = null;
-  try {
-    const cur = await pool.query("select approval from properties where slug=$1", [slug]);
-    approval = cur.rows[0] && cur.rows[0].approval;
-    if (!approval || !approval.token) {
-      approval = { status: "pending", token: crypto.randomBytes(18).toString("hex"), requestedAt: new Date().toISOString() };
-      await pool.query("update properties set approval=$1 where slug=$2", [approval, slug]);
+  window.__renderDash = function(){ renderHostDash(DASH_DAYS); };
+
+  // ---- Poze AI: bulk optimize with progress + per-host billing ----
+  (function(){
+    var wired=false, PZ=[], running=false, session=0;
+    function moneyLei(n){ return (Math.round(Number(n||0)*100)/100).toLocaleString('ro-RO')+' lei'; }
+    async function loadBilling(){
+      try{ var r=await fetch("/api/host/photo-billing",{credentials:"same-origin"}); if(!r.ok) return; var d=await r.json();
+        byId("pzPrice").textContent=moneyLei(d.price);
+        byId("pzSpent").textContent=moneyLei(d.spent);
+        byId("pzCount").textContent=(d.count||0)+" poze";
+      }catch(e){}
     }
-  } catch (e) { /* approval is best-effort */ }
+    function statLabel(s){ return s==="wait"?"în așteptare":s==="run"?"se procesează…":s==="done"?"gata":"eșuat"; }
+    function render(){
+      var grid=byId("pzGrid"); if(!grid) return;
+      grid.innerHTML=PZ.map(function(p,idx){
+        var thumb=p.thumb||p.dataUrl;
+        var color=p.status==="done"?"var(--brand)":p.status==="err"?"#cf4b4b":"var(--muted)";
+        var done=!!p.url;
+        var img='<div data-pzidx="'+idx+'" '+(done?'data-pzedit="1" title="Click: editează" ':'')+'style="aspect-ratio:4/3;background:#f0f2f5;overflow:hidden;'+(done?'cursor:pointer':'')+'"><img src="'+esc(thumb)+'" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block"></div>';
+        var cmp=done?('<button type="button" data-pzcmp="1" data-pzidx="'+idx+'" title="Înainte / după" style="position:absolute;right:6px;bottom:6px;background:rgba(0,0,0,.62);color:#fff;border:0;border-radius:7px;padding:3px 8px;font-size:12px;font-weight:700;cursor:pointer">⇆ Î/D</button>'):'';
+        var link=done?('<a href="'+esc(p.url)+'" target="_blank" style="font-size:11px;color:var(--brand);word-break:break-all">'+esc(p.url)+'</a>'):"";
+        var aiTag = done ? (p.enhanced ? ' · <span style="color:var(--brand)">AI</span>' : ' · <span style="color:#cf4b4b" title="'+esc(p.aiError||"")+'">fără AI</span>') : "";
+        return '<div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card)">'+
+          '<div style="position:relative">'+img+cmp+'</div>'+
+          '<div style="padding:8px 10px">'+
+            '<div style="font-size:12px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(p.name)+'</div>'+
+            '<div style="font-size:11.5px;color:'+color+';margin:2px 0 3px">'+statLabel(p.status)+aiTag+(p.err?(" · "+esc(p.err)):"")+'</div>'+
+            link+(p.alt?('<div style="font-size:11px;color:var(--muted);margin-top:3px">'+esc(p.alt)+'</div>'):"")+
+          '</div></div>';
+      }).join("");
+      var any=PZ.length>0, anyDone=PZ.some(function(p){ return !!p.url; });
+      byId("pzRun").disabled=!any||running; byId("pzClear").disabled=!any||running; byId("pzCopy").disabled=!anyDone;
+    }
+    function addFiles(files){
+      [].slice.call(files).filter(function(f){ return /^image\//.test(f.type); }).forEach(function(f){
+        var r=new FileReader(); r.onload=function(){ PZ.push({dataUrl:r.result,name:f.name,status:"wait"}); render(); }; r.readAsDataURL(f);
+      });
+    }
+    function addUrls(urls){
+      (urls||[]).filter(Boolean).forEach(function(u){ PZ.push({dataUrl:u, name:(String(u).split("/").pop()||"poză"), status:"wait", fromGallery:true}); });
+      render();
+    }
+    // let the galleries push selected photos into the optimizer
+    window.__pzAdd=function(urls){ addUrls(urls); var msg=(urls&&urls.length||0)+" poze trimise în optimizator"; if(window.note) note(msg); };
+    async function run(){
+      if(running||!PZ.length) return; running=true; render();
+      var enhance=byId("pzEnhance").checked, aiWarned=false;
+      var todo=PZ.filter(function(p){ return p.status!=="done"; }).length, done=0;
+      var wrap=byId("pzProgWrap"), bar=byId("pzBar"), txt=byId("pzProgText");
+      wrap.style.display="block"; bar.style.width="0";
+      for(var i=0;i<PZ.length;i++){
+        var p=PZ[i]; if(p.status==="done") continue;
+        p.status="run"; render();
+        txt.textContent="Se procesează "+(done+1)+"/"+todo+"…";
+        try{
+          var payload = /^https?:/i.test(p.dataUrl) ? {url:p.dataUrl, enhance:enhance} : {dataUrl:p.dataUrl, enhance:enhance};
+          var res=await fetch("/api/ai-optimize",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify(payload)});
+          var d=await res.json().catch(function(){ return {}; });
+          if(!res.ok){ p.status="err"; p.err=d.error||("HTTP "+res.status); }
+          else {
+            p.status="done"; p.url=d.url; p.thumb=d.thumb||p.thumb; p.alt=d.alt||""; p.enhanced=!!d.enhanced; p.aiError=d.aiError||"";
+            if(p.aiError && !aiWarned){ aiWarned=true; if(window.note) note("AI nu a modificat pozele: "+p.aiError); }
+            if(d.cost){ session+=Number(d.cost); byId("pzSession").textContent=moneyLei(session); }
+            if(d.spent!=null) byId("pzSpent").textContent=moneyLei(d.spent);
+            if(d.count!=null) byId("pzCount").textContent=d.count+" poze";
+          }
+        }catch(e){ p.status="err"; p.err=e.message; }
+        done++; bar.style.width=Math.round(done/todo*100)+"%"; render();
+      }
+      txt.textContent="Gata · "+PZ.filter(function(p){ return !!p.url; }).length+"/"+PZ.length+" optimizate · "+moneyLei(session)+" în sesiune";
+      running=false; render();
+    }
+    function wire(){
+      if(wired) return; wired=true;
+      var drop=byId("pzDrop"), file=byId("pzFile");
+      drop.onclick=function(){ file.click(); };
+      drop.ondragover=function(e){ e.preventDefault(); drop.style.borderColor="var(--brand)"; };
+      drop.ondragleave=function(){ drop.style.borderColor=""; };
+      drop.ondrop=function(e){
+        e.preventDefault(); drop.style.borderColor="";
+        if(e.dataTransfer.files&&e.dataTransfer.files.length){ addFiles(e.dataTransfer.files); }
+        else if(typeof galDragState!=="undefined" && galDragState && galDragState.kind==="photo" && galDragState.url){ addUrls([galDragState.url]); galDragState=null; }
+      };
+      file.onchange=function(){ addFiles(file.files); file.value=""; };
+      byId("pzRun").onclick=run;
+      byId("pzClear").onclick=function(){ if(running) return; PZ=[]; session=0; byId("pzSession").textContent="0 lei"; byId("pzProgWrap").style.display="none"; render(); };
+      byId("pzCopy").onclick=function(){
+        var urls=PZ.filter(function(p){ return !!p.url; }).map(function(p){ return p.url; }).join("\n"); if(!urls) return;
+        function fb(){ var ta=document.createElement("textarea"); ta.value=urls; document.body.appendChild(ta); ta.select(); try{ document.execCommand("copy"); note("Linkuri copiate"); }catch(e){} ta.remove(); }
+        if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(urls).then(function(){ note("Linkuri copiate"); }, fb); } else { fb(); }
+      };
+      // Click an optimized photo → modal editor; the ⇆ button → before/after compare.
+      byId("pzGrid").addEventListener("click", function(e){
+        var cmp=e.target.closest("[data-pzcmp]");
+        if(cmp){ e.stopPropagation(); var p=PZ[+cmp.getAttribute("data-pzidx")]; if(p&&p.url&&window.openCompare){ window.openCompare(p.dataUrl, p.url, {onAccept:function(){},onSkip:function(){},onCancel:function(){}}); } return; }
+        var ed=e.target.closest("[data-pzedit]");
+        if(ed){ var pp=PZ[+ed.getAttribute("data-pzidx")]; if(pp&&pp.url&&window.openPhotoEditor){ window.openPhotoEditor(pp.url, function(newUrl, meta){ pp.url=newUrl; pp.thumb=newUrl; if(meta&&meta.alt) pp.alt=meta.alt; render(); note("Poză actualizată"); }); } }
+      });
+    }
+    window.__initPoze=function(){ wire(); loadBilling(); render(); };
+  })();
 
-  return { slug, name: merged.property.basicInfo.name || slug, merged: !!existing, host, url: siteUrl(slug), approval: approval ? { status: approval.status, token: approval.token } : null };
-}
+  // period selector
+  (function(){ var p=byId("dashPeriod"); if(!p) return;
+    p.addEventListener("click", function(e){ var b=e.target.closest("button[data-days]"); if(!b) return;
+      DASH_DAYS=+b.getAttribute("data-days");
+      [].slice.call(p.querySelectorAll("button")).forEach(function(x){ x.classList.toggle("on", x===b); });
+      renderHostDash(DASH_DAYS);
+    });
+  })();
 
-app.post("/api/import", AUTH.requireAdmin, async (req, res) => {
-  try {
-    res.json(await importOne(req.body));
-  } catch (e) { res.status(400).json({ error: e.message }); }
-});
+  // property switcher
+  (async function(){
+    var sw=byId("propSwitch"), sel=byId("propSelect"); if(!sw||!sel) return;
+    var list=[]; try{ list=await fetch("/api/properties",{credentials:"same-origin"}).then(function(r){return r.ok?r.json():[];}); }catch(e){}
+    if(!list || list.length<2){ return; } // only show when there is something to switch between
+    sel.innerHTML = list.map(function(p){ return '<option value="'+p.slug+'"'+(p.slug===_slug?' selected':'')+'>'+(p.name||p.slug)+'</option>'; }).join("");
+    sel.onchange=function(){ if(sel.value && sel.value!==_slug) location.href="/admin?slug="+encodeURIComponent(sel.value); };
+    sw.style.display="";
+  })();
 
-// Bulk import: accepts { items:[master, ...] } or a raw array. Each property is
-// imported independently; one bad item never aborts the rest.
-app.post("/api/import-bulk", AUTH.requireAdmin, async (req, res) => {
-  const items = Array.isArray(req.body) ? req.body : (Array.isArray(req.body && req.body.items) ? req.body.items : null);
-  if (!items || !items.length) return res.status(400).json({ error: "Trimite un array de proprietăți (items)." });
-  if (items.length > 100) return res.status(400).json({ error: "Maxim 100 de proprietăți per import." });
-  const results = [];
-  for (let i = 0; i < items.length; i++) {
-    try {
-      const r = await importOne(items[i]);
-      results.push({ ok: true, index: i, slug: r.slug, name: r.name, merged: r.merged, url: r.url, approval: r.approval, host: r.host });
-    } catch (e) {
-      let nm = "";
-      try { nm = (items[i] && items[i].general && items[i].general.basicInfo && items[i].general.basicInfo.name) || (items[i] && items[i].name) || ""; } catch (_) {}
-      results.push({ ok: false, index: i, name: nm, error: e.message });
+  // role-based chrome
+  if(ME.role==="host"){ var cb=byId("cBack"); if(cb) cb.style.display="none"; }
+  var logoSmall=document.querySelector(".side .logo small"); if(logoSmall) logoSmall.textContent = ME.role==="admin" ? "Administrare" : "Panou hotelier";
+
+  // account modal
+  function openAcct(){ byId("acCur").value="";byId("acEmail").value=ME.email||"";byId("acPass").value="";byId("acErr").style.display="none"; byId("acctModal").classList.add("on"); }
+  function closeAcct(){ byId("acctModal").classList.remove("on"); }
+  var ca=byId("cAccount"); if(ca) ca.onclick=openAcct;
+  var ax=byId("acctX"); if(ax) ax.onclick=closeAcct;
+  var acc=byId("acCancel"); if(acc) acc.onclick=closeAcct;
+  byId("acctModal").addEventListener("click",function(e){ if(e.target===byId("acctModal")) closeAcct(); });
+  byId("acSave").onclick=async function(){
+    var err=byId("acErr"); err.style.display="none";
+    var cur=byId("acCur").value, ne=byId("acEmail").value.trim(), np=byId("acPass").value;
+    if(!cur){ err.textContent="Introdu parola actuală."; err.style.display="block"; return; }
+    var body={ currentPassword:cur };
+    if(ne && ne!==ME.email) body.newEmail=ne;
+    if(np) body.newPassword=np;
+    var r=await fetch("/api/auth/change-credentials",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify(body)});
+    var d=await r.json().catch(function(){return{};});
+    if(!r.ok){ err.textContent=d.error||"Eroare."; err.style.display="block"; return; }
+    ME.email = body.newEmail || ME.email; closeAcct(); note("Date actualizate");
+  };
+
+  // ===== OFERTE (deals) =====
+  var DEAL_META = {
+    interval_discount: { label:"Reducere pe interval", desc:"−X% pentru un interval de date", fields:["percent","start","end"] },
+    last_minute:       { label:"Last minute",          desc:"−X% pentru rezervări în următoarele X zile", fields:["percent","days","recurring"] },
+    early_bird:        { label:"Early bird",            desc:"−X% dacă rezervă cu min. X zile înainte", fields:["percent","days"] },
+    long_stay:         { label:"Sejur lung",            desc:"−X% pentru sejururi de min. X nopți", fields:["percent","nights"] },
+    stay_pay:          { label:"Stai N, plătești mai puțin", desc:"ex. 3 nopți, 1 gratis (în timpul săptămânii)", fields:["nights","freeNights","weekdaysOnly"] },
+    late_checkout:     { label:"Late check-out",        desc:"check-out târziu, la ora stabilită", fields:["time"] },
+    early_checkin:     { label:"Early check-in",        desc:"check-in devreme, la ora stabilită", fields:["time"] },
+    free_snack:        { label:"Gustare din partea casei", desc:"un bonus de bun-venit", fields:["note"] }
+  };
+  var DEAL_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.6 13.4L13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2A2 2 0 0 1 3 12V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.6z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>';
+  var DEALS = [];
+  var DEALS_CONSENT = false;
+
+  function dealDefaultTitle(t){ return (DEAL_META[t] && DEAL_META[t].label) || "Ofertă"; }
+  function dealSummary(d){
+    var p=d.percent||0;
+    switch(d.type){
+      case "interval_discount": return "−"+p+"%"+((d.start||d.end)?(" • "+(d.start||"…")+" → "+(d.end||"…")):"");
+      case "last_minute": return "−"+p+"% • următoarele "+(d.days||0)+" zile"+(d.recurring?" • recurent":"");
+      case "early_bird": return "−"+p+"% • rezervare cu min. "+(d.days||0)+" zile înainte";
+      case "long_stay": return "−"+p+"% • min. "+(d.nights||0)+" nopți";
+      case "stay_pay": return "Stai "+(d.nights||0)+", plătești "+Math.max(0,(d.nights||0)-(d.freeNights||0))+(d.weekdaysOnly?" • în timpul săptămânii":"");
+      case "late_checkout": return "Check-out până la "+(d.time||"—");
+      case "early_checkin": return "Check-in de la "+(d.time||"—");
+      case "free_snack": return d.note || "Gustare din partea casei";
+      default: return "";
     }
   }
-  res.json({ count: results.length, ok: results.filter(r => r.ok).length, failed: results.filter(r => !r.ok).length, results });
-});
 
-app.get("/api/properties", AUTH.requireAuth, async (req, res) => {
-  const isAdmin = req.user.role === "admin";
-  const r = await pool.query(
-    `select slug,
-            admin_state->'property'->'basicInfo'->>'name' as name,
-            site->'photos'->>'hero' as hero
-     from properties
-     ${isAdmin ? "" : "where owner_id = $1"}
-     order by updated_at desc`,
-    isAdmin ? [] : [req.user.id]
-  );
-  res.json(r.rows);
-});
+  async function saveDeals(){
+    try{
+      var r=await fetch("/api/host/deals",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({slug:_slug,deals:DEALS})});
+      var d=await r.json().catch(function(){return{};});
+      if(r.ok && d.deals){ DEALS=d.deals; renderDeals(); note("Oferte salvate"); }
+      else note("Eroare la salvare");
+    }catch(e){ note("Eroare la salvare"); }
+  }
 
-app.delete("/api/host/:slug", AUTH.requireAdmin, async (req, res) => {
-  await pool.query("delete from properties where slug=$1", [req.params.slug]);
-  res.json({ ok: true });
-});
+  function renderDeals(){
+    var box=byId("dealsBox"); if(!box) return;
+    var addBtn=byId("dealAdd"); if(addBtn){ addBtn.disabled=!DEALS_CONSENT; addBtn.style.opacity=DEALS_CONSENT?"":".5"; addBtn.style.cursor=DEALS_CONSENT?"":"not-allowed"; }
+    var consentCard='<div class="dcard" style="margin-bottom:16px;border-left:3px solid var(--brand)">'+
+      '<b style="color:var(--ink)">Unde apar ofertele</b>'+
+      '<p class="sub" style="margin-top:4px;margin-bottom:10px">Ofertele tale apar pe <b>platforma LocalStay</b>, nu pe site-ul generat al unității. Ca să le poți crea și publica, confirmă că ești de acord.</p>'+
+      '<label class="dcheck"><input type="checkbox" id="dealConsent"'+(DEALS_CONSENT?" checked":"")+'> Sunt de acord ca ofertele să fie publicate pe platforma LocalStay.</label>'+
+    '</div>';
+    var listHtml;
+    if(!DEALS_CONSENT){ listHtml='<div class="dempty" style="padding:14px 0">Bifează acordul de mai sus ca să creezi oferte.</div>'; }
+    else if(!DEALS.length){ listHtml='<div class="dempty" style="padding:14px 0">Nicio ofertă încă. Apasă „Ofertă nouă" ca să creezi prima.</div>'; }
+    else { listHtml = DEALS.map(function(d){
+      var meta=DEAL_META[d.type]||{label:"Ofertă"};
+      return '<div class="deal-card'+(d.active===false?' off':'')+'">'+
+        '<div class="di">'+DEAL_ICON+'</div>'+
+        '<div class="dt"><b>'+esc(d.title||meta.label)+'</b><div class="meta">'+esc(meta.label)+'</div><div class="sum">'+esc(dealSummary(d))+'</div></div>'+
+        '<div class="deal-acts"><button class="tgl'+(d.active===false?'':' on')+'" data-tgl="'+esc(d.id)+'" title="Activă pe platformă"></button>'+
+          '<button class="lnk-btn" data-edit="'+esc(d.id)+'">Editează</button>'+
+          '<button class="lnk-btn del" data-del="'+esc(d.id)+'">Șterge</button></div>'+
+      '</div>';
+    }).join(""); }
+    box.innerHTML = consentCard + listHtml;
+    var cc=byId("dealConsent"); if(cc) cc.onchange=async function(){
+      var want=cc.checked;
+      try{ var r=await fetch("/api/host/deals-consent",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({slug:_slug,consent:want})}); if(r.ok){ DEALS_CONSENT=want; renderDeals(); note(want?"Acord salvat":"Acord retras"); } }catch(e){}
+    };
+    [].slice.call(box.querySelectorAll("[data-tgl]")).forEach(function(b){ b.onclick=function(){ var d=DEALS.filter(function(x){return x.id===b.getAttribute("data-tgl");})[0]; if(d){ d.active=!(d.active!==false); saveDeals(); } }; });
+    [].slice.call(box.querySelectorAll("[data-edit]")).forEach(function(b){ b.onclick=function(){ openDeal(DEALS.filter(function(x){return x.id===b.getAttribute("data-edit");})[0]); }; });
+    [].slice.call(box.querySelectorAll("[data-del]")).forEach(function(b){ b.onclick=function(){ if(confirm("Ștergi oferta?")){ DEALS=DEALS.filter(function(x){return x.id!==b.getAttribute("data-del");}); saveDeals(); } }; });
+  }
 
-/* ---------- booking requests (from the public booking form) ---------- */
-app.post("/api/booking-request", async (req, res) => {
-  try {
-    const b = req.body || {};
-    const g = b.guests || {};
-    const slug = String(b.slug || "").trim();
-    if (!slug) return res.status(400).json({ error: "slug lipsă" });
-    if (!b.name && !b.phone) return res.status(400).json({ error: "nume sau telefon obligatoriu" });
-    const toDate = (v) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
-    const r = await pool.query(
-      `insert into booking_requests
-        (slug,name,phone,email,checkin,checkout,adults,children,infants,pets,rooms,message)
-       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12) returning id`,
-      [
-        slug,
-        (b.name || "").slice(0, 200),
-        (b.phone || "").slice(0, 60),
-        (b.email || "").slice(0, 200),
-        toDate(b.checkin),
-        toDate(b.checkout),
-        +g.adults || 0, +g.children || 0, +g.infants || 0, +g.pets || 0,
-        JSON.stringify(Array.isArray(b.rooms) ? b.rooms.slice(0, 30) : []),
-        (b.message || "").slice(0, 4000),
-      ]
-    );
-    res.json({ ok: true, id: r.rows[0].id });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+  window.__renderDeals = async function(){
+    var box=byId("dealsBox"); if(box && !DEALS.length) box.innerHTML='<p class="muted">Se încarcă…</p>';
+    try{ var r=await fetch("/api/host/deals?slug="+encodeURIComponent(_slug),{credentials:"same-origin"}); var d=await r.json(); DEALS=(d&&d.deals)||[]; DEALS_CONSENT=!!(d&&d.consent); }catch(e){ DEALS=[]; }
+    renderDeals();
+  };
 
-app.get("/api/host/:slug/booking-requests", AUTH.requireSlugAccess(pool), async (req, res) => {
-  try {
-    const r = await pool.query(
-      "select * from booking_requests where slug=$1 order by created_at desc limit 500",
-      [req.params.slug]
-    );
-    res.json(r.rows);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-/* ---------- lightweight event tracking (phone reveals, etc.) ---------- */
-app.post("/api/track", async (req, res) => {
-  try {
-    const b = req.body || {};
-    const slug = String(b.slug || "").slice(0, 120);
-    const type = String(b.type || "").slice(0, 60);
-    if (!slug || !type) return res.status(400).json({ error: "slug/type lipsă" });
-    await pool.query(
-      "insert into site_events (slug,type,meta) values ($1,$2,$3::jsonb)",
-      [slug, type, JSON.stringify(b.meta || {})]
-    );
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-/* ---------- host dashboard: occupancy, est. revenue, traffic, requests ---------- */
-function todayIso(){ return iso(new Date()); }
-function addDaysIso(s,n){ const d=fromIso(s); d.setUTCDate(d.getUTCDate()+n); return iso(d); }
-function rangeDates(fromS,toS){ const out=[]; let d=fromIso(fromS); const end=fromIso(toS); while(d<end){ out.push(iso(d)); d.setUTCDate(d.getUTCDate()+1); } return out; }
-function isWeekendIso(s){ const w=fromIso(s).getUTCDay(); return w===5||w===6; } // Fri/Sat nights
-function nightlyPrice(pricing, roomId, ds){
-  const dp=(pricing && pricing.dayPrices) || {};
-  if (dp[roomId] && dp[roomId][ds]!=null) return +dp[roomId][ds] || 0;
-  const rooms=(pricing && pricing.rooms) || [];
-  const room=rooms.find(r=>r.id===roomId) || {};
-  const we=isWeekendIso(ds);
-  const periods=(pricing && pricing.periods) || [];
-  const per=periods.find(p=>(p.roomId===roomId||p.roomId==="all") && p.start && p.end && ds>=p.start && ds<=p.end);
-  if (per){ const v=we ? (per.weekend||per.weekday) : per.weekday; if (v) return +v || 0; }
-  const base=we ? (room.weekend||room.weekday) : room.weekday;
-  return +base || 0;
-}
-function occupancyAndRevenue(adminState, dates){
-  const units=(adminState && adminState.units) || [];
-  const pricing=(adminState && adminState.pricing) || {};
-  const rooms=pricing.rooms || [];
-  const hasEntire=rooms.some(r=>r.isEntire), hasRooms=rooms.some(r=>!r.isEntire);
-  // when a property mixes an "entire" unit with individual rooms, count only the rooms
-  // (the entire unit mirrors them, so counting both would double-count nights)
-  const counted=units.filter(u=>{ const r=rooms.find(x=>x.id===u.id); const isE=r?!!r.isEntire:false; return (hasEntire&&hasRooms)?!isE:true; });
-  const dateSet=new Set(dates);
-  let occ=0, rev=0;
-  counted.forEach(u=>{ effectiveBlocked(adminState, u.id).forEach(ds=>{ if (dateSet.has(ds)){ occ++; rev+=nightlyPrice(pricing, u.id, ds); } }); });
-  return { occNights:occ, totalNights:counted.length*dates.length, estRevenue:Math.round(rev), currency:(rooms[0]&&rooms[0].currency)||"RON", units:counted.length };
-}
-// Map a page_view event's referrer/utm to a readable traffic source label.
-function classifySource(meta, ownHosts) {
-  let m = meta || {};
-  if (typeof m === "string") { try { m = JSON.parse(m); } catch (e) { m = {}; } }
-  const utm = String(m.utm || "").trim();
-  if (utm) return utm.charAt(0).toUpperCase() + utm.slice(1);
-  const ref = String(m.ref || "").trim();
-  if (!ref) return "Direct";
-  let host = "";
-  try { host = new URL(ref).hostname.replace(/^www\./, "").toLowerCase(); } catch (e) { return "Direct"; }
-  if (host.endsWith("onrender.com")) return "Intern";
-  if (ownHosts.some(h => h && (host === h || host.endsWith("." + h)))) return "Intern";
-  if (host.includes("google")) return "Google";
-  if (host.includes("facebook") || host === "fb.com" || host.startsWith("l.facebook")) return "Facebook";
-  if (host.includes("instagram")) return "Instagram";
-  if (host.includes("tiktok")) return "TikTok";
-  if (host.includes("bing")) return "Bing";
-  if (host.includes("t.co") || host.includes("twitter") || host === "x.com") return "X/Twitter";
-  if (host.includes("booking.com")) return "Booking.com";
-  if (host.includes("airbnb")) return "Airbnb";
-  return host; // fallback: the referring domain itself
-}
-
-// Aggregated dashboard for a hotelier across all their properties (admin sees all).
-app.get("/api/host/overview", AUTH.requireAuth, async (req, res) => {
-  try {
-    const days=[7,30,90].includes(+req.query.days) ? +req.query.days : 30;
-    const wantSlug = req.query.slug ? String(req.query.slug) : null;
-    const propsQ = req.user.role==="admin"
-      ? await pool.query("select slug, admin_state from properties order by created_at desc")
-      : await pool.query("select slug, admin_state from properties where owner_id=$1 order by created_at desc", [req.user.id]);
-    // optional: scope the whole dashboard to a single property the user can access
-    const props = wantSlug ? propsQ.rows.filter(p => p.slug === wantSlug) : propsQ.rows;
-    const slugs=props.map(p=>p.slug);
-    const today=todayIso(), fwdEnd=addDaysIso(today,days), backStart=addDaysIso(today,-days);
-    const fwdDates=rangeDates(today,fwdEnd);
-
-    let occ=0,total=0,rev=0,currency="RON"; const perProperty=[];
-    props.forEach(p=>{
-      const s=occupancyAndRevenue(p.admin_state, fwdDates);
-      occ+=s.occNights; total+=s.totalNights; rev+=s.estRevenue; if (s.currency) currency=s.currency;
-      const name=(p.admin_state.property && p.admin_state.property.basicInfo && p.admin_state.property.basicInfo.name) || p.slug;
-      perProperty.push({ slug:p.slug, name, occupancy: s.totalNights?Math.round(s.occNights/s.totalNights*100):0, occNights:s.occNights, estRevenue:s.estRevenue, currency:s.currency, units:s.units });
-    });
-    const nameOf={}; perProperty.forEach(pp=>{ nameOf[pp.slug]=pp.name; });
-
-    let events=[], reqsBack=[], stays=[];
-    if (slugs.length){
-      events=(await pool.query("select type, meta, slug, to_char(created_at,'YYYY-MM-DD') as day from site_events where slug = ANY($1) and created_at >= $2 and type in ('page_view','phone_reveal')", [slugs, backStart])).rows;
-      reqsBack=(await pool.query("select status, slug, to_char(created_at,'YYYY-MM-DD') as day from booking_requests where slug = ANY($1) and created_at >= $2", [slugs, backStart])).rows;
-      stays=(await pool.query("select slug, name, phone, to_char(checkin,'YYYY-MM-DD') as checkin, to_char(checkout,'YYYY-MM-DD') as checkout, adults, children, status from booking_requests where slug = ANY($1) and ((checkin >= $2 and checkin < $3) or (checkout >= $2 and checkout < $3)) order by checkin asc limit 100", [slugs, today, fwdEnd])).rows;
+  // deal create/edit modal (built once)
+  var dealModal=null, editingDealId=null, pickedType="interval_discount";
+  function buildDealModal(){
+    var m=document.createElement("div"); m.className="amodal"; m.id="dealModal";
+    m.innerHTML='<div class="amodal-card wide"><div class="amodal-hd"><h3 id="dmTitle">Ofertă nouă</h3><button class="amodal-x" id="dmX" type="button">&times;</button></div>'+
+      '<div class="amodal-bd"><div id="dmTypes"></div><div id="dmForm"></div><div class="amodal-err" id="dmErr"></div>'+
+      '<div class="amodal-row"><button class="btn btn-pri" id="dmSave" type="button">Salvează</button><button class="btn btn-out" id="dmCancel" type="button">Renunță</button></div></div></div>';
+    document.body.appendChild(m);
+    m.addEventListener("click",function(e){ if(e.target===m) closeDeal(); });
+    byId("dmX").onclick=closeDeal; byId("dmCancel").onclick=closeDeal;
+    byId("dmSave").onclick=saveDealForm;
+    dealModal=m;
+  }
+  function fieldHtml(f, d){
+    d=d||{};
+    if(f==="percent") return '<div class="dfield"><label>Reducere (%)</label><input id="f_percent" type="number" min="1" max="90" value="'+(d.percent||"")+'"></div>';
+    if(f==="days") return '<div class="dfield"><label>Număr de zile</label><input id="f_days" type="number" min="1" max="60" value="'+(d.days||"")+'"></div>';
+    if(f==="nights") return '<div class="dfield"><label>Nopți</label><input id="f_nights" type="number" min="1" max="30" value="'+(d.nights||"")+'"></div>';
+    if(f==="freeNights") return '<div class="dfield"><label>Nopți gratis</label><input id="f_freeNights" type="number" min="1" max="10" value="'+(d.freeNights||1)+'"></div>';
+    if(f==="start") return '<div class="dfield"><label>De la</label><input id="f_start" type="date" value="'+(d.start||"")+'"></div>';
+    if(f==="end") return '<div class="dfield"><label>Până la</label><input id="f_end" type="date" value="'+(d.end||"")+'"></div>';
+    if(f==="time") return '<div class="dfield"><label>Ora</label><input id="f_time" type="time" value="'+(d.time||"")+'"></div>';
+    if(f==="note") return '<div class="dfield"><label>Detalii</label><input id="f_note" type="text" maxlength="300" value="'+esc(d.note||"")+'" placeholder="ex. o gustare locală la sosire"></div>';
+    if(f==="recurring") return '<label class="dcheck"><input id="f_recurring" type="checkbox"'+(d.recurring?" checked":"")+'> Recurent (se reînnoiește automat)</label>';
+    if(f==="weekdaysOnly") return '<label class="dcheck"><input id="f_weekdaysOnly" type="checkbox"'+(d.weekdaysOnly?" checked":"")+'> Doar în timpul săptămânii</label>';
+    return "";
+  }
+  function paintDealForm(d){
+    var meta=DEAL_META[pickedType]; var rows="";
+    // group start+end on one row for interval
+    var fields=meta.fields.slice();
+    var html="";
+    html+='<div class="dfield"><label>Titlu (afișat pe site)</label><input id="f_title" type="text" maxlength="120" placeholder="'+esc(dealDefaultTitle(pickedType))+'" value="'+esc((d&&d.title)||"")+'"></div>';
+    if(pickedType==="interval_discount"){
+      html+='<div class="dfield"><label>Reducere (%)</label><input id="f_percent" type="number" min="1" max="90" value="'+((d&&d.percent)||"")+'"></div>';
+      html+='<div class="dfield row2"><div><label>De la</label><input id="f_start" type="date" value="'+((d&&d.start)||"")+'"></div><div><label>Până la</label><input id="f_end" type="date" value="'+((d&&d.end)||"")+'"></div></div>';
+    } else {
+      fields.forEach(function(f){ html+=fieldHtml(f, d||{}); });
     }
-    const views=events.filter(e=>e.type==="page_view").length;
-    const reveals=events.filter(e=>e.type==="phone_reveal").length;
-    const requests=reqsBack.length;
-    const byStatus={}; reqsBack.forEach(r=>{ const s=r.status||"nou"; byStatus[s]=(byStatus[s]||0)+1; });
+    byId("dmForm").innerHTML=html;
+  }
+  function paintTypePicker(){
+    byId("dmTypes").innerHTML='<div class="dfield"><label>Tip ofertă</label><div class="dgrid">'+
+      Object.keys(DEAL_META).map(function(t){ var m=DEAL_META[t]; return '<button type="button" class="dtype'+(t===pickedType?" sel":"")+'" data-type="'+t+'"><b>'+esc(m.label)+'</b><span>'+esc(m.desc)+'</span></button>'; }).join("")+'</div></div>';
+    [].slice.call(byId("dmTypes").querySelectorAll("[data-type]")).forEach(function(b){ b.onclick=function(){ pickedType=b.getAttribute("data-type"); paintTypePicker(); paintDealForm(null); }; });
+  }
+  function openDeal(d){
+    if(!dealModal) buildDealModal();
+    editingDealId = d ? d.id : null;
+    pickedType = d ? d.type : "interval_discount";
+    byId("dmTitle").textContent = d ? "Editează oferta" : "Ofertă nouă";
+    byId("dmErr").style.display="none";
+    if(d){ byId("dmTypes").innerHTML=""; } else { paintTypePicker(); }
+    paintDealForm(d);
+    dealModal.classList.add("on");
+  }
+  function closeDeal(){ if(dealModal) dealModal.classList.remove("on"); }
+  function val(id){ var e=byId(id); return e?e.value:""; }
+  function chk(id){ var e=byId(id); return e?!!e.checked:false; }
+  function saveDealForm(){
+    var err=byId("dmErr"); err.style.display="none";
+    var d={ id: editingDealId || ("d"+Date.now().toString(36)), type:pickedType, active:true, title:val("f_title").trim() };
+    var m=DEAL_META[pickedType];
+    if(m.fields.indexOf("percent")>=0){ d.percent=+val("f_percent")||0; if(d.percent<1){ err.textContent="Introdu un procent de reducere."; err.style.display="block"; return; } }
+    if(m.fields.indexOf("days")>=0){ d.days=+val("f_days")||0; if(d.days<1){ err.textContent="Introdu numărul de zile."; err.style.display="block"; return; } }
+    if(m.fields.indexOf("nights")>=0){ d.nights=+val("f_nights")||0; if(d.nights<1){ err.textContent="Introdu numărul de nopți."; err.style.display="block"; return; } }
+    if(m.fields.indexOf("freeNights")>=0){ d.freeNights=+val("f_freeNights")||1; }
+    if(m.fields.indexOf("start")>=0){ d.start=val("f_start"); }
+    if(m.fields.indexOf("end")>=0){ d.end=val("f_end"); }
+    if(m.fields.indexOf("time")>=0){ d.time=val("f_time"); if(!d.time){ err.textContent="Alege ora."; err.style.display="block"; return; } }
+    if(m.fields.indexOf("note")>=0){ d.note=val("f_note").trim(); }
+    if(m.fields.indexOf("recurring")>=0){ d.recurring=chk("f_recurring"); }
+    if(m.fields.indexOf("weekdaysOnly")>=0){ d.weekdaysOnly=chk("f_weekdaysOnly"); }
+    if(!d.title) d.title=dealDefaultTitle(pickedType);
+    if(editingDealId){ DEALS=DEALS.map(function(x){ return x.id===editingDealId ? d : x; }); }
+    else { DEALS.push(d); }
+    closeDeal(); saveDeals();
+  }
+  (function(){ var a=byId("dealAdd"); if(a) a.onclick=function(){ openDeal(null); }; })();
 
-    // traffic sources (from page_view referrer/utm) — analytics without GA
-    const ownHosts = [BASE_DOMAIN].filter(Boolean);
-    const srcCounts = {};
-    events.forEach(e => { if (e.type === "page_view") { const s = classifySource(e.meta, ownHosts); srcCounts[s] = (srcCounts[s] || 0) + 1; } });
-    const sources = Object.keys(srcCounts).map(k => ({ source: k, count: srcCounts[k] })).sort((a, b) => b.count - a.count);
+  // ===== APROBĂRI =====
+  window.__renderAppr = function(){
+    var box=byId("apprBox"); if(!box) return;
+    var ap=window.__APPROVAL || {status:"pending"};
+    var st=ap.status||"pending";
+    var stLbl = st==="approved"?"Aprobat":(st==="rejected"?"Respins":"În așteptare");
+    var siteBtns = (st==="pending")
+      ? '<button class="btn btn-pri" id="aSiteOk" type="button" style="padding:8px 14px">Aprobă</button><button class="btn btn-out" id="aSiteNo" type="button" style="padding:8px 14px">Respinge</button>'
+      : '<span class="sbadge '+st+'">'+stLbl+'</span><button class="lnk-btn" id="aSiteReset" type="button">Schimbă</button>';
+    box.innerHTML =
+      '<div class="appr-item"><div class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg></div>'+
+        '<div class="at"><b>Site-ul generat</b><span>pagina publică a unității</span></div>'+
+        '<div class="actions"><a class="lnk-btn" target="_blank" id="aSiteView">Vezi</a>'+siteBtns+'</div></div>'+
+      '<div class="appr-item"><div class="ai"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18M3 12h18M3 17h18"/></svg></div>'+
+        '<div class="at"><b>Pagina TravelScan</b><span>se va conecta în curând</span></div>'+
+        '<div class="actions"><span class="sbadge soon">În curând</span></div></div>'+
+      '<div class="dcard" style="margin-top:8px"><b style="color:var(--ink)">Widget pentru site-ul tău</b>'+
+        '<p class="sub" style="margin-top:4px;margin-bottom:10px">Dacă preferi să nu folosești site-ul generat de noi, poți încorpora unitatea direct în site-ul tău. Copiază codul de mai jos în sursa paginii tale.</p>'+
+        '<textarea id="embedCode" readonly style="width:100%;height:84px;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font:inherit;font-size:12.5px;color:var(--ink);background:#f6f7fb;resize:vertical"></textarea>'+
+        '<div style="margin-top:10px;display:flex;gap:8px"><button class="btn btn-pri" id="embedCopy" type="button" style="padding:8px 14px">Copiază codul</button><a class="btn btn-out" id="embedPreview" target="_blank" style="padding:8px 14px">Previzualizează</a></div></div>';
+    var view=byId("aSiteView"); if(view){ view.href = (window.__pubUrl||("/s/"+_slug)); }
+    var pub = window.__pubUrl || (location.origin + "/s/" + _slug);
+    if(pub.charAt(0)==="/") pub = location.origin + pub;
+    var embed = '<iframe src="'+pub+'" title="Unitate LocalStay" loading="lazy" style="width:100%;min-height:900px;border:0;border-radius:12px"></iframe>';
+    var ec=byId("embedCode"); if(ec) ec.value=embed;
+    var ep=byId("embedPreview"); if(ep) ep.href=pub;
+    var cp=byId("embedCopy"); if(cp) cp.onclick=function(){ try{ ec.select(); if(navigator.clipboard) navigator.clipboard.writeText(embed); else document.execCommand("copy"); note("Cod copiat"); }catch(e){ note("Selectează și copiază manual"); } };
+    var ok=byId("aSiteOk"), no=byId("aSiteNo"), reset=byId("aSiteReset");
+    if(ok) ok.onclick=function(){ apprDecide("approved"); };
+    if(no) no.onclick=function(){ var n=prompt("Motivul respingerii (opțional):")||""; apprDecide("rejected", n); };
+    if(reset) reset.onclick=function(){ window.__APPROVAL.status="pending"; window.__renderAppr(); };
+  };
+  async function apprDecide(decision, rnote){
+    try{
+      var r=await fetch("/api/host/approval",{method:"POST",headers:{"Content-Type":"application/json"},credentials:"same-origin",body:JSON.stringify({slug:_slug,decision:decision,note:rnote||""})});
+      if(r.ok){ (window.__APPROVAL=window.__APPROVAL||{}).status=decision; window.__renderAppr(); note(decision==="approved"?"Unitate aprobată":"Unitate respinsă"); }
+    }catch(e){}
+  }
+  // expose the public URL for the approvals "Vezi" link
+  fetch("/api/config").then(function(r){return r.json();}).then(function(c){ window.__pubUrl = (c&&c.baseDomain) ? ("https://"+_slug+"."+c.baseDomain) : ("/s/"+_slug); }).catch(function(){});
 
-    const trend=rangeDates(backStart, addDaysIso(today,1)).map(d=>({ date:d, views:0, requests:0 }));
-    const tindex={}; trend.forEach(t=>{ tindex[t.date]=t; });
-    events.forEach(e=>{ if (e.type==="page_view" && tindex[e.day]) tindex[e.day].views++; });
-    reqsBack.forEach(r=>{ if (tindex[r.day]) tindex[r.day].requests++; });
-
-    // per-property traffic + requests (platform view for master admin)
-    const viewsBySlug={}, reqBySlug={};
-    events.forEach(e=>{ if (e.type==="page_view") viewsBySlug[e.slug]=(viewsBySlug[e.slug]||0)+1; });
-    reqsBack.forEach(r=>{ reqBySlug[r.slug]=(reqBySlug[r.slug]||0)+1; });
-    perProperty.forEach(pp=>{ pp.views=viewsBySlug[pp.slug]||0; pp.requests=reqBySlug[pp.slug]||0; });
-
-    const fmt=s=>({ name:s.name||"—", phone:s.phone||"", property:nameOf[s.slug]||s.slug, checkin:s.checkin, checkout:s.checkout, guests:(s.adults||0)+(s.children||0), status:s.status||"nou" });
-    const arrivals=stays.filter(s=>s.checkin && s.checkin>=today && s.checkin<fwdEnd).map(fmt);
-    const departures=stays.filter(s=>s.checkout && s.checkout>=today && s.checkout<fwdEnd).map(fmt);
-
-    // leads = users who left personal data (booking-request contacts), most recent first
-    let leadRows=[];
-    if (slugs.length) {
-      leadRows=(await pool.query(
-        "select slug, name, phone, email, to_char(checkin,'YYYY-MM-DD') as checkin, to_char(checkout,'YYYY-MM-DD') as checkout, adults, children, status, to_char(created_at,'YYYY-MM-DD') as day from booking_requests where slug = ANY($1) order by created_at desc limit 60",
-        [slugs])).rows;
+  // approval banner — the hotelier can review & approve/reject right from the console
+  (function(){
+    var ap = window.__APPROVAL || { status: "pending" };
+    var content = document.querySelector(".content"); if (!content) return;
+    var panou = byId("panel-panou");
+    var bar = document.createElement("div"); bar.id = "apBar";
+    function paint(){
+      var st = ap.status || "pending";
+      var bg = st==="approved"?"var(--brand-soft)": st==="rejected"?"#fbeaea":"#fdf4e3";
+      var fg = st==="approved"?"var(--brand-d)": st==="rejected"?"#a23b3b":"#8a6516";
+      bar.style.cssText = "display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:"+bg+";color:"+fg+";border-radius:12px;padding:12px 16px;margin:0 0 18px;font-size:14px;font-weight:600";
+      if (st==="approved") bar.innerHTML = "\u2713 Unitate aprobat\u0103.";
+      else if (st==="rejected") bar.innerHTML = "\u2715 Ai respins aceast\u0103 unitate. Contacteaz\u0103 LocalStay pentru ajust\u0103ri.";
+      else bar.innerHTML = '<span>Aceast\u0103 unitate a\u0219teapt\u0103 aprobarea ta. Verific\u0103 site-ul \u0219i aprob\u0103 publicarea.</span><span style="flex:1"></span><button id="apOk" class="btn btn-pri" type="button" style="padding:8px 14px">Aprob\u0103</button><button id="apNo" class="btn btn-out" type="button" style="padding:8px 14px">Respinge</button>';
     }
-    const leads = leadRows.map(r=>({ name:r.name||"—", phone:r.phone||"", email:r.email||"", property:nameOf[r.slug]||r.slug, checkin:r.checkin, checkout:r.checkout, guests:(r.adults||0)+(r.children||0), status:r.status||"nou", day:r.day }));
-    const leadsTotal = leadRows.length;
-
-    res.json({
-      days, properties: perProperty.length,
-      occupancy: total?Math.round(occ/total*100):0, occNights:occ, totalNights:total,
-      estRevenue:Math.round(rev), currency,
-      views, reveals, requests, byStatus,
-      conv: { viewToReveal: views?Math.round(reveals/views*100):0, revealToRequest: reveals?Math.round(requests/reveals*100):0, viewToRequest: views?Math.round(requests/views*100):0 },
-      trend, arrivals, departures, perProperty, leads, leadsTotal, sources
+    paint();
+    if (panou) panou.insertBefore(bar, panou.firstChild); else content.insertBefore(bar, content.firstChild);
+    content.addEventListener("click", async function(e){
+      var ok = e.target.closest("#apOk"), no = e.target.closest("#apNo"); if (!ok && !no) return;
+      var decision = ok ? "approved" : "rejected";
+      var rnote = no ? (prompt("Motivul respingerii (opțional):") || "") : "";
+      try {
+        var r = await fetch("/api/host/approval", { method:"POST", headers:{"Content-Type":"application/json"}, credentials:"same-origin", body: JSON.stringify({ slug:_slug, decision:decision, note:rnote }) });
+        if (r.ok) { ap.status = decision; paint(); note(decision==="approved" ? "Unitate aprobată" : "Unitate respinsă"); }
+      } catch(e){}
     });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+  })();
 
-/* ---------- global stats for the importer dashboard ---------- */
-app.get("/api/stats", AUTH.requireAdmin, async (req, res) => {
-  try {
-    const names = await pool.query(
-      "select slug, admin_state->'property'->'basicInfo'->>'name' as name from properties"
-    );
-    const nameOf = {};
-    names.rows.forEach((r) => { nameOf[r.slug] = r.name || r.slug; });
-
-    const reqs = await pool.query("select * from booking_requests order by created_at desc limit 300");
-    const reveals = await pool.query(
-      "select slug, created_at, meta from site_events where type='phone_reveal' order by created_at desc limit 300"
-    );
-    const totals = await pool.query(`
-      select
-        (select count(*) from booking_requests) as requests,
-        (select count(*) from booking_requests where created_at > now() - interval '7 days') as requests7d,
-        (select count(*) from site_events where type='phone_reveal') as reveals,
-        (select count(*) from site_events where type='phone_reveal' and created_at > now() - interval '7 days') as reveals7d
-    `);
-    res.json({
-      totals: totals.rows[0],
-      requests: reqs.rows.map((r) => ({ ...r, property: nameOf[r.slug] || r.slug })),
-      reveals: reveals.rows.map((r) => ({ ...r, property: nameOf[r.slug] || r.slug })),
-    });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get("/api/host/:slug/state", AUTH.requireSlugAccess(pool), async (req, res) => {
-  const p = await getProp(req.params.slug);
-  if (!p) return res.status(404).json({ error: "not found" });
-  res.json(p.admin_state);
-});
-
-app.put("/api/host/:slug/state", AUTH.requireSlugAccess(pool), async (req, res) => {
-  try {
-    const adminState = req.body;
-    const site = STAY.masterToSite(adminState.property, adminState.pricing, adminState.galleries);
-    const r = await pool.query(
-      "update properties set admin_state=$2, site=$3, updated_at=now() where slug=$1 returning slug",
-      [req.params.slug, adminState, site]
-    );
-    if (!r.rowCount) return res.status(404).json({ error: "not found" });
-    res.json({ ok: true });
-  } catch (e) { res.status(400).json({ error: e.message }); }
-});
-
-app.post("/api/host/:slug/sync", AUTH.requireSlugAccess(pool), async (req, res) => {
-  try {
-    const r = await syncProperty(req.params.slug);
-    if (r.error) return res.status(404).json(r);
-    res.json(r);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get("/api/availability/:slug", async (req, res) => {
-  try {
-    const p = await getProp(req.params.slug);
-    if (!p) return res.status(404).json({ error: "not found" });
-    const units = (p.admin_state.units || []);
-    const out = {};
-    units.forEach(u => { out[u.id] = [...effectiveBlocked(p.admin_state, u.id)]; });
-    // "entire" availability = union of all units (if any unit is booked that day, the whole place is taken)
-    const all = new Set();
-    units.forEach(u => effectiveBlocked(p.admin_state, u.id).forEach(d => all.add(d)));
-    out.__all = [...all];
-    res.json({ units: out });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.get("/api/site/:slug", async (req, res) => {
-  const p = await getProp(req.params.slug);
-  if (!p) return res.status(404).json({ error: "not found" });
-  res.json(p.site);
-});
-
-/* admin, with the property's data injected so it loads pre-filled */
-app.get("/admin", async (req, res) => {
-  if (!req.user) return res.redirect("/login?next=" + encodeURIComponent(req.originalUrl));
-  const html = fs.readFileSync(path.join(PUBLIC, "admin-console.html"), "utf8");
-  const slug = req.query.slug;
-  if (!slug) return res.send(html);
-  const allowed = await AUTH.userCanAccessSlug(pool, req.user, slug);
-  if (!allowed) return res.status(403).send("Nu ai acces la această proprietate.");
-  const p = await getProp(slug);
-  if (!p) return res.status(404).send("Proprietate negăsită");
-  const ap = p.approval || {};
-  res.send(inject(html,
-    "window.__ADMIN_STATE=" + JSON.stringify(p.admin_state) +
-    ";window.__ME=" + JSON.stringify({ role: req.user.role, email: req.user.email, imp: !!req.user.imp }) +
-    ";window.__APPROVAL=" + JSON.stringify({ status: ap.status || "pending", token: ap.token || "", note: ap.note || "" }) + ";"));
-});
-
-/* public site by path (preview without a subdomain) */
-app.get("/s/:slug", async (req, res) => {
-  const p = await getProp(req.params.slug);
-  if (!p) return res.status(404).send("Proprietate negăsită");
-  res.send(renderSite(p.site, p.slug));
-});
-
-/* iCal export per unit — paste this URL into Booking/Airbnb */
-app.get("/ical/:slug/:file", async (req, res) => {
-  const p = await getProp(req.params.slug);
-  if (!p) return res.status(404).send("Not found");
-  const unitId = req.params.file.replace(/\.ics$/i, "");
-  const dates = effectiveBlocked(p.admin_state, unitId);
-  res.set("Content-Type", "text/calendar; charset=utf-8");
-  res.send(buildICS(dates, "Indisponibil"));
-});
-
-/* ---------- static files + root ---------- */
-// Public login page.
-app.get("/login", (req, res) => res.sendFile(path.join(PUBLIC, "login.html")));
-
-// The importer hub is ADMIN ONLY. Hosts get their own dashboard at /host so a
-// hotelier can never load the platform admin (import, hosts, global stats).
-app.get("/importer.html", (req, res) => {
-  if (!req.user) return res.redirect("/login");
-  if (req.user.role !== "admin") return res.redirect("/host");
-  res.sendFile(path.join(PUBLIC, "importer.html"));
-});
-
-// Hotelier landing — the unified console (editor + dashboard) for their property.
-app.get("/host", async (req, res) => {
-  if (!req.user) return res.redirect("/login?next=/host");
-  if (req.user.role === "admin") return res.redirect("/importer.html");
-  try {
-    const r = await pool.query("select slug from properties where owner_id=$1 order by created_at asc limit 1", [req.user.id]);
-    if (r.rows.length) return res.redirect("/admin?slug=" + encodeURIComponent(r.rows[0].slug));
-  } catch (e) {}
-  // no property assigned yet → simple empty-state page
-  res.sendFile(path.join(PUBLIC, "host.html"));
-});
-app.get("/host.html", (req, res) => res.redirect("/host"));
-
-// Don't let the raw editor shell load without auth — funnel to the gated /admin route.
-app.get("/admin-console.html", (req, res) => {
-  if (!req.user) return res.redirect("/login");
-  res.redirect("/admin" + (req.query.slug ? "?slug=" + encodeURIComponent(req.query.slug) : ""));
-});
-
-app.use(express.static(PUBLIC));
-// Role-aware landing: admins → hub, hosts → their dashboard.
-app.get("/", (req, res) => res.redirect(!req.user ? "/login" : (req.user.role === "admin" ? "/importer.html" : "/host")));
-
-/* ---------- start ---------- */
-// Keep the web service alive even through transient DB outages: a stray async
-// rejection (e.g. a request that hits the DB while it's briefly down) must not kill the process.
-process.on("unhandledRejection", (e) => console.error("Unhandled rejection (ignored):", e && e.message));
-
-const PORT = process.env.PORT || 3000;
-// Listen FIRST so the port is open and health checks pass — no 502 if the DB is briefly unavailable.
-app.listen(PORT, () => console.log("LocalStay running on port " + PORT));
-
-let _icalStarted = false;
-function startIcalSync() {
-  if (_icalStarted) return; _icalStarted = true;
-  setTimeout(syncAll, 30000);
-  setInterval(syncAll, 15 * 60 * 1000);
-}
-// Give every existing unit an approval token (so already-imported units get a
-// shareable approval link without needing a re-import).
-async function backfillApproval() {
-  try {
-    const r = await pool.query("select slug from properties where approval is null or approval->>'token' is null");
-    for (const row of r.rows) {
-      const ap = { status: "pending", token: crypto.randomBytes(18).toString("hex"), requestedAt: new Date().toISOString() };
-      await pool.query("update properties set approval=$1 where slug=$2", [ap, row.slug]);
-    }
-    if (r.rows.length) console.log("[approval] backfilled tokens for " + r.rows.length + " unit(s).");
-  } catch (e) { console.error("[approval] backfill failed:", e && e.message); }
-}
-
-function bootDb() {
-  init()
-    .then(() => { console.log("LocalStay DB ready."); startIcalSync(); backfillApproval(); return AUTH.seedAdmin(pool).catch((e)=>console.error("[auth] seedAdmin failed:", e && e.message)); })
-    .catch((e) => {
-      console.error("DB not ready, server stays up; retrying in 30s:", e && e.message);
-      setTimeout(bootDb, 30000); // recover automatically when the DB comes back
-    });
-}
-bootDb();
+  // render the dashboard on load (Panou is the default tab)
+  renderHostDash(DASH_DAYS);
+})();
+</script>
+</body>
+</html>
