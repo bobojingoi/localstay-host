@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Disponibilitate · LocalStay</title>
+<style>
+  :root{
+    --ink:#1c2530; --muted:#6b7688; --line:#e6e9ef; --card:#fff; --bg:#f6f7fb;
+    --accent:#1f7a54; --accent-soft:#e6f3ec; --free:#1f7a54; --occ:#c98a8a; --occ-bg:#fbeaea;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:transparent}
+  .w-wrap{max-width:560px;margin:0 auto;background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .w-head{padding:14px 16px 10px}
+  .w-title{font-size:16px;font-weight:800}
+  .w-sub{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .w-rooms{display:flex;gap:6px;flex-wrap:wrap;padding:0 16px 12px}
+  .w-room{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:999px;padding:6px 12px;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap}
+  .w-room.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .w-cal{border-top:1px solid var(--line);padding:12px 12px 4px}
+  .w-cal-head{display:flex;align-items:center;justify-content:space-between;padding:0 4px 8px}
+  .w-cal-head b{font-size:14px;text-transform:capitalize}
+  .w-nav{border:1px solid var(--line);background:#fff;width:32px;height:32px;border-radius:9px;font-size:18px;line-height:1;cursor:pointer;color:var(--ink)}
+  .w-nav:hover{background:var(--bg)}
+  .w-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+  .w-dow{text-align:center;font-size:11px;color:var(--muted);font-weight:700;padding:2px 0}
+  .w-day{aspect-ratio:1;border-radius:9px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:13px;font-weight:700;background:#fff;border:1px solid var(--line)}
+  .w-day.past{color:#c4c9d6;border-color:transparent;background:transparent;font-weight:400}
+  .w-day.free{background:var(--accent-soft);border-color:transparent;color:var(--ink)}
+  .w-day.occ{background:var(--occ-bg);border-color:transparent;color:var(--occ)}
+  .w-day .w-d{font-size:13px}
+  .w-day .w-p{font-size:10px;font-weight:700;color:var(--accent);margin-top:1px}
+  .w-day .w-x{font-size:9.5px;font-weight:700;color:var(--occ);margin-top:1px;text-transform:uppercase;letter-spacing:.03em}
+  .w-legend{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:11.5px;color:var(--muted);padding:10px 4px 8px}
+  .w-legend .lg{display:inline-flex;align-items:center;gap:5px}
+  .w-legend .dot{width:11px;height:11px;border-radius:3px;display:inline-block}
+  .w-legend .dot.free{background:var(--accent-soft)}
+  .w-legend .dot.occ{background:var(--occ-bg)}
+  .w-cta{display:block;text-align:center;margin:2px 12px 14px;padding:11px 14px;background:var(--accent);color:#fff;font-weight:700;font-size:13.5px;text-decoration:none;border-radius:10px}
+  .w-cta:hover{filter:brightness(.96)}
+  .w-empty{padding:26px 16px;text-align:center;color:var(--muted)}
+  .w-foot{text-align:center;font-size:10.5px;color:var(--muted);padding:0 12px 12px}
+  .w-foot a{color:var(--muted)}
+</style>
+</head>
+<body>
+  <div class="w-wrap" id="wWrap">
+    <div class="w-head">
+      <div class="w-title" id="wName">Disponibilitate</div>
+      <div class="w-sub" id="wLoc"></div>
+    </div>
+    <div class="w-rooms" id="wRooms"></div>
+    <div class="w-cal" id="wCalWrap">
+      <div class="w-cal-head"><button class="w-nav" id="wPrev" aria-label="Luna anterioară">‹</button><b id="wTitle"></b><button class="w-nav" id="wNext" aria-label="Luna următoare">›</button></div>
+      <div class="w-grid" id="wGrid"></div>
+      <div class="w-legend"><span class="lg"><i class="dot free"></i> Liber</span><span class="lg"><i class="dot occ"></i> Ocupat</span><span>prețuri orientative / noapte</span></div>
+    </div>
+    <a class="w-cta" id="wCta" target="_blank" rel="noopener">Vezi detalii & rezervă</a>
+    <div class="w-foot">Calendar oferit de <a id="wBrand" target="_blank" rel="noopener">LocalStay</a></div>
+  </div>
+<script>
+(function(){
+  var P = window.STAY_PROPERTY || {};
+  var SLUG = window.STAY_SLUG || new URLSearchParams(location.search).get("slug") || "";
+  var URLFULL = window.STAY_URL || (SLUG ? ("/s/" + SLUG) : "");
+  var R = P.rentals || [];
+  var CUR = (R[0] && R[0].currency) || "RON";
+  var entireOn = !!P.entireUnitRental;
+  var entR = R.find(function(r){ return r.isEntire; }) || null;
+  var byId = {}; R.forEach(function(r){ byId[r.id] = r; });
+
+  var $ = function(s){ return document.querySelector(s); };
+  function pad(n){ return (n<10?"0":"")+n; }
+  function iso(d){ return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); }
+  function piso(s){ var a=String(s).split("-"); return new Date(+a[0],+a[1]-1,+a[2]); }
+  function som(d){ return new Date(d.getFullYear(), d.getMonth(), 1); }
+  function wknd(ds){ var d=piso(ds).getDay(); return d===5||d===6; }
+
+  // scopes: optional "__entire" then each room
+  var scopes = [];
+  if(entireOn) scopes.push("__entire");
+  R.forEach(function(r){ if(!(entireOn && r.isEntire)) scopes.push(r.id); });
+  if(!scopes.length && R.length) scopes = R.map(function(r){ return r.id; });
+
+  var state = { scope: scopes[0], month: som(new Date()), blocked: {} };
+
+  function keyId(id){ return id==="__entire" ? (entR?entR.id:"__entire") : id; }
+  function optFor(id){
+    if(id==="__entire"){
+      if(entR) return entR;
+      var w=Math.min.apply(null, R.map(function(r){return r.weekday||Infinity;}));
+      var we=Math.min.apply(null, R.map(function(r){return r.weekend||r.weekday||Infinity;}));
+      return { weekday:isFinite(w)?w:0, weekend:isFinite(we)?we:0, currency:CUR };
+    }
+    return byId[id] || { weekday:0, weekend:0, currency:CUR };
+  }
+  function nameFor(id){ return id==="__entire" ? "Toată proprietatea" : ((byId[id]&&byId[id].name)||"Cameră"); }
+  function nightPrice(id, ds){
+    var opt=optFor(id), PP=P.pricing||{}, dp=PP.dayPrices||{}, periods=PP.periods||[], kid=keyId(id);
+    if(dp[kid] && dp[kid][ds]!=null) return +dp[kid][ds];
+    var we=wknd(ds), base = we?(opt.weekend||opt.weekday||0):(opt.weekday||0);
+    for(var i=0;i<periods.length;i++){ var p=periods[i];
+      if((p.roomId==="all"||p.roomId===kid) && p.start && p.end && ds>=p.start && ds<=p.end){ base = we?(p.weekend||p.weekday||base):(p.weekday||base); }
+    }
+    return base;
+  }
+  function blockedFor(id){
+    if(id==="__entire") return new Set((entR?state.blocked[entR.id]:state.blocked.__all)||[]);
+    return new Set(state.blocked[id]||[]);
+  }
+
+  function renderRooms(){
+    var box=$("#wRooms");
+    if(scopes.length<=1){ box.style.display="none"; return; }
+    box.innerHTML = scopes.map(function(id){
+      return '<button class="w-room'+(id===state.scope?" on":"")+'" data-scope="'+String(id).replace(/"/g,"&quot;")+'">'+
+        String(nameFor(id)).replace(/[&<>]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;"}[c];})+'</button>';
+    }).join("");
+    box.querySelectorAll(".w-room").forEach(function(b){
+      b.onclick=function(){ state.scope=b.getAttribute("data-scope"); renderRooms(); draw(); };
+    });
+  }
+
+  function draw(){
+    var m=state.month, y=m.getFullYear(), mo=m.getMonth(), today=iso(new Date());
+    $("#wTitle").textContent = m.toLocaleDateString("ro-RO", { month:"long", year:"numeric" });
+    var blocked=blockedFor(state.scope);
+    var startDow=(new Date(y,mo,1).getDay()+6)%7, days=new Date(y,mo+1,0).getDate();
+    var html=""; ["Lu","Ma","Mi","Jo","Vi","Sâ","Du"].forEach(function(x){ html+='<div class="w-dow">'+x+'</div>'; });
+    for(var i=0;i<startDow;i++) html+='<div></div>';
+    for(var d=1; d<=days; d++){
+      var ds=iso(new Date(y,mo,d)), past=ds<today, blk=blocked.has(ds);
+      var cls="w-day"+(past?" past":(blk?" occ":" free"));
+      var lab = past ? "" : (blk ? '<span class="w-x">ocupat</span>' : '<span class="w-p">'+nightPrice(state.scope,ds)+'</span>');
+      html+='<div class="'+cls+'"><span class="w-d">'+d+'</span>'+lab+'</div>';
+    }
+    $("#wGrid").innerHTML=html;
+  }
+
+  function init(){
+    $("#wName").textContent = P.name ? ("Disponibilitate · "+P.name) : "Disponibilitate";
+    $("#wLoc").textContent = (P.location && (P.location.area||P.location.city)) || "";
+    if(URLFULL){ $("#wCta").href=URLFULL; $("#wBrand").href=URLFULL; } else { $("#wCta").style.display="none"; }
+    if(!R.length){ $("#wRooms").style.display="none"; $("#wCalWrap").innerHTML='<div class="w-empty">Nu există camere configurate încă.</div>'; return; }
+    renderRooms(); draw();
+    $("#wPrev").onclick=function(){ state.month.setMonth(state.month.getMonth()-1); draw(); };
+    $("#wNext").onclick=function(){ state.month.setMonth(state.month.getMonth()+1); draw(); };
+    if(SLUG){
+      fetch("/api/availability/"+encodeURIComponent(SLUG)).then(function(r){ return r.ok?r.json():null; })
+        .then(function(x){ if(x&&x.units){ state.blocked=x.units; draw(); } }).catch(function(){});
+    }
+  }
+  init();
+})();
+</script>
+</body>
+</html>
