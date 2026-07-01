@@ -198,16 +198,19 @@ textarea.inp{min-height:70px;resize:vertical;line-height:1.5}
 .cmp-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--line-2)}
 .cmp-head b{font-size:15px;color:var(--ink)}
 .cmp-count{font-size:12.5px;color:var(--muted);font-weight:600}
-.cmp-stage{padding:16px;background:#0f1512;display:grid;place-items:center}
-.cmp-box{position:relative;width:100%;max-width:760px;line-height:0;user-select:none;touch-action:none;cursor:ew-resize;border-radius:8px;overflow:hidden}
-.cmp-box img{display:block;width:100%;height:auto;-webkit-user-drag:none}
-.cmp-before{position:absolute;inset:0;clip-path:inset(0 50% 0 0)}
+.cmp-stage{padding:16px;background:#0f1512;display:grid;place-items:center;flex:1 1 auto;min-height:0;overflow:hidden}
+.cmp-box{position:relative;max-width:760px;max-height:100%;line-height:0;user-select:none;touch-action:none;cursor:ew-resize;border-radius:8px;overflow:hidden}
+.cmp-box img{display:block;max-width:100%;-webkit-user-drag:none}
+.cmp-after{width:auto;height:auto;max-width:100%;max-height:60vh}
+.cmp-before{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;clip-path:inset(0 50% 0 0)}
 .cmp-handle{position:absolute;top:0;bottom:0;left:50%;width:2px;background:#fff;transform:translateX(-1px);box-shadow:0 0 0 1px rgba(0,0,0,.2)}
 .cmp-grip{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:34px;height:34px;border-radius:50%;background:#fff;color:#333;display:grid;place-items:center;font-size:15px;box-shadow:0 2px 10px rgba(0,0,0,.35)}
 .cmp-tag{position:absolute;top:10px;font-size:10.5px;font-weight:700;letter-spacing:.05em;color:#fff;background:rgba(0,0,0,.55);padding:3px 8px;border-radius:6px;line-height:1.2}
 .cmp-tagL{left:10px}.cmp-tagR{right:10px}
 .cmp-hint{text-align:center;font-size:12px;color:var(--muted);padding:8px}
-.cmp-foot{display:flex;align-items:center;gap:10px;padding:12px 18px;border-top:1px solid var(--line-2)}
+.cmp-foot{display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:12px 18px;border-top:1px solid var(--line-2)}
+.cmp-close{border:0;background:transparent;font-size:22px;line-height:1;color:var(--muted);cursor:pointer;padding:0 4px;margin-left:8px}
+.cmp-close:hover{color:var(--ink)}
 
 
 .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
@@ -1364,7 +1367,7 @@ function distList(host,label,arr){
     ov=document.createElement("div"); ov.className="cmp-overlay";
     ov.innerHTML=
       '<div class="cmp-modal">'
-      + '<div class="cmp-head"><b>Înainte / După — comparație AI</b><span class="cmp-count"></span></div>'
+      + '<div class="cmp-head"><b>Înainte / După — comparație AI</b><span class="cmp-count"></span><button class="cmp-close" data-c="cancel" title="Închide" aria-label="Închide">×</button></div>'
       + '<div class="cmp-stage"><div class="cmp-box">'
         + '<img class="cmp-after" alt="după">'
         + '<img class="cmp-before" alt="înainte">'
@@ -1401,9 +1404,12 @@ function distList(host,label,arr){
     window.addEventListener("pointerup",()=>{dragging=false;});
 
     ov.addEventListener("click",e=>{
-      const c=e.target.closest("[data-c]"); if(!c) return;
-      const act=c.dataset.c; close();
-      if(cb){ const f=cb; cb=null; f(act); }
+      const c=e.target.closest("[data-c]");
+      if(c){ const act=c.dataset.c; close(); if(cb){ const f=cb; cb=null; f(act); } return; }
+      if(e.target===ov){ close(); if(cb){ const f=cb; cb=null; f("cancel"); } } // click pe fundal = închide
+    });
+    document.addEventListener("keydown",e=>{
+      if(e.key==="Escape" && ov && ov.classList.contains("on")){ close(); if(cb){ const f=cb; cb=null; f("cancel"); } }
     });
   }
   function close(){ ov && ov.classList.remove("on"); }
@@ -2389,7 +2395,11 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
         var img='<div data-pzidx="'+idx+'" '+(done?'data-pzedit="1" title="Click: editează" ':'')+'style="aspect-ratio:4/3;background:#f0f2f5;overflow:hidden;'+(done?'cursor:pointer':'')+'"><img src="'+esc(thumb)+'" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block"></div>';
         var cmp=done?('<button type="button" data-pzcmp="1" data-pzidx="'+idx+'" title="Înainte / după" style="position:absolute;right:6px;bottom:6px;background:rgba(0,0,0,.62);color:#fff;border:0;border-radius:7px;padding:3px 8px;font-size:12px;font-weight:700;cursor:pointer">⇆ Î/D</button>'):'';
         var link=done?('<a href="'+esc(p.url)+'" target="_blank" style="font-size:11px;color:var(--brand);word-break:break-all">'+esc(p.url)+'</a>'):"";
-        var aiTag = done ? (p.enhanced ? ' · <span style="color:var(--brand)">AI</span>' : ' · <span style="color:#cf4b4b" title="'+esc(p.aiError||"")+'">fără AI</span>') : "";
+        var aiTag;
+        if(!done) aiTag="";
+        else if(p.keep==="orig") aiTag=' · <span style="color:var(--muted)">original păstrat</span>';
+        else if(p.enhanced) aiTag=' · <span style="color:var(--brand)">AI</span>';
+        else aiTag=' · <span style="color:#cf4b4b" title="'+esc(p.aiError||"")+'">fără AI</span>';
         return '<div style="border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--card)">'+
           '<div style="position:relative">'+img+cmp+'</div>'+
           '<div style="padding:8px 10px">'+
@@ -2414,7 +2424,7 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
     window.__pzAdd=function(urls){ addUrls(urls); var msg=(urls&&urls.length||0)+" poze trimise în optimizator"; if(window.note) note(msg); };
     async function run(){
       if(running||!PZ.length) return; running=true; render();
-      var enhance=byId("pzEnhance").checked;
+      var enhance=byId("pzEnhance").checked, aiWarned=false;
       var todo=PZ.filter(function(p){ return p.status!=="done"; }).length, done=0;
       var wrap=byId("pzProgWrap"), bar=byId("pzBar"), txt=byId("pzProgText");
       wrap.style.display="block"; bar.style.width="0";
@@ -2429,6 +2439,7 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
           if(!res.ok){ p.status="err"; p.err=d.error||("HTTP "+res.status); }
           else {
             p.status="done"; p.url=d.url; p.thumb=d.thumb||p.thumb; p.alt=d.alt||""; p.enhanced=!!d.enhanced; p.aiError=d.aiError||"";
+            if(p.aiError && !aiWarned){ aiWarned=true; if(window.note) note("AI nu a modificat pozele: "+p.aiError); }
             if(d.cost){ session+=Number(d.cost); byId("pzSession").textContent=moneyLei(session); }
             if(d.spent!=null) byId("pzSpent").textContent=moneyLei(d.spent);
             if(d.count!=null) byId("pzCount").textContent=d.count+" poze";
@@ -2461,7 +2472,17 @@ syncUnits();renderContent();renderRooms();renderPeriods();renderUnitChips();rend
       // Click an optimized photo → modal editor; the ⇆ button → before/after compare.
       byId("pzGrid").addEventListener("click", function(e){
         var cmp=e.target.closest("[data-pzcmp]");
-        if(cmp){ e.stopPropagation(); var p=PZ[+cmp.getAttribute("data-pzidx")]; if(p&&p.url&&window.openCompare){ window.openCompare(p.dataUrl, p.url, {onAccept:function(){},onSkip:function(){},onCancel:function(){}}); } return; }
+        if(cmp){ e.stopPropagation(); var p=PZ[+cmp.getAttribute("data-pzidx")];
+          if(p&&p.url&&window.openCompare){ window.openCompare(p.dataUrl, p.url, {
+            onAccept:function(){ p.keep="ai"; render(); if(window.note) note("Păstrezi versiunea AI"); },
+            onSkip:function(){
+              if(/^https?:/i.test(p.dataUrl)){ p.url=p.dataUrl; p.enhanced=false; p.keep="orig"; render(); if(window.note) note("Păstrezi originalul"); }
+              else if(window.note) note("Originalul încărcat nu e găzduit — folosește „Editează” ca să-l salvezi.");
+            },
+            onCancel:function(){}
+          }); }
+          return;
+        }
         var ed=e.target.closest("[data-pzedit]");
         if(ed){ var pp=PZ[+ed.getAttribute("data-pzidx")]; if(pp&&pp.url&&window.openPhotoEditor){ window.openPhotoEditor(pp.url, function(newUrl, meta){ pp.url=newUrl; pp.thumb=newUrl; if(meta&&meta.alt) pp.alt=meta.alt; render(); note("Poză actualizată"); }); } }
       });
