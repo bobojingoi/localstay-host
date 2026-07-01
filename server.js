@@ -9,6 +9,7 @@ const sharp = require("sharp");
 const { r2put, r2ready } = require("./r2");
 const { describeImage, enhanceImage, generateFbPosts, generateDocument } = require("./ai");
 const AUTH = require("./auth");
+const ROOTS = require("./roots");
 
 const app = express();
 app.set("trust proxy", 1); // Render runs behind a proxy — needed for Secure cookies + req.secure
@@ -309,6 +310,12 @@ app.get("/api/config", (req, res) => res.json({ baseDomain: BASE_DOMAIN || "" })
 
 /* ====================== AUTH ====================== */
 function normEmail(e) { return String(e || "").trim().toLowerCase(); }
+// Coerce a form answer (string or array) to a clean single string, or null.
+function str1(v) {
+  if (Array.isArray(v)) v = v.find((x) => x != null && String(x).trim() !== "");
+  const s = v == null ? "" : String(v).trim();
+  return s === "" ? null : s;
+}
 
 // Log in. Sets the auth cookie. Returns the user's role.
 app.post("/api/auth/login", async (req, res) => {
@@ -925,10 +932,14 @@ async function importOne(master) {
   const existing = await getProp(slug);
   const merged = existing ? mergeAdminState(existing.admin_state, admin) : admin;
   const site = STAY.masterToSite(merged.property, merged.pricing, merged.galleries);
+  // Roots Leads: derive the unit-side matching profile from the raw master.
+  // Best-effort — enrichment must never abort an import.
+  let enrichment = null;
+  try { enrichment = ROOTS.enrichUnit(master); } catch (e) { enrichment = null; }
   await pool.query(
-    `insert into properties(slug, admin_state, site) values($1,$2,$3)
-     on conflict(slug) do update set admin_state=excluded.admin_state, site=excluded.site, updated_at=now()`,
-    [slug, merged, site]
+    `insert into properties(slug, admin_state, site, enrichment) values($1,$2,$3,$4)
+     on conflict(slug) do update set admin_state=excluded.admin_state, site=excluded.site, enrichment=excluded.enrichment, updated_at=now()`,
+    [slug, merged, site, enrichment]
   );
 
   // Auto-provision a host account for this property. Default credentials:
@@ -996,6 +1007,78 @@ app.post("/api/import-bulk", AUTH.requireAdmin, async (req, res) => {
     }
   }
   res.json({ count: results.length, ok: results.filter(r => r.ok).length, failed: results.filter(r => !r.ok).length, results });
+});
+
+// ---------------------------------------------------------------------------
+// Roots Leads — qualified clients from the ROOTS Villas Google Form.
+// The form's Apps Script pushes each submission here; we compute the client
+// profile + top unit matches (roots.js) and upsert by email/phone.
+// ---------------------------------------------------------------------------
+function rootsSecretOK(req) {
+  const secret = process.env.ROOTS_INGEST_SECRET || "";
+  if (!secret) return false; // refuse until configured
+  const got = String(req.get("x-roots-secret") || (req.body && req.body.secret) || "");
+  if (got.length !== secret.length) return false;
+  try { return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(secret)); } catch (e) { return false; }
+}
+
+app.post("/api/roots-leads/ingest", async (req, res) => {
+  if (!process.env.ROOTS_INGEST_SECRET) return res.status(503).json({ error: "ROOTS_INGEST_SECRET nu e setat." });
+  if (!rootsSecretOK(req)) return res.status(401).json({ error: "unauthorized" });
+  try {
+    const answers = (req.body && req.body.answers) || req.body || {};
+    const canon = ROOTS.mapRawAnswers(answers);
+    const profile = ROOTS.profileLead(answers);
+
+    // enriched units (+ names for display)
+    const up = await pool.query(
+      "select slug, enrichment, admin_state->'property'->'basicInfo'->>'name' as name from properties where enrichment is not null"
+    );
+    const nameBySlug = {};
+    const units = up.rows.map((r) => { nameBySlug[r.slug] = r.name || r.slug; return { slug: r.slug, enrichment: r.enrichment }; });
+    const matches = ROOTS.matchLeadToUnits(profile, units, { limit: 8 });
+    matches.forEach((m) => { m.name = nameBySlug[m.slug] || m.slug; });
+
+    const name = str1(canon.name), phone = str1(canon.phone), email = str1(canon.email);
+    const origin_city = str1(canon.origin_city), consent = str1(canon.consent);
+
+    const found = await pool.query(
+      `select id from roots_leads
+        where (email is not null and $1 <> '' and lower(email)=lower($1))
+           or (phone is not null and $2 <> '' and phone=$2)
+        order by created_at asc limit 1`,
+      [email || "", phone || ""]
+    );
+    let id, updated = false;
+    if (found.rows.length) {
+      id = found.rows[0].id; updated = true;
+      await pool.query(
+        `update roots_leads set name=coalesce($2,name), phone=coalesce($3,phone), email=coalesce($4,email),
+           origin_city=coalesce($5,origin_city), consent=coalesce($6,consent),
+           raw=$7::jsonb, profile=$8::jsonb, matches=$9::jsonb, submissions=submissions+1, updated_at=now()
+         where id=$1`,
+        [id, name, phone, email, origin_city, consent, JSON.stringify(canon), JSON.stringify(profile), JSON.stringify(matches)]
+      );
+    } else {
+      const ins = await pool.query(
+        `insert into roots_leads(name,phone,email,origin_city,consent,raw,profile,matches)
+         values($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb) returning id`,
+        [name, phone, email, origin_city, consent, JSON.stringify(canon), JSON.stringify(profile), JSON.stringify(matches)]
+      );
+      id = ins.rows[0].id;
+    }
+    res.json({ ok: true, id, updated, matches: matches.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/api/roots-leads", AUTH.requireAdmin, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `select id,name,phone,email,origin_city,consent,profile,matches,submissions,created_at,updated_at
+         from roots_leads order by updated_at desc limit 500`
+    );
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get("/api/properties", AUTH.requireAuth, async (req, res) => {
