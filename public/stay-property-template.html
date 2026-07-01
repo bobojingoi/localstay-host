@@ -1192,14 +1192,14 @@ function rBooking(){
           ${canDetail?`<button type="button" class="rmcard-detail" data-room="${esc(id)}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg> Detalii & galerie</button>`:'<span></span>'}
           <button type="button" class="bk-sel" data-rid="${esc(id)}">Selectează</button>
         </div>
-        <button type="button" class="rmcard-avail" data-avail="${esc(id)}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> Vezi disponibilitatea</button>
+        ${PROPERTY.hasCalendar?`<button type="button" class="rmcard-avail" data-avail="${esc(id)}"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg> Vezi disponibilitatea</button>`:''}
       </div>
     </div>`;
   };
   const entireCard = entire ? card(entR||{weekday:isFinite(entW)?entW:'',currency:cur,capacity:PROPERTY.capacity},'__entire','Toată proprietatea','Închiriere integrală') : '';
   return `<section class="sec" id="rezervare"><div class="wrap">
-    <h2 class="rv" style="margin-bottom:20px">Camere | Prețuri | Calendar</h2>
-    <div class="bk-period rv" id="bkPeriod">
+    <h2 class="rv" style="margin-bottom:20px">Camere | Prețuri${PROPERTY.hasCalendar?' | Calendar':''}</h2>
+    ${PROPERTY.hasCalendar?`<div class="bk-period rv" id="bkPeriod">
       <div class="bk-period-fields">
         <label class="bk-field"><span>Check-in</span><input id="fCi" type="date"></label>
         <label class="bk-field"><span>Check-out</span><input id="fCo" type="date"></label>
@@ -1207,7 +1207,7 @@ function rBooking(){
         <button type="button" class="bk-period-clear" id="bkClearDates" hidden>Șterge datele</button>
       </div>
       <p class="bk-period-note" id="bkAvailNote"></p>
-    </div>
+    </div>`:''}
     <div class="bk-grid">
       <div class="bk-options rv">
         ${entireCard}
@@ -1538,6 +1538,11 @@ function initBooking(){
     if(st.entire) return entR ? 'unitatea integral' : 'toată proprietatea';
     return selectedIds().map(id=>qtyOf(id)+'× '+optFor(id).name).join(', ');
   }
+  const DIRECT = !!(PROPERTY.acceptDirectBooking && PROPERTY.hasCalendar);
+  if(DIRECT){
+    const sb=$('#bkSend'); if(sb) sb.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg> Rezervă acum';
+    const nt=sec.querySelector('.bk-note'); if(nt) nt.textContent='Rezervare instantă — datele selectate se blochează imediat după confirmare.';
+  }
   $('#bkSend').onclick=async ()=>{
     const ids=selectedIds();
     const nume=($('#fNume').value||'').trim(), prenume=($('#fPrenume').value||'').trim();
@@ -1551,10 +1556,32 @@ function initBooking(){
     let msg='Bună ziua, mă numesc '+who+' și aș dori să rezerv '+roomsPhrase()+' '+period+' pentru '+guestsText()+'.';
     if(email) msg+=' Email: '+email+'.';
     msg+=' Telefon: '+tel+'.';
-    // 1) save the request to our backend (visible in admin)
+
+    if(DIRECT && slug){
+      // Instant booking: the tourist blocks the dates. The server re-checks availability.
+      let r;
+      try{ const resp=await fetch('/api/book/'+encodeURIComponent(slug),{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ name:who, phone:tel, email, checkin:st.ci, checkout:st.co, guests:st.guests, rooms:roomsPayload(), message:msg })});
+        r={ok:resp.ok,status:resp.status,j:await resp.json().catch(()=>({}))};
+      }catch(e){ flash('Eroare de rețea, încearcă din nou'); return; }
+      if(!r.ok){
+        if(r.status===409){ flash('Datele nu mai sunt disponibile');
+          try{ const d=await fetch('/api/availability/'+encodeURIComponent(slug)).then(x=>x.ok?x.json():null); if(d&&d.units){ st.blocked=d.units; applyAvailabilityFilter(); } }catch(e){}
+        } else flash((r.j&&r.j.error)||'Nu s-a putut rezerva');
+        return;
+      }
+      // reflect the block locally so the just-booked rooms show as taken
+      const ds=nights();
+      selectedIds().forEach(id=>{ const key = id==='__entire' ? (entR?entR.id:'__all') : id; st.blocked[key]=(st.blocked[key]||[]).concat(ds); });
+      st.blocked.__all=(st.blocked.__all||[]).concat(ds);
+      applyAvailabilityFilter();
+      flash('Rezervare confirmată ✓');
+      return;
+    }
+
+    // Request mode (default): save the request + open WhatsApp to the host
     if(slug){ try{ await fetch('/api/booking-request',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({ slug, name:who, phone:tel, email, checkin:st.ci, checkout:st.co, guests:st.guests, rooms:roomsPayload(), message:msg })}); }catch(e){} }
-    // 2) open WhatsApp to the host with the templated message
     const B=THEME.booking||{};
     if(B.whatsapp) window.open('https://wa.me/'+B.whatsapp+'?text='+encodeURIComponent(msg),'_blank');
     else if(B.phone) window.location.href='tel:'+B.phone;
@@ -1570,6 +1597,7 @@ function initBooking(){
 /* ===== Visible availability calendar (live, per room + entire unit) ===== */
 function rAvailability(){
   const R=(PROPERTY.rentals||[]); if(!R.length) return '';
+  if(!PROPERTY.hasCalendar) return ''; // no valid iCal feed → no availability calendar at all
   return `<div class="av-ov" id="avOv"><div class="av-modal">
     <div class="av-head"><div><h3 id="avRoomName">Disponibilitate</h3><small id="avRoomSub"></small></div><button type="button" class="av-x" id="avX" aria-label="Închide">&times;</button></div>
     <div class="av-nav"><button type="button" id="avPrev" aria-label="Luna anterioară">‹</button><span id="avTitle"></span><button type="button" id="avNext" aria-label="Luna următoare">›</button></div>
