@@ -88,3 +88,17 @@ create table if not exists fb_groups (
   created_at timestamptz default now()
 );
 create index if not exists fb_groups_slug_idx on fb_groups(slug, created_at);
+
+-- Calendar sync events (iCal import from Booking/Airbnb + export pulls of our
+-- .ics). One row per event; the master admin aggregates these into average
+-- sync intervals / per-hour rates per room (unit) per property.
+create table if not exists sync_events (
+  id         bigserial primary key,
+  slug       text not null,
+  unit_id    text not null,
+  direction  text not null,          -- 'import' | 'export'
+  status     text default 'ok',
+  created_at timestamptz not null default now()
+);
+create index if not exists sync_events_lookup_idx on sync_events(slug, unit_id, direction, created_at desc);
+create index if not exists sync_events_time_idx on sync_events(created_at desc);
