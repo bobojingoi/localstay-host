@@ -152,6 +152,7 @@
     $("#wLoc").textContent = (P.location && (P.location.area||P.location.city)) || "";
     if(URLFULL){ $("#wCta").href=URLFULL; $("#wBrand").href=URLFULL; } else { $("#wCta").style.display="none"; }
     if(!R.length){ $("#wRooms").style.display="none"; $("#wCalWrap").innerHTML='<div class="w-empty">Nu există camere configurate încă.</div>'; return; }
+    if(!P.hasCalendar){ $("#wRooms").style.display="none"; if($("#wCta"))$("#wCta").style.display=""; $("#wCalWrap").innerHTML='<div class="w-empty">Calendarul de disponibilitate nu este activ pentru această proprietate.</div>'; return; }
     renderRooms(); draw();
     $("#wPrev").onclick=function(){ state.month.setMonth(state.month.getMonth()-1); draw(); };
     $("#wNext").onclick=function(){ state.month.setMonth(state.month.getMonth()+1); draw(); };
