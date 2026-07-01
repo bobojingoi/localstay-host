@@ -224,13 +224,15 @@ async function generateFbPosts(opts) {
   const groupNames = Array.isArray(o.groups) ? o.groups.slice(0, count) : [];
   const sys =
     "Ești copywriter de marketing pentru cazări turistice din România. Scrii postări pentru grupuri de Facebook, în limba română — atractive, calde, credibile și conforme cu regulile grupurilor (fără clickbait agresiv, fără MAJUSCULE excesive, fără promisiuni exagerate). " +
-    "Integrezi natural 2-4 dintre cele mai relevante facilități (prioritizează-le pe primele din listă — sunt cele mai apreciate) și menționezi locația, dar NU inventa facilități sau detalii care nu sunt date. " +
+    "Structurează postarea clar: un titlu scurt cu emoji, o intro caldă, apoi o listă „Oferta include:” cu detaliile și facilitățile relevante (dormitoare, băi, capacitate, parcare, cadru natural, potrivit pentru cine etc.), prețul, disponibilitatea, și un îndemn la final. " +
+    "Integrezi natural cele mai relevante facilități și detalii despre proprietate (prioritizează facilitățile de la începutul listei — sunt cele mai apreciate), dar NU inventa nimic ce nu e dat. " +
     "Generezi un text de bază și mai multe VARIANTE ușor diferite ale aceleiași postări: deschidere diferită, alte emoji, altă ordine a frazelor, sinonime — ca să NU pară duplicate când sunt postate în grupuri diferite. Miezul ofertei rămâne identic în toate.";
   const brief = [
     "Proprietate: " + (o.propertyName || "cazare"),
     o.location ? ("Locație: " + o.location) : "",
     (o.capacity ? ("Capacitate: până la " + o.capacity + " oaspeți") : ""),
     (Array.isArray(o.facilities) && o.facilities.length) ? ("Facilități (folosește-le pe cele mai relevante, mai ales primele — cele mai apreciate; NU inventa altele): " + o.facilities.join(", ")) : "",
+    o.facts ? ("Detalii proprietate (folosește-le pe cele relevante — dormitoare, băi, suprafață, parcare, experiență / tip vacanță, cadru natural, categorie, pentru cine e potrivit; NU inventa): " + o.facts) : "",
     "Ocazie / tip postare: " + (o.occasion || "ofertă"),
     o.details ? ("Ce vrea hotelierul să transmită (preț, reducere, perioadă, mesaj): " + o.details) : "",
     "Ton: " + (o.tone || "prietenos"),
