@@ -119,3 +119,8 @@ create table if not exists documents (
   updated_at timestamptz default now()
 );
 create index if not exists documents_slug_idx on documents(slug);
+
+-- Document versioning: the master "__template" row holds the standard contract;
+-- each property row stores the version it received (for individual + bulk send that
+-- skips hoteliers who already have the current version).
+alter table documents add column if not exists version int default 0;
