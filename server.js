@@ -104,8 +104,64 @@ function renderSite(site, slug) {
   return headExtra ? html.replace("</head>", headExtra + "</head>") : html;
 }
 
+/* ---------- LocalStay ↔ hotelier collaboration contract (signed on approval) ---------- */
+function contractHtml(d){
+  const E = s => String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+  const ap = d.approval || {};
+  const signed = ap.status === "approved";
+  const fmt = iso => { if(!iso) return "—"; try{ return new Date(iso).toLocaleDateString("ro-RO",{day:"numeric",month:"long",year:"numeric"}); }catch(e){ return iso; } };
+  const signBlock = signed
+    ? '<p class="sig-ok"><b>Semnat electronic</b> de către Client la data de <b>' + E(fmt(ap.decidedAt)) + '</b>, prin aprobarea unității în platforma LocalStay.</p>'
+    : '<p class="sig-no">Contract <b>nesemnat</b>. Se consideră semnat electronic în momentul în care Clientul aprobă unitatea publicată în platforma LocalStay.</p>';
+  const clauses = [
+    ["1. Obiectul contractului", "Prestatorul (LocalStay) oferă Clientului serviciul de listare și promovare a proprietății de mai sus prin generarea unui site de prezentare dedicat (pe subdomeniu propriu), a unei zone de administrare, sincronizarea calendarului de disponibilitate prin iCal cu platforme terțe (ex. Booking.com, Airbnb), generarea de conținut (texte, optimizare foto) și instrumente de promovare."],
+    ["2. Durata", "Contractul intră în vigoare la data semnării electronice (aprobarea unității) și se derulează pe perioadă nedeterminată, putând fi încetat de oricare dintre părți cu o notificare prealabilă de 30 de zile."],
+    ["3. Obligațiile Prestatorului", "Menținerea în stare de funcționare a site-ului și a instrumentelor, sincronizarea periodică a calendarelor, protejarea datelor conform legislației aplicabile și oferirea de suport rezonabil pentru utilizarea platformei."],
+    ["4. Obligațiile Clientului", "Furnizarea de informații corecte și actuale despre proprietate, gestionarea disponibilității și a prețurilor, respectarea obligațiilor față de turiști și a legislației în vigoare privind cazarea turistică."],
+    ["5. Rezervări", "În funcție de setările alese de Client, platforma poate funcționa în regim de cerere de rezervare (turistul trimite o solicitare pe care Clientul o confirmă) sau de rezervare directă (turistul blochează datele), acesta din urmă doar cu acordul explicit al Clientului activat în zona de administrare."],
+    ["6. Date și confidențialitate", "Datele turiștilor și ale Clientului sunt prelucrate exclusiv pentru operarea serviciului, conform Regulamentului (UE) 2016/679 (GDPR). Părțile păstrează confidențialitatea informațiilor la care au acces."],
+    ["7. Dispoziții finale", "Prezentul document este un model-cadru pus la dispoziție de platformă și poate fi completat cu anexe specifice. Semnarea electronică prin aprobarea unității confirmă acceptarea acestor termeni."]
+  ];
+  return '<!doctype html><html lang="ro"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+    + '<title>Contract LocalStay · ' + E(d.propertyName) + '</title><style>'
+    + ':root{--ink:#141c34;--mut:#5a6473;--line:#e6e9ef;--brand:#2f7d5b}'
+    + '*{box-sizing:border-box}body{margin:0;background:#f4f5f8;color:var(--ink);font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}'
+    + '.sheet{max-width:820px;margin:24px auto;background:#fff;border:1px solid var(--line);border-radius:14px;padding:44px 48px;box-shadow:0 20px 60px -40px rgba(20,28,52,.4)}'
+    + '.bar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:-8px -8px 22px;padding:0 8px 18px;border-bottom:2px solid var(--ink)}'
+    + '.brand{font-weight:800;font-size:20px;letter-spacing:-.01em}.brand span{color:var(--brand)}'
+    + 'h1{font-size:22px;margin:20px 0 4px}.sub{color:var(--mut);margin:0 0 22px}'
+    + '.parties{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:0 0 22px}'
+    + '.party{border:1px solid var(--line);border-radius:10px;padding:13px 15px}.party h3{margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)}'
+    + '.party b{display:block;font-size:15px}.party small{color:var(--mut)}'
+    + 'h2{font-size:15px;margin:18px 0 4px}.cl p{margin:0 0 12px;color:#2c3444}'
+    + '.sig-ok{background:#eef7f1;border:1px solid #cfe9db;color:#1c5c3e;border-radius:10px;padding:12px 14px}'
+    + '.sig-no{background:#fdf3ec;border:1px solid #f2ddc9;color:#8a5a2b;border-radius:10px;padding:12px 14px}'
+    + '.actions{max-width:820px;margin:0 auto 40px;text-align:right}'
+    + '.btn{background:var(--brand);color:#fff;border:0;border-radius:10px;padding:11px 18px;font-weight:700;font-size:14px;cursor:pointer}'
+    + '.foot{color:var(--mut);font-size:12.5px;margin-top:20px;border-top:1px solid var(--line);padding-top:12px}'
+    + '@media print{body{background:#fff}.sheet{border:0;box-shadow:none;margin:0;border-radius:0;max-width:none}.actions{display:none}}'
+    + '</style></head><body>'
+    + '<div class="sheet"><div class="bar"><div class="brand">Local<span>Stay</span></div><div style="color:var(--mut);font-size:13px">Contract de colaborare</div></div>'
+    + '<h1>Contract de colaborare pentru listare și promovare</h1>'
+    + '<p class="sub">Proprietate: <b>' + E(d.propertyName) + '</b>' + (d.address?(' · ' + E(d.address)):'') + '</p>'
+    + '<div class="parties"><div class="party"><h3>Prestator</h3><b>LocalStay</b><small>Platformă de listare și promovare cazări</small></div>'
+    + '<div class="party"><h3>Client (hotelier)</h3><b>' + E(d.owner.name || d.propertyName) + '</b><small>' + E(d.owner.email || "—") + '</small></div></div>'
+    + '<div class="cl">' + clauses.map(c => '<h2>' + E(c[0]) + '</h2><p>' + E(c[1]) + '</p>').join('') + '</div>'
+    + signBlock
+    + '<p class="foot">Document generat de platforma LocalStay pentru proprietatea „' + E(d.propertyName) + '" (' + E(d.slug) + '). Model-cadru; nu constituie consultanță juridică.</p>'
+    + '</div>'
+    + '<div class="actions"><button class="btn" onclick="window.print()">Descarcă / Printează (PDF)</button></div>'
+    + '</body></html>';
+}
+
 /* ---------- iCal export (effective blocks incl. entire/room overlap) ---------- */
 function pad(n){ return String(n).padStart(2,"0"); }
+// True if at least one room/unit has a configured iCal feed URL that isn't erroring.
+// Used to decide whether to show availability/calendar UI at all on the public site.
+function hasValidCalendar(admin){
+  return (((admin && admin.units) || []).some(u =>
+    ((u.feeds) || []).some(f => f && f.url && String(f.url).trim() && !String(f.lastStatus || "").startsWith("error"))));
+}
 function effectiveBlocked(adminState, unitId) {
   const units = adminState.units || [];
   const rooms = (adminState.pricing && adminState.pricing.rooms) || [];
@@ -211,6 +267,8 @@ app.use(async (req, res, next) => {
       if (slug && slug !== "www" && slug !== "app") {
         const p = await getProp(slug);
         if (!p) return res.status(404).send("Proprietate negăsită");
+        p.site.hasCalendar = hasValidCalendar(p.admin_state);
+        p.site.acceptDirectBooking = !!(p.admin_state.property && p.admin_state.property.acceptDirectBooking);
         return res.send(renderSite(p.site, p.slug));
       }
     }
@@ -915,6 +973,7 @@ app.get("/api/properties", AUTH.requireAuth, async (req, res) => {
   const r = await pool.query(
     `select slug,
             admin_state->'property'->'basicInfo'->>'name' as name,
+            (admin_state->'property'->>'acceptDirectBooking')::boolean as direct,
             site->'photos'->>'hero' as hero
      from properties
      ${isAdmin ? "" : "where owner_id = $1"}
@@ -927,6 +986,48 @@ app.get("/api/properties", AUTH.requireAuth, async (req, res) => {
 app.delete("/api/host/:slug", AUTH.requireAdmin, async (req, res) => {
   await pool.query("delete from properties where slug=$1", [req.params.slug]);
   res.json({ ok: true });
+});
+
+/* ---------- Documents: the LocalStay ↔ hotelier contract ---------- */
+app.get("/api/documents", AUTH.requireAuth, async (req, res) => {
+  try {
+    const isAdmin = req.user.role === "admin";
+    const r = await pool.query(
+      "select p.slug, p.admin_state->'property'->'basicInfo'->>'name' as name, p.approval as approval, " +
+      "  u.name as owner_name, u.email as owner_email " +
+      "from properties p left join users u on u.id = p.owner_id " +
+      (isAdmin ? "" : "where p.owner_id = $1 ") +
+      "order by p.updated_at desc",
+      isAdmin ? [] : [req.user.id]
+    );
+    res.json(r.rows.map(row => ({
+      slug: row.slug, name: row.name || row.slug,
+      status: (row.approval && row.approval.status) || "pending",
+      decidedAt: (row.approval && row.approval.decidedAt) || null,
+      requestedAt: (row.approval && row.approval.requestedAt) || null,
+      owner: { name: row.owner_name || "", email: row.owner_email || "" }
+    })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get("/contract/:slug", AUTH.requireSlugAccess(pool), async (req, res) => {
+  try {
+    const p = await getProp(req.params.slug);
+    if (!p) return res.status(404).send("Proprietate negăsită");
+    let owner = { name: "", email: "" };
+    if (p.owner_id) {
+      const u = await pool.query("select name, email from users where id=$1", [p.owner_id]);
+      if (u.rows[0]) owner = { name: u.rows[0].name || "", email: u.rows[0].email || "" };
+    }
+    const bi = (p.admin_state && p.admin_state.property && p.admin_state.property.basicInfo) || {};
+    res.set("Content-Type", "text/html; charset=utf-8");
+    res.send(contractHtml({
+      slug: p.slug,
+      propertyName: bi.name || p.slug,
+      address: [bi.address, bi.locality, bi.city, bi.county].filter(Boolean).join(", "),
+      owner, approval: p.approval || {}
+    }));
+  } catch (e) { res.status(500).send("Eroare: " + e.message); }
 });
 
 /* ---------- booking requests (from the public booking form) ---------- */
@@ -953,6 +1054,49 @@ app.post("/api/booking-request", async (req, res) => {
         JSON.stringify(Array.isArray(b.rooms) ? b.rooms.slice(0, 30) : []),
         (b.message || "").slice(0, 4000),
       ]
+    );
+    res.json({ ok: true, id: r.rows[0].id });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* Direct booking — tourist blocks the dates instantly. Only if the hotelier has
+   consented (admin_state.property.acceptDirectBooking) AND a valid calendar exists. */
+app.post("/api/book/:slug", async (req, res) => {
+  try {
+    const p = await getProp(req.params.slug);
+    if (!p) return res.status(404).json({ error: "not found" });
+    const admin = p.admin_state || {};
+    const enabled = !!(admin.property && admin.property.acceptDirectBooking) && hasValidCalendar(admin);
+    if (!enabled) return res.status(403).json({ error: "Rezervările directe nu sunt activate pentru această proprietate." });
+    const b = req.body || {}, g = b.guests || {};
+    if (!b.name && !b.phone) return res.status(400).json({ error: "nume sau telefon obligatoriu" });
+    const dOK = v => v && /^\d{4}-\d{2}-\d{2}$/.test(v);
+    if (!dOK(b.checkin) || !dOK(b.checkout) || b.checkout <= b.checkin) return res.status(400).json({ error: "date invalide" });
+    const rooms = Array.isArray(b.rooms) ? b.rooms.slice(0, 30) : [];
+    if (!rooms.length) return res.status(400).json({ error: "nicio cameră selectată" });
+    const nights = []; for (let d = fromIso(b.checkin), end = fromIso(b.checkout); d < end; d.setUTCDate(d.getUTCDate() + 1)) nights.push(iso(d));
+    const rms = (admin.pricing && admin.pricing.rooms) || [];
+    const entR = rms.find(r => r.isEntire);
+    const unitIds = rooms.map(r => r.id === "__entire" ? (entR ? entR.id : (admin.units && admin.units[0] && admin.units[0].id)) : r.id).filter(Boolean);
+    if (!unitIds.length) return res.status(400).json({ error: "cameră invalidă" });
+    // authoritative availability re-check
+    for (const uid of unitIds) {
+      const blocked = new Set(effectiveBlocked(admin, uid));
+      if (nights.some(n => blocked.has(n))) return res.status(409).json({ error: "Datele nu mai sunt disponibile." });
+    }
+    // block the dates on each unit
+    admin.units = admin.units || [];
+    for (const uid of unitIds) {
+      let u = admin.units.find(x => x.id === uid);
+      if (!u) { u = { id: uid, feeds: [], blocks: [] }; admin.units.push(u); }
+      const s = new Set(u.blocks || []); nights.forEach(n => s.add(n)); u.blocks = [...s].sort();
+    }
+    await pool.query("update properties set admin_state=$2, updated_at=now() where slug=$1", [req.params.slug, admin]);
+    const r = await pool.query(
+      "insert into booking_requests (slug,name,phone,email,checkin,checkout,adults,children,infants,pets,rooms,message,status,kind) " +
+      "values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,'confirmat','direct') returning id",
+      [req.params.slug, (b.name || "").slice(0, 200), (b.phone || "").slice(0, 60), (b.email || "").slice(0, 200), b.checkin, b.checkout,
+        +g.adults || 0, +g.children || 0, +g.infants || 0, +g.pets || 0, JSON.stringify(rooms), (b.message || "").slice(0, 4000)]
     );
     res.json({ ok: true, id: r.rows[0].id });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1221,6 +1365,8 @@ app.get("/api/stats", AUTH.requireAdmin, async (req, res) => {
       select
         (select count(*) from booking_requests) as requests,
         (select count(*) from booking_requests where created_at > now() - interval '7 days') as requests7d,
+        (select count(*) from booking_requests where kind='direct') as direct_bookings,
+        (select count(*) from booking_requests where kind='direct' and created_at > now() - interval '7 days') as direct_bookings7d,
         (select count(*) from site_events where type='phone_reveal') as reveals,
         (select count(*) from site_events where type='phone_reveal' and created_at > now() - interval '7 days') as reveals7d
     `);
@@ -1270,7 +1416,7 @@ app.get("/api/availability/:slug", async (req, res) => {
     const all = new Set();
     units.forEach(u => effectiveBlocked(p.admin_state, u.id).forEach(d => all.add(d)));
     out.__all = [...all];
-    res.json({ units: out });
+    res.json({ units: out, hasFeeds: hasValidCalendar(p.admin_state) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1301,6 +1447,8 @@ app.get("/admin", async (req, res) => {
 app.get("/s/:slug", async (req, res) => {
   const p = await getProp(req.params.slug);
   if (!p) return res.status(404).send("Proprietate negăsită");
+  p.site.hasCalendar = hasValidCalendar(p.admin_state);
+  p.site.acceptDirectBooking = !!(p.admin_state.property && p.admin_state.property.acceptDirectBooking);
   res.send(renderSite(p.site, p.slug));
 });
 
@@ -1310,6 +1458,7 @@ app.get("/w/:slug", async (req, res) => {
   if (!p) return res.status(404).send("Proprietate negăsită");
   const tpl = fs.readFileSync(path.join(PUBLIC, "widget.html"), "utf8");
   const url = siteUrl(p.slug);
+  p.site.hasCalendar = hasValidCalendar(p.admin_state);
   const html = inject(tpl, "window.STAY_PROPERTY=" + JSON.stringify(p.site) + ";window.STAY_SLUG=" + JSON.stringify(p.slug || "") + ";window.STAY_URL=" + JSON.stringify(url) + ";");
   res.send(html);
 });
