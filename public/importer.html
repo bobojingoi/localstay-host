@@ -90,6 +90,17 @@ textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(-
 .doc-main b{font-size:15px}.doc-main small{color:var(--muted);font-size:12.5px}
 .doc-badge{display:inline-block;font-size:11.5px;font-weight:700;padding:2px 9px;border-radius:100px;margin-left:8px;vertical-align:middle}
 .doc-badge.ok{background:#eef7f1;color:#1c5c3e}.doc-badge.no{background:#fdeceb;color:#a23b30}.doc-badge.pend{background:#fdf3ec;color:#8a5a2b}
+.doc-badge.sent{background:#eaf1ff;color:#1b47b8}
+.doc-modal{display:none;position:fixed;inset:0;background:rgba(20,28,52,.5);z-index:1000;align-items:center;justify-content:center;padding:20px}
+.doc-sheet{background:#fff;border-radius:16px;width:100%;max-width:780px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 80px -30px rgba(0,0,0,.5)}
+.doc-mhd{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--line)}
+.doc-mhd b{font-size:16px}
+.doc-x{background:none;border:0;font-size:26px;line-height:1;cursor:pointer;color:var(--muted)}
+.doc-mbd{padding:16px 20px;overflow:auto;flex:1}
+.doc-ai{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.doc-ai input{flex:1;min-width:220px;padding:10px 13px;border:1px solid var(--line);border-radius:10px;font-size:14px}
+#docmContent{width:100%;min-height:340px;border:1px solid var(--line);border-radius:12px;padding:14px 16px;font:inherit;font-size:14px;line-height:1.6;resize:vertical}
+.doc-mft{display:flex;align-items:center;gap:10px;padding:14px 20px;border-top:1px solid var(--line);flex-wrap:wrap}
 .doc-act .btn{padding:9px 15px;font-size:13.5px}
 .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:22px}
 .kpi{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:18px}
@@ -463,6 +474,7 @@ body.is-host .del{display:none}
 .ev-top{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
 .ev-top b{color:#1a2238;font-size:14.5px}
 .ev-badge{display:inline-block;background:#eef7f1;color:#1c5c3e;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:100px;margin-left:6px;vertical-align:middle}
+.ev-badge.hold{background:#fdf3ec;color:#8a5a2b}
 .prop-badge{display:inline-block;background:#eef7f1;color:#1c5c3e;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:100px;margin-left:6px;vertical-align:middle}
 .cli-count{color:var(--muted);font-size:13px;margin-bottom:10px}
 .cli-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap}
@@ -1188,16 +1200,47 @@ async function renderDocuments(){
   let rows=null; try{ rows=await fetch('/api/documents').then(r=>r.ok?r.json():null); }catch(e){}
   if(!rows){ box.innerHTML='<div class="empty">Documentele necesită baza de date (verifică /api/health).</div>'; return; }
   if(!rows.length){ box.innerHTML='<div class="empty">Nicio proprietate încă.</div>'; return; }
+  const isAdmin=!document.body.classList.contains('is-host');
   const fmt=iso=>{ if(!iso) return ''; try{ return new Date(iso).toLocaleDateString('ro-RO',{day:'numeric',month:'short',year:'numeric'}); }catch(e){ return iso; } };
+  const badgeOf=r=> r.status==='signed' ? '<span class="doc-badge ok">Semnat'+(r.decidedAt?(' · '+E(fmt(r.decidedAt))):'')+'</span>'
+    : r.status==='sent' ? '<span class="doc-badge sent">Trimis hotelierului'+(r.sentAt?(' · '+E(fmt(r.sentAt))):'')+'</span>'
+    : '<span class="doc-badge pend">Ciornă</span>';
   box.innerHTML=rows.map(r=>{
-    const signed=r.status==='approved';
-    const badge = signed
-      ? '<span class="doc-badge ok">Semnat · '+E(fmt(r.decidedAt))+'</span>'
-      : (r.status==='rejected' ? '<span class="doc-badge no">Respins</span>' : '<span class="doc-badge pend">Nesemnat</span>');
     const who = r.owner&&(r.owner.name||r.owner.email) ? '<small>'+E(r.owner.name||'')+(r.owner.email?(' · '+E(r.owner.email)):'')+'</small>' : '<small class="admin-only">fără hotelier alocat</small>';
-    return '<div class="doc-row"><div class="doc-main"><b>'+E(r.name)+'</b> '+badge+'<br>'+who+'</div>'+
-      '<div class="doc-act"><a class="btn btn-out" href="/contract/'+encodeURIComponent(r.slug)+'" target="_blank" rel="noopener">Deschide contractul</a></div></div>';
+    const acts = '<a class="btn btn-out" href="/contract/'+encodeURIComponent(r.slug)+'" target="_blank" rel="noopener">Deschide</a>'
+      + (isAdmin ? '<button class="btn btn-out" data-docedit="'+E(r.slug)+'">Editează</button><button class="btn btn-pri" data-docsend="'+E(r.slug)+'">Trimite</button>' : '');
+    return '<div class="doc-row"><div class="doc-main"><b>'+E(r.name)+'</b> '+badgeOf(r)+'<br>'+who+'</div><div class="doc-act">'+acts+'</div></div>';
   }).join('');
+  box.querySelectorAll('[data-docedit]').forEach(b=>b.onclick=()=>docEditor(b.getAttribute('data-docedit')));
+  box.querySelectorAll('[data-docsend]').forEach(b=>b.onclick=async()=>{ if(!confirm('Trimiți documentul curent către hotelier?')) return; try{ const r=await fetch('/api/documents/'+encodeURIComponent(b.getAttribute('data-docsend'))+'/send',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}); if(r.ok){ toast&&toast('Trimis'); renderDocuments(); } }catch(e){} });
+}
+async function docEditor(slug){
+  const E=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  let m=document.getElementById('docModal');
+  if(!m){ m=document.createElement('div'); m.id='docModal'; m.className='doc-modal'; document.body.appendChild(m); }
+  m.innerHTML='<div class="doc-sheet"><div class="doc-mhd"><b id="docmTitle">Document</b><button class="doc-x" id="docmX">×</button></div>'+
+    '<div class="doc-mbd"><div class="doc-ai"><input id="docmInstr" placeholder="Ce vrei să adaugi/modifici? (ex. adaugă o clauză de acord pentru editarea și postarea pozelor generate cu AI)"><button class="btn btn-out" id="docmAi">Generează cu AI</button></div>'+
+    '<textarea id="docmContent" spellcheck="false"></textarea></div>'+
+    '<div class="doc-mft"><span id="docmStatus" class="muted"></span><span style="flex:1"></span><button class="btn btn-out" id="docmSave">Salvează</button><button class="btn btn-pri" id="docmSend">Salvează + Trimite hotelierului</button></div></div>';
+  m.style.display='flex';
+  const $=id=>document.getElementById(id);
+  const close=()=>{ m.style.display='none'; };
+  $('docmX').onclick=close; m.onclick=e=>{ if(e.target===m) close(); };
+  $('docmTitle').textContent='Document · '+slug;
+  let d=null; try{ d=await fetch('/api/documents/'+encodeURIComponent(slug)).then(r=>r.ok?r.json():null); }catch(e){}
+  $('docmContent').value=(d&&d.content)||'';
+  $('docmStatus').textContent = d? ('Status: '+(d.status==='signed'?'semnat':d.status==='sent'?'trimis':'ciornă')) : '';
+  $('docmAi').onclick=async()=>{
+    const instr=$('docmInstr').value.trim(); if(!instr){ $('docmInstr').focus(); return; }
+    $('docmAi').disabled=true; $('docmAi').textContent='Se generează…';
+    try{ const r=await fetch('/api/documents/'+encodeURIComponent(slug)+'/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({instruction:instr,current:$('docmContent').value})}).then(x=>x.json());
+      if(r&&r.content){ $('docmContent').value=r.content; } else if(r&&r.error){ alert(r.error); }
+    }catch(e){ alert('Eroare la generare'); }
+    $('docmAi').disabled=false; $('docmAi').textContent='Generează cu AI';
+  };
+  const save=async()=>{ const r=await fetch('/api/documents/'+encodeURIComponent(slug),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:$('docmContent').value})}); return r.ok; };
+  $('docmSave').onclick=async()=>{ if(await save()){ toast&&toast('Salvat'); renderDocuments(); close(); } };
+  $('docmSend').onclick=async()=>{ const r=await fetch('/api/documents/'+encodeURIComponent(slug)+'/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:$('docmContent').value})}); if(r.ok){ toast&&toast('Salvat și trimis'); renderDocuments(); close(); } };
 }
 const _dc=document.getElementById("docReload"); if(_dc) _dc.onclick=renderDocuments;
 
@@ -1215,7 +1258,9 @@ async function renderBookings(boxId, kind){
     const g=[]; if(r.adults)g.push(r.adults+' ad.'); if(r.children)g.push(r.children+' cop.'); if(r.infants)g.push(r.infants+' beb.'); if(r.pets)g.push(r.pets+' anim.');
     const rooms=(Array.isArray(r.rooms)?r.rooms:[]).map(x=>(x.qty>1?x.qty+'× ':'')+(x.name||'')).join(', ');
     const wa=(r.phone||'').replace(/[^0-9]/g,'');
-    const badge=kind==='direct'?'<span class="ev-badge">confirmată · datele blocate</span>':'';
+    const badge = kind==='direct'
+      ? (r.status==='confirmat' ? '<span class="ev-badge">confirmată</span>' : '<span class="ev-badge hold">de confirmat · datele blocate</span>')
+      : '';
     return '<div class="ev"><div class="ev-top"><b>'+E(r.name||'—')+' '+badge+'</b><span>'+_bkDT(r.created_at)+'</span></div>'+
       '<div class="ev-sub">'+E(r.property||r.slug)+' · '+_bkFmt(r.checkin)+' → '+_bkFmt(r.checkout)+(g.length?' · '+E(g.join(', ')):'')+'</div>'+
       '<div class="ev-sub2">'+(r.phone?'<a href="tel:'+E(r.phone)+'">'+E(r.phone)+'</a>':'')+(r.email?' · <a href="mailto:'+E(r.email)+'">'+E(r.email)+'</a>':'')+(rooms?' · '+E(rooms):'')+(wa?' · <a href="https://wa.me/'+wa+'" target="_blank" rel="noopener">WhatsApp</a>':'')+'</div></div>';
