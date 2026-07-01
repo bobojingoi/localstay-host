@@ -106,3 +106,16 @@ create index if not exists sync_events_time_idx on sync_events(created_at desc);
 -- Direct bookings: when the hotelier consents, tourists can book instantly (dates
 -- get blocked) instead of only sending a request. kind='direct' marks those rows.
 alter table booking_requests add column if not exists kind text default 'request';
+
+-- Editable, per-property collaboration document (contract). Master admin edits the
+-- content (optionally AI-generated), sends it to the hotelier, and it is signed on approval.
+create table if not exists documents (
+  id         uuid primary key default gen_random_uuid(),
+  slug       text unique not null,
+  title      text default 'Contract de colaborare',
+  content    text default '',
+  status     text default 'draft',        -- draft | sent | signed
+  sent_at    timestamptz,
+  updated_at timestamptz default now()
+);
+create index if not exists documents_slug_idx on documents(slug);
