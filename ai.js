@@ -268,4 +268,35 @@ async function generateFbPosts(opts) {
   } finally { clearTimeout(t); }
 }
 
-module.exports = { describeImage, enhanceImage, enhanceImageOpenAI, analyzePhoto, analyzeForEnhance, analyzeOpenAI, makeApiSize, generateFbPosts };
+module.exports = { describeImage, enhanceImage, enhanceImageOpenAI, analyzePhoto, analyzeForEnhance, analyzeOpenAI, makeApiSize, generateFbPosts, generateDocument };
+
+/* Generate or edit a collaboration document (contract) in Romanian.
+   Returns Markdown-ish text: "## Titlu clauză" headings + paragraphs. */
+async function generateDocument(opts) {
+  const o = opts || {};
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) throw new Error("OPENAI_API_KEY lipsă — generarea documentului necesită OpenAI.");
+  const sys =
+    "Ești jurist care redactează contracte și documente de colaborare în limba română pentru platforma LocalStay (listare și promovare de cazări turistice). " +
+    "Scrii clar, profesionist și echilibrat. Structurezi documentul în clauze numerotate, fiecare cu un titlu pe o linie care începe cu „## ” urmat de unul-două paragrafe. " +
+    "NU folosești tabele, NU inventezi date concrete (prețuri, termene fixe) care nu sunt cerute. Returnezi DOAR textul documentului, fără explicații.";
+  const parts = [
+    "Proprietate: " + (o.propertyName || "cazare") + (o.owner ? (" · Client: " + o.owner) : ""),
+    o.current ? ("Documentul curent (modifică-l conform instrucțiunii, păstrând ce e relevant):\n" + o.current) : "Nu există un document încă — redactează unul complet.",
+    "Instrucțiune: " + (o.instruction || "Redactează un contract-cadru standard de colaborare (obiect, durată, obligațiile părților, publicarea și editarea fotografiilor inclusiv cele generate/optimizate cu AI, rezervări, GDPR, dispoziții finale).")
+  ];
+  const user = parts.join("\n\n");
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 60000);
+  try {
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
+      body: JSON.stringify({ model: OPENAI_TEXT_MODEL, messages: [{ role: "system", content: sys }, { role: "user", content: user }], temperature: 0.4, max_tokens: 2000 }),
+      signal: ctrl.signal,
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error("OpenAI " + r.status + ": " + JSON.stringify(j).slice(0, 200));
+    const txt = (((j.choices || [])[0] || {}).message || {}).content || "";
+    return { content: String(txt).trim() };
+  } finally { clearTimeout(t); }
+}
