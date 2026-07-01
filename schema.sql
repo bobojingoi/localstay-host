@@ -102,3 +102,7 @@ create table if not exists sync_events (
 );
 create index if not exists sync_events_lookup_idx on sync_events(slug, unit_id, direction, created_at desc);
 create index if not exists sync_events_time_idx on sync_events(created_at desc);
+
+-- Direct bookings: when the hotelier consents, tourists can book instantly (dates
+-- get blocked) instead of only sending a request. kind='direct' marks those rows.
+alter table booking_requests add column if not exists kind text default 'request';
