@@ -79,11 +79,18 @@
   function som(d){ return new Date(d.getFullYear(), d.getMonth(), 1); }
   function wknd(ds){ var d=piso(ds).getDay(); return d===5||d===6; }
 
-  // scopes: optional "__entire" then each room
-  var scopes = [];
+  // scopes: optional "__entire" then each UNIQUE room (dedupe by id — some
+  // properties list the same bookable unit several times with the same id).
+  var scopes = [], seen = {};
   if(entireOn) scopes.push("__entire");
-  R.forEach(function(r){ if(!(entireOn && r.isEntire)) scopes.push(r.id); });
-  if(!scopes.length && R.length) scopes = R.map(function(r){ return r.id; });
+  R.forEach(function(r){
+    if(entireOn && r.isEntire) return;
+    var id = r.id;
+    var key = (id==null || id==="") ? ("__noid:"+(r.name||scopes.length)) : String(id);
+    if(seen[key]) return; seen[key]=1;
+    scopes.push((id==null||id==="") ? key : id);
+  });
+  if(!scopes.length && R.length){ seen={}; R.forEach(function(r){ var k=String(r.id); if(!seen[k]){ seen[k]=1; scopes.push(r.id); } }); }
 
   var state = { scope: scopes[0], month: som(new Date()), blocked: {} };
 
