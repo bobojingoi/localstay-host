@@ -292,6 +292,15 @@ footer a:hover{color:#fff}
 .bk-intro{color:var(--muted);max-width:52ch;margin:-6px 0 26px}
 .bk-grid{display:grid;grid-template-columns:1fr 360px;gap:28px;align-items:start}
 .bk-options{display:flex;flex-direction:column;gap:12px}
+.bk-period{background:#fff;border:1px solid var(--line,#e6e9ef);border-radius:16px;padding:16px 18px;margin-bottom:20px;box-shadow:0 10px 30px -24px rgba(20,28,52,.4)}
+.bk-period-fields{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.bk-period-fields .bk-field{flex:1;min-width:150px;margin:0}
+.bk-period-btn{background:var(--accent);color:#fff;border:0;border-radius:11px;padding:12px 20px;font-family:var(--font-head);font-weight:700;font-size:14px;cursor:pointer;white-space:nowrap}
+.bk-period-btn:hover{filter:brightness(.96)}
+.bk-period-clear{background:none;border:0;color:var(--muted);font-size:13px;cursor:pointer;text-decoration:underline;padding:12px 4px}
+.bk-period-note{margin:10px 2px 0;font-size:13.5px;color:var(--body,#39414f)}
+.bk-period-note.none{color:#b4553f;font-weight:600}
+@media(max-width:560px){.bk-period-fields .bk-period-btn{width:100%}}
 .bk-card{display:flex;flex-direction:column;gap:0;border:1px solid var(--line);border-radius:18px;padding:18px 20px;background:#fff;transition:border-color .15s,box-shadow .15s}
 
 /* ---- modern room cards (cover thumb + modal) ---- */
@@ -1189,7 +1198,16 @@ function rBooking(){
   };
   const entireCard = entire ? card(entR||{weekday:isFinite(entW)?entW:'',currency:cur,capacity:PROPERTY.capacity},'__entire','Toată proprietatea','Închiriere integrală') : '';
   return `<section class="sec" id="rezervare"><div class="wrap">
-    <h2 class="rv" style="margin-bottom:28px">Camere | Prețuri | Calendar</h2>
+    <h2 class="rv" style="margin-bottom:20px">Camere | Prețuri | Calendar</h2>
+    <div class="bk-period rv" id="bkPeriod">
+      <div class="bk-period-fields">
+        <label class="bk-field"><span>Check-in</span><input id="fCi" type="date"></label>
+        <label class="bk-field"><span>Check-out</span><input id="fCo" type="date"></label>
+        <button type="button" class="bk-period-btn" id="bkSearch">Caută disponibilitate</button>
+        <button type="button" class="bk-period-clear" id="bkClearDates" hidden>Șterge datele</button>
+      </div>
+      <p class="bk-period-note" id="bkAvailNote"></p>
+    </div>
     <div class="bk-grid">
       <div class="bk-options rv">
         ${entireCard}
@@ -1203,10 +1221,6 @@ function rBooking(){
         </div>
         <label class="bk-field"><span>Număr de telefon *</span><input id="fTel" type="tel" placeholder="+40 7xx xxx xxx" autocomplete="tel"></label>
         <label class="bk-field"><span>Adresa electronică *</span><input id="fEmail" type="email" placeholder="email@exemplu.ro" autocomplete="email"></label>
-        <div class="bk-row2">
-          <label class="bk-field"><span>Check-in *</span><input id="fCi" type="date"></label>
-          <label class="bk-field"><span>Check-out *</span><input id="fCo" type="date"></label>
-        </div>
         <div class="bk-field bk-guests-field">
           <span>Număr de oaspeți *</span>
           <button type="button" class="bk-guests-btn" id="bkGuestsBtn"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.3"/><path d="M2.5 20.5c0-3.3 2.9-5.7 6.5-5.7s6.5 2.4 6.5 5.7M16.5 10.8a3 3 0 0 0 0-5.6M21.5 20.5c0-2.4-1.5-4.4-3.8-5.2"/></svg><span id="bkGuestsLbl">2 adulți</span><svg class="bk-caret" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
@@ -1275,7 +1289,7 @@ function initBooking(){
   const st = { entire:false, rooms:new Set(), qty:{}, guests:{adults:2,children:0,infants:0,pets:0}, ci:null, co:null, blocked:{}, month:_som(new Date()) };
   const $ = s=>sec.querySelector(s);
 
-  if(slug){ fetch('/api/availability/'+encodeURIComponent(slug)).then(r=>r.ok?r.json():null).then(d=>{ if(d&&d.units) st.blocked=d.units; }).catch(()=>{}); }
+  if(slug){ fetch('/api/availability/'+encodeURIComponent(slug)).then(r=>r.ok?r.json():null).then(d=>{ if(d&&d.units){ st.blocked=d.units; if(window.__applyAvail) window.__applyAvail(); } }).catch(()=>{}); }
 
   function selectedIds(){ return st.entire?['__entire']:[...st.rooms]; }
   function entireOpt(){
@@ -1452,11 +1466,41 @@ function initBooking(){
   $('#roomNext').onclick=()=>{ if(!roomGal.length)return; roomGalI=(roomGalI+1)%roomGal.length; roomShow(); };
   $('#roomSelect').onclick=()=>{ const b=sec.querySelector('.bk-sel[data-rid="'+(window.CSS&&CSS.escape?CSS.escape(curRoomId):curRoomId)+'"]'); if(b) b.click(); closeRoom(); };
   document.addEventListener('keydown',e=>{ if(!roomOv.classList.contains('on'))return; if(e.key==='Escape')closeRoom(); if(e.key==='ArrowLeft')$('#roomPrev').click(); if(e.key==='ArrowRight')$('#roomNext').click(); });
-  /* ---- dates (native inputs) ---- */
+  /* ---- dates (native inputs) drive an availability search above the rooms ---- */
   const fCi=$('#fCi'), fCo=$('#fCo');
   const todayISO=_iso(new Date());
-  if(fCi){ fCi.min=todayISO; fCi.onchange=()=>{ st.ci=fCi.value||null; if(st.ci){ fCo.min=st.ci; if(st.co&&st.co<=st.ci) st.co=null,fCo.value=''; } renderSummary(); }; }
-  if(fCo){ fCo.min=todayISO; fCo.onchange=()=>{ st.co=fCo.value||null; renderSummary(); }; }
+  function blockedSetFor(id){
+    if(id==='__entire') return new Set((entR?st.blocked[entR.id]:st.blocked.__all)||[]);
+    return new Set(st.blocked[id]||[]);
+  }
+  function isAvailable(id){ const ds=nights(); if(!ds.length) return true; const b=blockedSetFor(id); return ds.every(d=>!b.has(d)); }
+  function applyAvailabilityFilter(){
+    const ds=nights(); let shown=0;
+    sec.querySelectorAll('.bk-card').forEach(c=>{
+      const rid=c.dataset.rid, avail=isAvailable(rid);
+      c.style.display = avail ? '' : 'none';
+      if(avail) shown++;
+      else { if(rid==='__entire') st.entire=false; else { st.rooms.delete(rid); delete st.qty[rid]; } } // drop selection of now-unavailable rooms
+    });
+    const note=$('#bkAvailNote'), clr=$('#bkClearDates');
+    if(clr) clr.hidden = !(st.ci&&st.co);
+    if(note){
+      note.classList.remove('none');
+      if(!ds.length){ note.textContent=''; }
+      else if(shown===0){ note.textContent='Nicio cameră disponibilă în perioada aleasă. Încearcă alte date.'; note.classList.add('none'); }
+      else { note.textContent = shown+(shown===1?' opțiune disponibilă':' opțiuni disponibile')+' pentru '+_fmtH(st.ci)+' – '+_fmtH(st.co)+' ('+ds.length+(ds.length===1?' noapte':' nopți')+').'; }
+    }
+    refreshSel();
+  }
+  window.__applyAvail = applyAvailabilityFilter;
+  if(fCi){ fCi.min=todayISO; fCi.onchange=()=>{ st.ci=fCi.value||null; if(st.ci){ fCo.min=st.ci; if(st.co&&st.co<=st.ci){ st.co=null; fCo.value=''; } } applyAvailabilityFilter(); renderSummary(); }; }
+  if(fCo){ fCo.min=todayISO; fCo.onchange=()=>{ st.co=fCo.value||null; applyAvailabilityFilter(); renderSummary(); }; }
+  const bSearch=$('#bkSearch'); if(bSearch) bSearch.onclick=()=>{
+    if(!st.ci||!st.co){ flash('Alege check-in și check-out'); return; }
+    applyAvailabilityFilter();
+    const opts=sec.querySelector('.bk-options'); if(opts&&opts.scrollIntoView) opts.scrollIntoView({behavior:'smooth',block:'start'});
+  };
+  const bClear=$('#bkClearDates'); if(bClear) bClear.onclick=()=>{ st.ci=null; st.co=null; if(fCi)fCi.value=''; if(fCo){fCo.value=''; fCo.min=todayISO;} applyAvailabilityFilter(); renderSummary(); };
 
   /* ---- guests popover ---- */
   const gPop=$('#bkGuestsPop'), gBtn=$('#bkGuestsBtn');
@@ -1501,7 +1545,7 @@ function initBooking(){
     if(!ids.length){ flash('Alege o cameră / varianta integrală'); return; }
     if(!nume || !prenume){ flash('Completează numele și prenumele'); return; }
     if(!tel){ flash('Completează numărul de telefon'); return; }
-    if(!st.ci || !st.co){ flash('Alege datele de check-in și check-out'); return; }
+    if(!st.ci || !st.co){ flash('Alege datele de check-in și check-out'); const pb=$('#bkPeriod'); if(pb&&pb.scrollIntoView) pb.scrollIntoView({behavior:'smooth',block:'center'}); const f=$('#fCi'); if(f&&f.focus) try{f.focus();}catch(e){} return; }
     const who=(prenume+' '+nume).trim();
     const period='în perioada '+_fmtH(st.ci)+' – '+_fmtH(st.co)+' ('+nights().length+(nights().length===1?' noapte':' nopți')+')';
     let msg='Bună ziua, mă numesc '+who+' și aș dori să rezerv '+roomsPhrase()+' '+period+' pentru '+guestsText()+'.';
