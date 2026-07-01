@@ -7,7 +7,7 @@ const { pool, init } = require("./db");
 const { STAY } = require("./transform");
 const sharp = require("sharp");
 const { r2put, r2ready } = require("./r2");
-const { describeImage, enhanceImage } = require("./ai");
+const { describeImage, enhanceImage, generateFbPosts } = require("./ai");
 const AUTH = require("./auth");
 
 const app = express();
@@ -899,6 +899,76 @@ app.get("/api/host/:slug/booking-requests", AUTH.requireSlugAccess(pool), async 
     );
     res.json(r.rows);
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+/* ---------- Facebook module: saved groups + AI post generation ---------- */
+app.get("/api/host/:slug/fb-groups", AUTH.requireSlugAccess(pool), async (req, res) => {
+  try {
+    const r = await pool.query("select id, name, url, created_at from fb_groups where slug=$1 order by created_at", [req.params.slug]);
+    res.json(r.rows);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/host/:slug/fb-groups", AUTH.requireSlugAccess(pool), async (req, res) => {
+  try {
+    const items = Array.isArray(req.body) ? req.body : (Array.isArray(req.body && req.body.items) ? req.body.items : [req.body || {}]);
+    const out = [];
+    for (const it of items.slice(0, 200)) {
+      const name = String((it && it.name) || "").trim();
+      let url = String((it && it.url) || "").trim();
+      if (!name && !url) continue;
+      if (url && !/^https?:\/\//i.test(url)) url = "https://" + url;
+      const r = await pool.query("insert into fb_groups(slug,name,url) values($1,$2,$3) returning id,name,url,created_at", [req.params.slug, name || url, url]);
+      out.push(r.rows[0]);
+    }
+    res.json({ added: out.length, items: out });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete("/api/host/:slug/fb-groups/:id", AUTH.requireSlugAccess(pool), async (req, res) => {
+  try {
+    await pool.query("delete from fb_groups where id=$1 and slug=$2", [req.params.id, req.params.slug]);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post("/api/host/:slug/fb-generate", AUTH.requireSlugAccess(pool), async (req, res) => {
+  try {
+    const p = await getProp(req.params.slug);
+    if (!p) return res.status(404).json({ error: "not found" });
+    const b = req.body || {};
+    const site = p.site || {};
+    const out = await generateFbPosts({
+      propertyName: site.name || "",
+      location: (site.location && (site.location.area || site.location.city)) || "",
+      url: siteUrl(req.params.slug),
+      occasion: b.occasion || "ofertă",
+      details: b.details || "",
+      tone: b.tone || "prietenos",
+      emoji: b.emoji !== false,
+      includeLink: !!b.includeLink,
+      count: Math.max(1, Math.min(30, +b.count || (Array.isArray(b.groups) ? b.groups.length : 1) || 1)),
+      groups: Array.isArray(b.groups) ? b.groups : [],
+    });
+    res.json(out);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Stream a property photo as a download (so it can be attached to a Facebook post).
+// Restricted to the property's own R2 bucket to avoid open-proxy/SSRF.
+app.get("/api/host/:slug/fb-photo", AUTH.requireSlugAccess(pool), async (req, res) => {
+  try {
+    const base = (process.env.R2_PUBLIC_URL || "").replace(/\/$/, "");
+    const u = String(req.query.u || "");
+    if (!base || !u.startsWith(base + "/")) return res.status(400).send("URL invalid");
+    const fr = await fetch(u);
+    if (!fr.ok) return res.status(502).send("fetch " + fr.status);
+    const ct = fr.headers.get("content-type") || "image/jpeg";
+    const name = ((u.split("/").pop() || "poza").split("?")[0]).replace(/[^\w.\-]/g, "_");
+    res.setHeader("Content-Type", ct);
+    res.setHeader("Content-Disposition", 'attachment; filename="' + name + '"');
+    res.send(Buffer.from(await fr.arrayBuffer()));
+  } catch (e) { res.status(500).send(e.message); }
 });
 
 /* ---------- lightweight event tracking (phone reveals, etc.) ---------- */
