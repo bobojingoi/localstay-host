@@ -44,20 +44,27 @@ async function describeImage(base64, mime) {
    100% authentic (never add/remove/replace real content). ---- */
 
 const STRONG_PROMPT =
-  "You are a precise perspective-correction tool for real-estate photos. Your ONLY task is to make the photo geometrically straight — correct the perspective and tilt, and change NOTHING else. " +
-  "VERTICALS (main goal): correct lens and perspective (keystone) distortion so that every vertical line in the scene becomes truly vertical, plumb and mutually parallel. Take a strong straight vertical edge in the image as the reference — a door frame, window frame, wall corner, the edge of a wardrobe or cabinet, a radiator side — and align the whole image so all such edges run perfectly vertical: the top of each line directly above its bottom, no leaning, no converging or diverging. Walls that lean in/out must be straightened. " +
-  "LEVEL: also remove any rotation/tilt so horizontal references (floor and ceiling lines, window sills, furniture tops) are level and the horizon is straight. " +
-  "FRAMING: crop only the minimal amount needed to hide the empty borders introduced by straightening; otherwise keep the same framing and the full original aspect ratio. " +
-  "DO NOT CHANGE ANYTHING ELSE — this is critical. Do NOT alter brightness, exposure, shadows, highlights, contrast, white balance, colour, hue, saturation, vibrance, sharpness, clarity, noise or haze. Do NOT add, remove, move, replace, duplicate, redesign or reconstruct any object, furniture, wall, window, door, fixture, light, plant, view, person, text or logo; no generative fill, inpainting, object removal, relighting or fake sky. Keep every real texture, colour, tone, material and light exactly as in the original. " +
-  "The output must be the SAME photo, only geometrically straightened (perspective and tilt corrected). Return exactly one edited image, same content and aspect ratio as the original.";
+  "Transform this accommodation photograph into a striking, professionally-shot real-estate image for a premium booking website. " +
+  "Apply STRONG, decisive corrections so it looks clearly and noticeably better than the original — straight, bright, crisp, vivid and inviting — while remaining the SAME real place. " +
+  "PERSPECTIVE / VERTICALS — be decisive: correct lens and perspective (keystone) distortion so that every vertical line in the scene becomes truly vertical, plumb and mutually parallel. Take a strong straight vertical edge in the image as reference — a door frame, window frame, wall corner, the edge of a wardrobe or cabinet, a radiator side — and align the whole image so all such edges run perfectly vertical (the top of each directly above its bottom, no leaning, no converging or diverging); straighten walls that lean in or out. Also remove any tilt/rotation so horizontal references (floor and ceiling lines, window sills, furniture tops) are level and the horizon is straight. Crop only minimally to hide the borders introduced by straightening. Never leave it crooked, tilted, leaning or with converging walls. " +
+  "BRIGHTNESS — be decisive: make the space clearly bright and airy; substantially raise the overall exposure, strongly lift shadows to reveal detail in dark areas, recover blown highlights and even out harsh light. Leave no dim, dark or muddy areas. " +
+  "COLOUR — be decisive: set a clean, accurate white balance (remove any yellow/green/blue cast) and add noticeable saturation and vibrance so colours look rich and appealing — blue skies, green grass, warm wood, crisp white linens — vivid and lively but still believable, not neon. " +
+  "FINISH: add clarity, punchy-but-natural contrast and a crisp, polished, magazine-quality look; remove haze and reduce noise. " +
+  "ABSOLUTE LIMITS (never break): it must stay the SAME real room/exterior/property, fully recognisable. Do NOT add, remove, move, replace, duplicate, redesign or reconstruct any object, furniture, wall, window, door, fixture, light, plant, view, person, sign, text or logo; no generative fill, inpainting or object removal; no fake sky, sunlight, lamps, reflections or shadows. Keep all real textures, materials and the real layout. Same content, dramatically better editing. " +
+  "Return exactly one edited image, same framing and aspect ratio as the original.";
 
 const ANALYZE_PROMPT =
-  "You are inspecting ONE real-estate photo before ONLY its perspective/geometry is corrected — nothing else (no light or colour) will change. " +
-  "Report ONLY geometry issues; do NOT describe the room, its contents, lighting or colour. Respond as compact JSON with keys: " +
+  "You are inspecting ONE accommodation/real-estate photo before it is STRONGLY auto-enhanced for a booking website (perspective, brightness and colour). " +
+  "Report ONLY the technical corrections needed — do NOT describe the room or its contents. Look carefully and be decisive. " +
+  "Respond as compact JSON with keys: " +
   '"tilt" (is the image rotated / horizon not level? which way and roughly how many degrees, else "level"), ' +
   '"verticals" (are walls / door / window frames / furniture edges leaning or converging? which direction and how strong is the keystone distortion? else "ok"), ' +
   '"reference" (name 1-2 clear straight vertical edges in THIS photo to use as the plumb reference, e.g. "left door frame", "right wardrobe edge"), ' +
-  '"brief" (1-2 imperative sentences telling the retoucher exactly how to straighten THIS photo: which verticals to make plumb and parallel and how to level it — geometry only, no light/colour). ' +
+  '"exposure" (is it dark / underexposed, or are highlights blown? which areas are too dark, and how much brighter is needed?), ' +
+  '"whiteBalance" (colour cast — warm/yellow, green, blue? else "neutral"), ' +
+  '"saturation" (are colours dull/flat and need more vibrance, or fine?), ' +
+  '"other" (noise, haze, low contrast... else "none"), ' +
+  '"brief" (2-3 imperative sentences telling the retoucher exactly and decisively what to fix on THIS photo: which verticals to make plumb and how to level it, how much to brighten, which colours to boost — to make it perfectly straight, level, bright and appealing). ' +
   "Be specific.";
 
 function composeBrief(o) {
@@ -67,6 +74,10 @@ function composeBrief(o) {
   if (!skip(o.verticals)) parts.push("Verticals: " + o.verticals);
   if (!skip(o.perspective)) parts.push("Perspective: " + o.perspective);
   if (o.reference && !skip(o.reference)) parts.push("Use as vertical reference: " + o.reference);
+  if (!skip(o.exposure)) parts.push("Exposure: " + o.exposure);
+  if (!skip(o.whiteBalance)) parts.push("White balance: " + o.whiteBalance);
+  if (!skip(o.saturation)) parts.push("Saturation: " + o.saturation);
+  if (!skip(o.other)) parts.push("Other: " + o.other);
   let brief = (o.brief || "").trim();
   if (parts.length) brief += (brief ? " " : "") + parts.join("; ") + ".";
   return brief.slice(0, 800);
