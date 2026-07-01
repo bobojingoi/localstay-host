@@ -951,11 +951,16 @@ app.post("/api/host/:slug/fb-generate", AUTH.requireSlugAccess(pool), async (req
     const facilities = mostApp.concat(rest.filter(f => mostApp.indexOf(f) < 0)).slice(0, 14);
     const loc = site.location || {};
     const location = [loc.area, loc.county].filter(Boolean).join(", ");
+    // property facts (bedrooms, baths, parking, experience, natural setting, category, suitable-for...) from the real "about" section
+    const about = Array.isArray(site.about) ? site.about : [];
+    const facts = about.map(a => ((a.label || "") + ": " + (a.value || "")).trim())
+      .filter(s => s && s !== ":").join("; ");
     const out = await generateFbPosts({
       propertyName: site.name || "",
       location,
       capacity: site.capacity || (site.basicInfo && site.basicInfo.unitCapacity) || "",
       facilities,
+      facts,
       url: pubUrl,
       calendarUrl: calUrl,
       occasion: b.occasion || "ofertă",
